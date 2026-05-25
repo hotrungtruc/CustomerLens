@@ -75,6 +75,24 @@ data = {
         "year": 0,
         "last_attendance_time": "2026-05-22 00:00:00",
     },
+    "006": {
+        "name": "Amen Thompson",
+        "major": "Professional NBA Player",
+        "starting_year": 2003,
+        "total_attendance": 0,
+        "standing": "G",
+        "year": 0,
+        "last_attendance_time": "2026-05-22 00:00:00",
+    },
+    "007": {
+        "name": " Ausar Thompson",
+        "major": "Professional NBA Player",
+        "starting_year": 2003,
+        "total_attendance": 0,
+        "standing": "G",
+        "year": 0,
+        "last_attendance_time": "2026-05-22 00:00:00",
+    },
 }
 
 conn = sqlite3.connect(DB_PATH)
