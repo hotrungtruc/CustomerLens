@@ -5,17 +5,12 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-# ✅ FIX: Get the project root directory (one level up from src/)
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from config import DETECTOR_PATH, RECOGNIZER_PATH, SIMILARITY_THRESHOLD
 
-# ✅ Use absolute paths for ONNX models
-DETECTOR_PATH = os.path.join(PROJECT_ROOT, "models", "det_500m.onnx")
-RECOGNIZER_PATH = os.path.join(PROJECT_ROOT, "models", "w600k_mbf.onnx")
 FACE_SIZE = (112, 112)
 DET_SIZE = (320, 320)
 DET_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.4
-SIMILARITY_THRESHOLD = 0.38
 SCRFD_STRIDES = (8, 16, 32)
 
 ARC_FACE_TEMPLATE = np.array(
@@ -45,12 +40,12 @@ class InsightEmbedder:
         session_options.log_severity_level = 3
         self.det_size = det_size
         self.detector = ort.InferenceSession(
-            detector_path,
+            str(detector_path),
             sess_options=session_options,
             providers=providers,
         )
         self.recognizer = ort.InferenceSession(
-            recognizer_path,
+            str(recognizer_path),
             sess_options=session_options,
             providers=providers,
         )

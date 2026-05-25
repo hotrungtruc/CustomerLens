@@ -41,8 +41,8 @@ MANIFEST
 *.sqlite3
 
 # Large model files (use LFS or train locally)
-models/
-EncodeFile.p
+backend/models/
+backend/data/encodings/EncodeFile.p
 
 # Temporary files
 *.tmp
@@ -55,3 +55,8 @@ Thumbs.db
 .vscode/
 *.code-workspace
 .vs/
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local

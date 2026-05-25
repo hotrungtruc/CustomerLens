@@ -1,10 +1,7 @@
-
 import os
 import urllib.request
 
-# =========================
-# Pretrained ONNX Models
-# =========================
+from config import MODELS_DIR
 
 MODELS = {
     "det_500m.onnx": "https://github.com/yakhyo/face-reidentification/releases/download/v0.0.1/det_500m.onnx",
@@ -14,51 +11,54 @@ MODELS = {
     "genderage.onnx": "https://huggingface.co/Arctic1998/insightface/resolve/main/genderage.onnx",
 }
 
-MODELS_DIR = "models"
-
 
 def download_file(url, filename):
     try:
-        print(f"⬇ Downloading {filename}...")
-        save_path = os.path.join(MODELS_DIR, filename)
+        save_path = MODELS_DIR / filename
         req = urllib.request.Request(url)
-        req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-        
-        # Use larger timeout (300s) for large model files (up to 144MB)
+        req.add_header(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        )
+
         with urllib.request.urlopen(req, timeout=300) as response:
-            total_size = int(response.headers.get('content-length', 0))
+            total_size = int(response.headers.get("content-length", 0))
             downloaded = 0
-            
-            with open(save_path, 'wb') as out_file:
+
+            with open(save_path, "wb") as out_file:
                 while True:
-                    chunk = response.read(8192)  # 8KB chunks
+                    chunk = response.read(8192)
                     if not chunk:
                         break
                     out_file.write(chunk)
                     downloaded += len(chunk)
-                    
-                    # Show progress for large files
+
                     if total_size > 0:
                         percent = (downloaded / total_size) * 100
-                        print(f"  {filename}: {percent:.1f}% ({downloaded / (1024*1024):.1f}MB / {total_size / (1024*1024):.1f}MB)", end='\r')
-            
-            print(f"✅ Saved to {save_path}")
+                        print(
+                            f"{filename}: {percent:.1f}% "
+                            f"({downloaded / (1024 * 1024):.1f}MB / "
+                            f"{total_size / (1024 * 1024):.1f}MB)",
+                            end="\r",
+                        )
+
+        print(f"Saved to {save_path}")
     except Exception as e:
-        print(f"❌ Failed: {e}")
+        print(f"Download failed: {e}")
 
 
 def main():
-    os.makedirs(MODELS_DIR, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     for filename, url in MODELS.items():
-        save_path = os.path.join(MODELS_DIR, filename)
+        save_path = MODELS_DIR / filename
 
-        if os.path.exists(save_path):
-            print(f"✔ {filename} already exists")
+        if save_path.exists():
+            print(f"{filename} already exists")
         else:
             download_file(url, filename)
 
-    print("\n🎉 All models ready.")
+    print("All models ready.")
 
 
 if __name__ == "__main__":

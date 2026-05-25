@@ -1,35 +1,6 @@
-import sqlite3
-import os
+from app.db.connection import ensure_schema, get_db_connection
 
-# ✅ FIX: Get the project root directory (one level up from src/)
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-# ✅ Set working directory to project root
-os.chdir(PROJECT_ROOT)
-
-# ✅ Use absolute path for database
-DB_PATH = os.path.join(PROJECT_ROOT, "face_attendance.db")
-
-
-def ensure_schema(conn):
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS students (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            major TEXT NOT NULL,
-            starting_year INTEGER NOT NULL,
-            total_attendance INTEGER NOT NULL,
-            standing TEXT NOT NULL,
-            year INTEGER NOT NULL,
-            last_attendance_time TEXT NOT NULL
-        )
-        """
-    )
-    conn.commit()
-
-
-data = {
+DATA = {
     "000": {
         "name": "Truong Quoc Tri",
         "major": "Lecturer - Van Lang University",
@@ -85,7 +56,7 @@ data = {
         "last_attendance_time": "2026-05-22 00:00:00",
     },
     "007": {
-        "name": " Ausar Thompson",
+        "name": "Ausar Thompson",
         "major": "Professional NBA Player",
         "starting_year": 2003,
         "total_attendance": 0,
@@ -95,27 +66,33 @@ data = {
     },
 }
 
-conn = sqlite3.connect(DB_PATH)
-ensure_schema(conn)
 
-for key, value in data.items():
-    conn.execute(
-        """
-        INSERT OR REPLACE INTO students (
-            id, name, major, starting_year, total_attendance, standing, year, last_attendance_time
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            key,
-            value["name"],
-            value["major"],
-            value["starting_year"],
-            value["total_attendance"],
-            value["standing"],
-            value["year"],
-            value["last_attendance_time"],
-        ),
-    )
+def main():
+    conn = get_db_connection()
+    ensure_schema(conn)
 
-conn.commit()
-conn.close()
+    for key, value in DATA.items():
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO customers (
+                id, name, major, starting_year, total_attendance, standing, year, last_attendance_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                key,
+                value["name"],
+                value["major"],
+                value["starting_year"],
+                value["total_attendance"],
+                value["standing"],
+                value["year"],
+                value["last_attendance_time"],
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+
+
+if __name__ == "__main__":
+    main()

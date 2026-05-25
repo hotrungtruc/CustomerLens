@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --surface: #fffaf5;
+  --accent: #b85c38;
+  --accent-soft: #e6b9a6;
+  --shadow: rgba(15, 23, 42, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: #0f172a;
+  font-family: var(--font-body), system-ui, sans-serif;
+  background: radial-gradient(circle at top, #fff4e6 0%, #f7f3ec 55%, #ede3d6 100%);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display), serif;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-3xl border border-black/5 bg-white/80 backdrop-blur-lg shadow-glow;
+  }
+}
