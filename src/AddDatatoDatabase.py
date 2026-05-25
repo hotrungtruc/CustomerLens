@@ -1,6 +1,14 @@
 import sqlite3
+import os
 
-DB_PATH = "face_attendance.db"
+# ✅ FIX: Get the project root directory (one level up from src/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# ✅ Set working directory to project root
+os.chdir(PROJECT_ROOT)
+
+# ✅ Use absolute path for database
+DB_PATH = os.path.join(PROJECT_ROOT, "face_attendance.db")
 
 
 def ensure_schema(conn):

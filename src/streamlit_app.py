@@ -3,10 +3,23 @@ import cv2
 import numpy as np
 import sqlite3
 import os
+import sys
 from datetime import datetime
 import pickle
 import time
+
+# ✅ Add src to path so we can import local modules
+src_dir = os.path.dirname(os.path.abspath(__file__))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 from insight_embedding import InsightEmbedder, SIMILARITY_THRESHOLD, cosine_similarities
+
+# ✅ FIX: Get the project root directory (one level up from src/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# ✅ Set working directory to project root
+os.chdir(PROJECT_ROOT)
 
 # Page config
 st.set_page_config(
@@ -20,7 +33,9 @@ st.set_page_config(
 def load_models():
     """Load face embedder and encodings"""
     embedder = InsightEmbedder()
-    with open("EncodeFile.p", "rb") as f:
+    # ✅ Use absolute path for EncodeFile.p
+    encode_file_path = os.path.join(PROJECT_ROOT, "EncodeFile.p")
+    with open(encode_file_path, "rb") as f:
         encodeListKnownWithIds = pickle.load(f)
     encodeListKnown, studentIds = encodeListKnownWithIds
     return embedder, encodeListKnown, studentIds
@@ -29,7 +44,9 @@ def load_models():
 @st.cache_resource
 def get_db_connection():
     """Connect to database"""
-    conn = sqlite3.connect("face_attendance.db")
+    # ✅ Use absolute path for database
+    db_path = os.path.join(PROJECT_ROOT, "face_attendance.db")
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -51,7 +68,8 @@ def get_student_info(conn, student_id):
 def load_student_image(student_id):
     """Load student image from Images folder"""
     for ext in (".png", ".jpg", ".jpeg"):
-        path = os.path.join("Images", f"{student_id}{ext}")
+        # ✅ Use absolute path for Images directory
+        path = os.path.join(PROJECT_ROOT, "Images", f"{student_id}{ext}")
         if os.path.exists(path):
             return cv2.imread(path)
     return None

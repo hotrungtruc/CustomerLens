@@ -2,17 +2,41 @@
 Efficient video streaming with face detection and attendance tracking
 """
 
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import cv2
 import numpy as np
 import sqlite3
 import os
+import sys
 import pickle
 import base64
 from datetime import datetime
+
+# ✅ Add src to path so we can import local modules
+src_dir = os.path.dirname(os.path.abspath(__file__))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 from insight_embedding import InsightEmbedder, SIMILARITY_THRESHOLD, cosine_similarities
 
-app = Flask(__name__, template_folder="../templates")
+# ✅ FIX: Get the project root directory using absolute path
+# Use os.path.dirname twice to go from src/app.py -> src -> root
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Double-check and resolve to absolute path to handle edge cases
+PROJECT_ROOT = os.path.normpath(os.path.abspath(PROJECT_ROOT))
+
+# ✅ Set working directory to project root to ensure all relative paths work correctly
+os.chdir(PROJECT_ROOT)
+
+# ✅ Set correct template and static folder paths using absolute paths
+template_dir = os.path.join(PROJECT_ROOT, "templates")
+static_dir = os.path.join(PROJECT_ROOT, "assets")
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
+
+# ✅ Add logging middleware to debug requests
+@app.before_request
+def log_request():
+    print(f"[REQUEST] {request.method} {request.path} from {request.remote_addr}")
 
 # Global variables for face detection
 embedder = None
@@ -25,8 +49,10 @@ def init_models():
     """Initialize AI models for face detection"""
     global embedder, encodeListKnown, studentIds
     try:
+        # ✅ Use absolute path for EncodeFile.p
+        encode_file_path = os.path.join(PROJECT_ROOT, "EncodeFile.p")
         embedder = InsightEmbedder()
-        with open("EncodeFile.p", "rb") as f:
+        with open(encode_file_path, "rb") as f:
             encodeListKnownWithIds = pickle.load(f)
         encodeListKnown, studentIds = encodeListKnownWithIds
         print("✅ Models loaded successfully")
@@ -38,7 +64,9 @@ def init_models():
 def get_db_connection():
     """Create database connection with proper configuration"""
     try:
-        conn = sqlite3.connect("face_attendance.db")
+        # ✅ Use absolute path for database
+        db_path = os.path.join(PROJECT_ROOT, "face_attendance.db")
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
     except Exception as e:
@@ -69,7 +97,8 @@ def load_student_image(student_id):
     """Load and encode student image to base64"""
     try:
         for ext in (".png", ".jpg", ".jpeg"):
-            path = os.path.join("Images", f"{student_id}{ext}")
+            # ✅ Use absolute path for Images directory
+            path = os.path.join(PROJECT_ROOT, "Images", f"{student_id}{ext}")
             if os.path.exists(path):
                 img = cv2.imread(path)
                 if img is not None:
@@ -175,7 +204,22 @@ def camera_feed():
 @app.route("/")
 def index():
     """Serve main HTML page"""
-    return render_template("index.html")
+    try:
+        print("[DEBUG] Rendering index.html")
+        html = render_template("index.html")
+        print(f"[DEBUG] Successfully rendered template ({len(html)} bytes)")
+        return html
+    except Exception as e:
+        print(f"[ERROR] Error in index route: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error: {str(e)}", 500
+
+
+@app.route("/test")
+def test():
+    """Test route"""
+    return {"status": "ok", "message": "Flask app is running"}
 
 
 @app.route("/video_feed")
@@ -278,8 +322,44 @@ def api_check_in():
 
 if __name__ == "__main__":
     try:
+        # ✅ Print debug information for troubleshooting (without emojis for Windows compatibility)
+        print(f"[*] Project Root: {PROJECT_ROOT}")
+        print(f"[*] Template Dir: {template_dir}")
+        print(f"[*] Static Dir: {static_dir}")
+        print(f"[*] Working Directory: {os.getcwd()}")
+        print(f"[OK] Template exists: {os.path.exists(template_dir)}")
+        print(f"[OK] EncodeFile exists: {os.path.exists(os.path.join(PROJECT_ROOT, 'EncodeFile.p'))}")
+        print(f"[OK] Database exists: {os.path.exists(os.path.join(PROJECT_ROOT, 'face_attendance.db'))}")
+        print(f"[OK] Images dir exists: {os.path.exists(os.path.join(PROJECT_ROOT, 'Images'))}")
+        print()
+        
+        print("[DEBUG] Registered routes:")
+        for rule in app.url_map.iter_rules():
+            print(f"  {rule.rule} -> {rule.endpoint}")
+        print()
+        
         init_models()
-        print("🚀 Starting Flask app on http://0.0.0.0:5000")
-        app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+        
+        # ✅ Host Configuration:
+        # - "127.0.0.1" (DEFAULT): Only local access on http://localhost:5000
+        #   Recommended for development/testing
+        # - "0.0.0.0": Network access from other machines
+        #   Change this if you need to access from another computer
+        
+        host = "127.0.0.1"  # Change to "0.0.0.0" for network access
+        port = 5000
+        
+        print(f"[*] Starting Flask app on http://{host}:{port}")
+        if host == "127.0.0.1":
+            print(f"[*] Access from this computer: http://localhost:{port}")
+        else:
+            print(f"[*] Network access enabled on http://0.0.0.0:{port}")
+            print(f"[*] Find your IP: ipconfig | findstr IPv4")
+        
+        app.run(host=host, port=port, debug=False, threaded=True)
     except Exception as e:
-        print(f"❌ Failed to start app: {str(e)}")
+        print(f"[ERROR] Failed to start app: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        import traceback
+        traceback.print_exc()

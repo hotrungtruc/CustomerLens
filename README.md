@@ -94,13 +94,16 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Cấu hình GPU** (tùy chọn):
+**Cấu hình GPU** (tùy chọn - nếu có NVIDIA GPU):
 ```bash
-# Với GPU NVIDIA
-pip install onnxruntime-gpu
+# Uninstall CPU version trước
+pip uninstall onnxruntime -y
 
-# Hoặc giữ CPU mode (onnxruntime đã trong requirements.txt)
+# Cài GPU version
+pip install onnxruntime-gpu
 ```
+
+Nếu không có GPU hoặc gặp lỗi, tiếp tục dùng CPU version mặc định.
 
 ````md
 ### 📥 Tải Pretrained Models
@@ -130,31 +133,51 @@ models/
 
 ```bash
 # Seed database với dữ liệu mẫu
-python src\AddDatatoDatabase.py
+python src/AddDatatoDatabase.py
 
 # Sinh encoding cho ảnh trong Images/
-python src\EncodeGenerator.py
+python src/EncodeGenerator.py
 ```
 
 ## 🎮 Sử Dụng
 
 ### Khởi Động Ứng Dụng
 
+**Cách 1: Từ thư mục gốc** (khuyến nghị)
+```bash
+python src/app.py
+```
+
+**Cách 2: Từ thư mục src**
 ```bash
 cd src
-python src\app.py
+python app.py
 ```
 
 **Output:**
 ```
+[*] Project Root: C:\...\
+[OK] Template exists: True
+[OK] EncodeFile exists: True
+[OK] Database exists: True
 ✅ Models loaded successfully
-🚀 Starting Flask app on http://0.0.0.0:5000
+[*] Starting Flask app on http://127.0.0.1:5000
 ```
 
 ### Truy Cập Web Interface
 
-- **Local**: http://localhost:5000
-- **Network**: http://192.168.100.226:5000 (hoặc IP của máy)
+- **Local**: http://localhost:5000 hoặc http://127.0.0.1:5000
+
+**Để truy cập từ máy khác:**  
+Sửa file `src/app.py` dòng ~340, thay:
+```python
+host = "127.0.0.1"  # Chỉ cho localhost
+```
+Thành:
+```python
+host = "0.0.0.0"    # Cho tất cả máy trên mạng
+```
+Sau đó khởi động lại ứng dụng, truy cập qua: `http://<your-computer-ip>:5000`
 
 ### Quy Trình Điểm Danh
 

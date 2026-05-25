@@ -1,4 +1,5 @@
 import os
+import sys
 import pickle
 import numpy as np
 import cv2
@@ -6,9 +7,21 @@ import cvzone
 import sqlite3
 from datetime import datetime
 
+# ✅ Add src to path so we can import local modules
+src_dir = os.path.dirname(os.path.abspath(__file__))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 from insight_embedding import InsightEmbedder, SIMILARITY_THRESHOLD, cosine_similarities
 
-DB_PATH = "face_attendance.db"
+# ✅ FIX: Get the project root directory (one level up from src/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# ✅ Set working directory to project root
+os.chdir(PROJECT_ROOT)
+
+# ✅ Use absolute paths for all resources
+DB_PATH = os.path.join(PROJECT_ROOT, "face_attendance.db")
 
 
 def ensure_schema(conn):
@@ -69,7 +82,8 @@ def update_attendance(conn, student_id, total_attendance, last_attendance_time):
 
 def load_student_image(student_id):
     for extension in (".png", ".jpg", ".jpeg"):
-        image_path = os.path.join("Images", f"{student_id}{extension}")
+        # ✅ Use absolute path for Images directory
+        image_path = os.path.join(PROJECT_ROOT, "Images", f"{student_id}{extension}")
         if os.path.exists(image_path):
             return cv2.imread(image_path)
     return None
@@ -82,12 +96,13 @@ cap.set(4, 480)
 conn = sqlite3.connect(DB_PATH)
 ensure_schema(conn)
 
-imgBackground = cv2.imread("Resources/background.png")
+# ✅ Use absolute paths for Resources
+imgBackground = cv2.imread(os.path.join(PROJECT_ROOT, "Resources", "background.png"))
 
 # Importing the mode images into a list
-folderModePath = "Resources/Modes"
+folderModePath = os.path.join(PROJECT_ROOT, "Resources", "Modes")
 if not os.path.isdir(folderModePath):
-    folderModePath = "Resources/Models"
+    folderModePath = os.path.join(PROJECT_ROOT, "Resources", "Models")
 modePathList = sorted(os.listdir(folderModePath), key=lambda name: int(os.path.splitext(name)[0]))
 imgModeList = []
 for path in modePathList:
@@ -96,7 +111,9 @@ for path in modePathList:
 
 # Load the encoding file
 print("Loading Encode File ...")
-file = open("EncodeFile.p", "rb")
+# ✅ Use absolute path for EncodeFile.p
+encode_file_path = os.path.join(PROJECT_ROOT, "EncodeFile.p")
+file = open(encode_file_path, "rb")
 encodeListKnownWithIds = pickle.load(file)
 file.close()
 encodeListKnown, studentIds = encodeListKnownWithIds

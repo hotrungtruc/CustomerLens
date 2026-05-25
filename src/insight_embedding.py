@@ -5,9 +5,12 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
+# ✅ FIX: Get the project root directory (one level up from src/)
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DETECTOR_PATH = os.path.join("models", "det_500m.onnx")
-RECOGNIZER_PATH = os.path.join("models", "w600k_mbf.onnx")
+# ✅ Use absolute paths for ONNX models
+DETECTOR_PATH = os.path.join(PROJECT_ROOT, "models", "det_500m.onnx")
+RECOGNIZER_PATH = os.path.join(PROJECT_ROOT, "models", "w600k_mbf.onnx")
 FACE_SIZE = (112, 112)
 DET_SIZE = (320, 320)
 DET_THRESHOLD = 0.5
