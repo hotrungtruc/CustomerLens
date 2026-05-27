@@ -63,7 +63,7 @@ python -m app.utils.encodings
 Run the backend:
 
 ```bash
-python run.py
+python backend/run.py
 ```
 
 Backend runs at `http://localhost:5000`.
@@ -74,7 +74,7 @@ Open a new terminal:
 
 ```bash
 cd frontend
-npm install
+npm install #Once time
 npm run dev
 ```
 

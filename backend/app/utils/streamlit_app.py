@@ -5,10 +5,10 @@ import cv2
 import numpy as np
 import streamlit as st
 
-from app.core.insight_embedding import InsightEmbedder, SIMILARITY_THRESHOLD, cosine_similarities
+from app.core.insight_embedding import InsightEmbedder
+from app.core.guest_tracking import GuestTrackManager
 from app.db.connection import get_customer_info, get_db_connection, update_attendance
-from config import ENCODE_FILE, IMAGES_DIR
-import pickle
+from config import ENCODE_FILE, GUEST_CACHE_FILE, IMAGES_DIR, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD
 
 st.set_page_config(
     page_title="Face Recognition System",
@@ -20,10 +20,16 @@ st.set_page_config(
 @st.cache_resource
 def load_models():
     embedder = InsightEmbedder()
-    with open(ENCODE_FILE, "rb") as f:
-        encode_list_known_with_ids = pickle.load(f)
-    encode_list_known, customer_ids = encode_list_known_with_ids
-    return embedder, encode_list_known, customer_ids
+    track_manager = GuestTrackManager(
+        ENCODE_FILE,
+        guest_cache_file=GUEST_CACHE_FILE,
+        buffer_size=TRACK_BUFFER_SIZE,
+        similarity_threshold=SIMILARITY_THRESHOLD,
+        iou_threshold=TRACK_IOU_THRESHOLD,
+        min_bbox_size=MIN_FACE_BBOX_SIZE,
+        min_detection_score=MIN_DETECTION_SCORE,
+    )
+    return embedder, track_manager
 
 
 @st.cache_resource
@@ -71,7 +77,7 @@ def main():
     st.title("Smart Front-door AI")
 
     try:
-        embedder, encode_list_known, customer_ids = load_models()
+        embedder, track_manager = load_models()
         conn = get_connection()
     except Exception as e:
         st.error(f"Error: {str(e)}")
@@ -97,31 +103,53 @@ def main():
 
             st.session_state.frame_count += 1
             if st.session_state.frame_count % 3 == 0:
-                faces = embedder.get_faces(frame)
-                if faces:
-                    for face in faces:
-                        similarities = cosine_similarities(
-                            encode_list_known, face["embedding"]
-                        )
-                        if len(similarities) > 0:
-                            match_index = np.argmax(similarities)
-                            if similarities[match_index] >= SIMILARITY_THRESHOLD:
-                                st.session_state.detected_id = customer_ids[match_index]
-                                x1, y1, x2, y2 = face["bbox"]
-                                cv2.rectangle(
-                                    frame_display, (x1, y1), (x2, y2), (0, 255, 0), 2
-                                )
-                                cv2.putText(
-                                    frame_display,
-                                    str(st.session_state.detected_id),
-                                    (x1, y1 - 10),
-                                    cv2.FONT_HERSHEY_SIMPLEX,
-                                    0.7,
-                                    (0, 255, 0),
-                                    2,
-                                )
-                else:
-                    st.session_state.detected_id = None
+                detections = embedder.detect(frame)
+                face_records = []
+
+                for bbox, landmark, score in zip(*detections):
+                    x1, y1, x2, y2 = map(int, bbox)
+                    width = max(0, x2 - x1)
+                    height = max(0, y2 - y1)
+                    quality_ok = width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
+
+                    embedding = None
+                    if quality_ok:
+                        embedding = embedder.get_embedding(frame, landmark)
+
+                    face_records.append(
+                        {
+                            "bbox": (x1, y1, x2, y2),
+                            "score": float(score),
+                            "quality_ok": quality_ok,
+                            "embedding": embedding,
+                        }
+                    )
+
+                tracked_faces = track_manager.process_faces(face_records)
+                st.session_state.detected_id = None
+                for face in tracked_faces:
+                    x1, y1, x2, y2 = face["bbox"]
+                    if face["customer_id"]:
+                        st.session_state.detected_id = face["customer_id"]
+                        color = (0, 255, 0)
+                        label = str(face["customer_id"])
+                    elif face["quality_ok"]:
+                        color = (255, 165, 0)
+                        label = f"T{face['track_id']} buffering"
+                    else:
+                        color = (0, 255, 255)
+                        label = f"T{face['track_id']} low quality"
+
+                    cv2.rectangle(frame_display, (x1, y1), (x2, y2), color, 2)
+                    cv2.putText(
+                        frame_display,
+                        label,
+                        (x1, max(0, y1 - 10)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        color,
+                        2,
+                    )
 
             frame_rgb = cv2.cvtColor(frame_display, cv2.COLOR_BGR2RGB)
             camera_placeholder.image(frame_rgb, width=640)

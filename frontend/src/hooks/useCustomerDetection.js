@@ -8,6 +8,9 @@ export function useCustomerDetection() {
   const [error, setError] = useState("");
   const [checkInState, setCheckInState] = useState("idle");
   const timerRef = useRef(null);
+  const lastSuccessRef = useRef(0);
+  const lastCustomerRef = useRef(null);
+  const graceMs = 2500;
 
   const pollCustomer = useCallback(async () => {
     try {
@@ -16,9 +19,18 @@ export function useCustomerDetection() {
         setStatus("success");
         setCustomer(data);
         setError("");
+        lastSuccessRef.current = Date.now();
+        lastCustomerRef.current = data;
       } else {
-        setStatus(data.status || "idle");
-        setCustomer(null);
+        const stillFresh = Date.now() - lastSuccessRef.current <= graceMs;
+        if (stillFresh && lastCustomerRef.current) {
+          setStatus("success");
+          setCustomer(lastCustomerRef.current);
+        } else {
+          setStatus(data.status || "idle");
+          setCustomer(null);
+          lastCustomerRef.current = null;
+        }
       }
     } catch (err) {
       setError("Unable to reach the backend");

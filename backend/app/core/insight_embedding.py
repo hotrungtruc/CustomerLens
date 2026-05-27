@@ -5,7 +5,12 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-from config import DETECTOR_PATH, RECOGNIZER_PATH, SIMILARITY_THRESHOLD
+from config import RECOGNIZER_PATH, SIMILARITY_THRESHOLD, FACE_LANDMARKER_TASK
+
+try:
+    import mediapipe as mp
+except Exception as e:
+    mp = None
 
 FACE_SIZE = (112, 112)
 DET_SIZE = (320, 320)
@@ -28,33 +33,67 @@ ARC_FACE_TEMPLATE = np.array(
 class InsightEmbedder:
     def __init__(
         self,
-        detector_path=DETECTOR_PATH,
         recognizer_path=RECOGNIZER_PATH,
         det_size=DET_SIZE,
     ):
-        require_file(detector_path)
         require_file(recognizer_path)
 
         providers = get_onnx_providers()
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 3
         self.det_size = det_size
-        self.detector = ort.InferenceSession(
-            str(detector_path),
-            sess_options=session_options,
-            providers=providers,
-        )
         self.recognizer = ort.InferenceSession(
             str(recognizer_path),
             sess_options=session_options,
             providers=providers,
         )
-        self.detector_input = self.detector.get_inputs()[0].name
         self.recognizer_input = self.recognizer.get_inputs()[0].name
-        self.providers = {
-            "detector": self.detector.get_providers(),
-            "recognizer": self.recognizer.get_providers(),
-        }
+        # Initialize MediaPipe FaceMesh for detection + landmarks
+        if mp is None:
+            raise ImportError(
+                "mediapipe is required for MediaPipe-based face detection. Please install `mediapipe`."
+            )
+
+        # Prefer the newer MediaPipe Tasks API (v0.10+) if available and a model is provided.
+        if hasattr(mp, "tasks"):
+            # Require a .task model file for the FaceLandmarker task
+            if not FACE_LANDMARKER_TASK.exists():
+                raise FileNotFoundError(
+                    f"MediaPipe tasks API detected but FaceLandmarker model not found: {FACE_LANDMARKER_TASK}.\n"
+                    "Download a compatible FaceLandmarker .task model and place it in backend/models/.\n"
+                    "See https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/python for details."
+                )
+
+            BaseOptions = mp.tasks.BaseOptions
+            FaceLandmarker = mp.tasks.vision.FaceLandmarker
+            FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+            VisionRunningMode = mp.tasks.vision.RunningMode
+
+            options = FaceLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK)),
+                running_mode=VisionRunningMode.VIDEO,
+                num_faces=5,
+                min_face_detection_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+
+            # Create the face landmarker for video mode
+            self.face_landmarker = FaceLandmarker.create_from_options(options)
+            self._mediapipe_tasks = True
+        elif hasattr(mp, "solutions"):
+            # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
+            self.mp_face_mesh = mp.solutions.face_mesh
+            # refine_landmarks=False keeps performance reasonable
+            self.face_mesh = self.mp_face_mesh.FaceMesh(
+                static_image_mode=False, max_num_faces=5, refine_landmarks=False, min_detection_confidence=0.5
+            )
+            self._mediapipe_tasks = False
+        else:
+            raise ImportError(
+                "mediapipe is required for MediaPipe-based face detection. Please install `mediapipe`."
+            )
+        # store recognizer provider info only
+        self.providers = {"recognizer": self.recognizer.get_providers()}
 
     def get_faces(self, image_bgr, scale=1.0):
         if image_bgr is None:
@@ -78,81 +117,88 @@ class InsightEmbedder:
         return faces
 
     def detect(self, image_bgr, scale=1.0):
+        # Use MediaPipe FaceMesh to detect faces and extract 5-point landmarks
+        if image_bgr is None:
+            return np.empty((0, 4)), np.empty((0, 5, 2)), np.empty((0,))
+
         if scale != 1.0:
             image_bgr = cv2.resize(image_bgr, (0, 0), fx=scale, fy=scale)
 
-        original_height, original_width = image_bgr.shape[:2]
-        input_image, resize_ratio = resize_with_padding(image_bgr, self.det_size)
-        blob = cv2.dnn.blobFromImage(
-            input_image,
-            1.0 / 128.0,
-            self.det_size,
-            (127.5, 127.5, 127.5),
-            swapRB=True,
-        )
-        outputs = self.detector.run(None, {self.detector_input: blob})
+        h, w = image_bgr.shape[:2]
+        rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-        scores_list = outputs[0:3]
-        boxes_list = outputs[3:6]
-        landmarks_list = outputs[6:9]
+        boxes = []
+        landmarks_all = []
+        scores = []
 
-        all_scores = []
-        all_boxes = []
-        all_landmarks = []
+        # Common 5-point indices that map well onto face landmarker outputs
+        lm5_idx = [33, 263, 1, 61, 291]
 
-        for stride, scores, boxes, landmarks in zip(
-            SCRFD_STRIDES,
-            scores_list,
-            boxes_list,
-            landmarks_list,
-        ):
-            anchor_centers = get_anchor_centers(self.det_size, stride)
-            scores = scores.reshape(-1)
-            keep = np.where(scores >= DET_THRESHOLD)[0]
-            if len(keep) == 0:
-                continue
+        if getattr(self, "_mediapipe_tasks", False):
+            # Use MediaPipe Tasks FaceLandmarker
+            # Build a mediapipe Image from numpy array
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            import time
 
-            kept_scores = scores[keep]
-            kept_boxes = distance_to_bbox(anchor_centers[keep], boxes[keep] * stride)
-            kept_landmarks = distance_to_landmarks(
-                anchor_centers[keep],
-                landmarks[keep] * stride,
-            )
+            timestamp_ms = int(time.time() * 1000)
+            result = self.face_landmarker.detect_for_video(mp_image, timestamp_ms)
+            if not result or not getattr(result, "face_landmarks", None):
+                return np.empty((0, 4)), np.empty((0, 5, 2)), np.empty((0,))
 
-            kept_boxes /= resize_ratio
-            kept_landmarks /= resize_ratio
+            for face_landmarks in result.face_landmarks:
+                # Tasks API returns a sequence of NormalizedLandmark objects per face.
+                landmarks_seq = getattr(face_landmarks, "landmark", face_landmarks)
+                pts = np.array(
+                    [[lm.x * w, lm.y * h] for lm in landmarks_seq],
+                    dtype=np.float32,
+                )
+                x_min = int(np.min(pts[:, 0]))
+                y_min = int(np.min(pts[:, 1]))
+                x_max = int(np.max(pts[:, 0]))
+                y_max = int(np.max(pts[:, 1]))
 
-            if scale != 1.0:
-                kept_boxes /= scale
-                kept_landmarks /= scale
-                original_height = int(original_height / scale)
-                original_width = int(original_width / scale)
+                boxes.append([x_min, y_min, x_max, y_max])
 
-            kept_boxes[:, 0::2] = np.clip(kept_boxes[:, 0::2], 0, original_width - 1)
-            kept_boxes[:, 1::2] = np.clip(kept_boxes[:, 1::2], 0, original_height - 1)
-            kept_landmarks[:, :, 0] = np.clip(
-                kept_landmarks[:, :, 0],
-                0,
-                original_width - 1,
-            )
-            kept_landmarks[:, :, 1] = np.clip(
-                kept_landmarks[:, :, 1],
-                0,
-                original_height - 1,
-            )
+                try:
+                    lm5 = pts[lm5_idx]
+                except Exception:
+                    indices = np.linspace(0, pts.shape[0] - 1, 5, dtype=int)
+                    lm5 = pts[indices]
 
-            all_scores.append(kept_scores)
-            all_boxes.append(kept_boxes)
-            all_landmarks.append(kept_landmarks)
+                landmarks_all.append(lm5)
+                scores.append(1.0)
 
-        if not all_scores:
-            return np.empty((0, 4)), np.empty((0, 5, 2)), np.empty((0,))
+            return np.asarray(boxes, dtype=np.float32), np.asarray(landmarks_all, dtype=np.float32), np.asarray(scores, dtype=np.float32)
+        else:
+            # Fallback to solutions FaceMesh
+            results = self.face_mesh.process(rgb)
+            if not results or not results.multi_face_landmarks:
+                return np.empty((0, 4)), np.empty((0, 5, 2)), np.empty((0,))
 
-        scores = np.concatenate(all_scores)
-        boxes = np.concatenate(all_boxes)
-        landmarks = np.concatenate(all_landmarks)
-        keep = nms(boxes, scores, NMS_THRESHOLD)
-        return boxes[keep], landmarks[keep], scores[keep]
+            for face_landmarks in results.multi_face_landmarks:
+                landmarks_seq = getattr(face_landmarks, "landmark", face_landmarks)
+                pts = np.array(
+                    [[lm.x * w, lm.y * h] for lm in landmarks_seq],
+                    dtype=np.float32,
+                )
+
+                x_min = int(np.min(pts[:, 0]))
+                y_min = int(np.min(pts[:, 1]))
+                x_max = int(np.max(pts[:, 0]))
+                y_max = int(np.max(pts[:, 1]))
+
+                boxes.append([x_min, y_min, x_max, y_max])
+
+                try:
+                    lm5 = pts[lm5_idx]
+                except Exception:
+                    indices = np.linspace(0, pts.shape[0] - 1, 5, dtype=int)
+                    lm5 = pts[indices]
+
+                landmarks_all.append(lm5)
+                scores.append(1.0)
+
+            return np.asarray(boxes, dtype=np.float32), np.asarray(landmarks_all, dtype=np.float32), np.asarray(scores, dtype=np.float32)
 
     def get_embedding(self, image_bgr, landmarks):
         matrix, _ = cv2.estimateAffinePartial2D(
@@ -265,6 +311,15 @@ def normalize_embedding(embedding):
 
 
 def cosine_similarities(known_embeddings, embedding):
-    if len(known_embeddings) == 0:
+    if known_embeddings is None:
         return np.array([])
-    return np.dot(np.asarray(known_embeddings, dtype=np.float32), embedding)
+
+    try:
+        arr = np.asarray(known_embeddings, dtype=np.float32)
+    except Exception:
+        return np.array([])
+
+    if arr.size == 0:
+        return np.array([])
+
+    return np.dot(arr, embedding)

@@ -6,3 +6,4 @@ cvzone
 flask
 flask-cors
 streamlit
+mediapipe
