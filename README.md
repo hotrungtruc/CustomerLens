@@ -11,6 +11,12 @@ A restaurant entrance camera system that recognizes and identifies customers in 
 - Decoupled React UI for future dashboards
 - Stable MJPEG stream for low-latency video
 
+## Model
+
+- Detection: MediaPipe FaceLandmarker (`backend/models/face_landmarker.task`)
+- Recognition / embedding: MobileFaceNet ONNX int8 (`backend/models/mobilefacenet_int8.onnx`)
+- The backend uses only these two runtime models; `w600k_mbf.onnx` is kept only as the float source model for regenerating the int8 embedding file
+
 ## Project structure
 
 ```
@@ -59,6 +65,8 @@ python -m app.utils.download_models
 python -m app.db.seed_data
 python -m app.utils.encodings
 ```
+
+`download_models` sẽ tải model nền `w600k_mbf.onnx` và tự sinh bản embedding int8 `mobilefacenet_int8.onnx` để backend dùng cho trích xuất đặc trưng.
 
 Run the backend:
 

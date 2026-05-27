@@ -1,4 +1,5 @@
 import sqlite3
+from datetime import datetime
 
 from config import DB_PATH
 
@@ -51,3 +52,50 @@ def update_attendance(conn, customer_id, total_attendance, last_attendance_time)
         (total_attendance, last_attendance_time, customer_id),
     )
     conn.commit()
+
+
+def upsert_customer(
+    conn,
+    customer_id,
+    name,
+    major,
+    starting_year,
+    total_attendance,
+    standing,
+    year,
+    last_attendance_time,
+):
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR REPLACE INTO customers (
+            id, name, major, starting_year, total_attendance, standing, year, last_attendance_time
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            customer_id,
+            name,
+            major,
+            starting_year,
+            total_attendance,
+            standing,
+            year,
+            last_attendance_time,
+        ),
+    )
+    conn.commit()
+
+
+def insert_guest_record(conn, guest_id):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    upsert_customer(
+        conn,
+        guest_id,
+        "Guest",
+        "Guest",
+        0,
+        0,
+        "G",
+        0,
+        now,
+    )

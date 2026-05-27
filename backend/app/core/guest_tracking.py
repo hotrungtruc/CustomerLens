@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
+from app.db.connection import get_db_connection, ensure_schema, insert_guest_record
+
 
 def normalize_embedding(embedding):
     embedding = np.asarray(embedding, dtype=np.float32)
@@ -204,8 +206,24 @@ class GuestTrackManager:
         normalized = normalize_embedding(embedding)
         self.guest_embeddings.append(normalized)
         self.guest_ids.append(guest_id)
+        self._insert_guest_into_main_db_async(guest_id)
         self._persist_known_embeddings_async()
         return guest_id
+
+    def _insert_guest_into_main_db_async(self, guest_id):
+        def worker():
+            try:
+                conn = get_db_connection()
+                ensure_schema(conn)
+                insert_guest_record(conn, guest_id)
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        thread = threading.Thread(target=worker, daemon=True)
+        thread.start()
 
     def process_faces(self, face_records):
         self.frame_index += 1

@@ -9,7 +9,8 @@ GUEST_CACHE_FILE = ENCODINGS_DIR / "GuestCache.p"
 DB_PATH = DATA_DIR / "face_attendance.db"
 MODELS_DIR = BASE_DIR / "models"
 DETECTOR_PATH = MODELS_DIR / "det_500m.onnx"
-RECOGNIZER_PATH = MODELS_DIR / "w600k_mbf.onnx"
+RECOGNIZER_FLOAT_PATH = MODELS_DIR / "w600k_mbf.onnx"
+RECOGNIZER_PATH = MODELS_DIR / "mobilefacenet_int8.onnx"
 FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
 
 SIMILARITY_THRESHOLD = 0.3
