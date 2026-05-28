@@ -53,7 +53,7 @@ face-recognition-system/
 
 ```bash
 python -m venv .venv
-\.venv\Scripts\activate
+.venv\Scripts\activate
 pip install -r backend\requirements.txt
 ```
 

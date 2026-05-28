@@ -55,6 +55,7 @@ class TrackState:
     embeddings: list = field(default_factory=list)
     resolved_customer_id: str | None = None
     last_seen_frame: int = 0
+    first_seen_frame: int = 0
 
 
 class GuestTrackManager:
@@ -62,7 +63,8 @@ class GuestTrackManager:
         self,
         encode_file,
         guest_cache_file=None,
-        buffer_size=5,
+        buffer_size=3,
+        guest_creation_buffer_size=8,
         similarity_threshold=0.38,
         iou_threshold=0.3,
         min_bbox_size=100,
@@ -72,6 +74,7 @@ class GuestTrackManager:
         self.encode_file = Path(encode_file)
         self.guest_cache_file = Path(guest_cache_file) if guest_cache_file else None
         self.buffer_size = buffer_size
+        self.guest_creation_buffer_size = guest_creation_buffer_size
         self.similarity_threshold = similarity_threshold
         self.iou_threshold = iou_threshold
         self.min_bbox_size = min_bbox_size
@@ -194,7 +197,12 @@ class GuestTrackManager:
 
         track_id = self.next_track_id
         self.next_track_id += 1
-        self.tracks[track_id] = TrackState(track_id=track_id, bbox=bbox, last_seen_frame=self.frame_index)
+        self.tracks[track_id] = TrackState(
+            track_id=track_id,
+            bbox=bbox,
+            last_seen_frame=self.frame_index,
+            first_seen_frame=self.frame_index,
+        )
         return track_id
 
     def _assign_track(self, bbox):
@@ -281,7 +289,7 @@ class GuestTrackManager:
                                 guest_idx = best_index - len(self.known_embeddings)
                                 resolved_customer_id = self.guest_ids[guest_idx]
 
-                if resolved_customer_id is None:
+                if resolved_customer_id is None and len(track_state.embeddings) >= self.guest_creation_buffer_size:
                     resolved_customer_id = self._register_guest(avg_embedding, track_state)
                 elif not str(resolved_customer_id).startswith("GUEST_"):
                     track_state.resolved_customer_id = resolved_customer_id
@@ -295,6 +303,7 @@ class GuestTrackManager:
                     "bbox": bbox,
                     "embedding_ready": len(track_state.embeddings) >= self.buffer_size,
                     "quality_ok": quality_ok,
+                    "pending_guest": resolved_customer_id is None and len(track_state.embeddings) < self.guest_creation_buffer_size,
                 }
             )
 

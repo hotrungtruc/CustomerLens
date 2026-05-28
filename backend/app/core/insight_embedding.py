@@ -5,7 +5,14 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
-from config import RECOGNIZER_PATH, SIMILARITY_THRESHOLD, FACE_LANDMARKER_TASK
+from config import (
+    FACE_LANDMARKER_TASK,
+    MIN_DETECTION_SCORE,
+    MIN_FACE_BBOX_SIZE,
+    MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
+    RECOGNIZER_PATH,
+    SIMILARITY_THRESHOLD,
+)
 
 try:
     import mediapipe as mp
@@ -85,7 +92,11 @@ class InsightEmbedder:
             self.mp_face_mesh = mp.solutions.face_mesh
             # refine_landmarks=False keeps performance reasonable
             self.face_mesh = self.mp_face_mesh.FaceMesh(
-                static_image_mode=False, max_num_faces=5, refine_landmarks=False, min_detection_confidence=0.5
+                static_image_mode=False,
+                max_num_faces=5,
+                refine_landmarks=False,
+                min_detection_confidence=0.5,
+                model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
             )
             self._mediapipe_tasks = False
         else:
@@ -102,6 +113,10 @@ class InsightEmbedder:
         boxes, landmarks, scores = self.detect(image_bgr, scale=scale)
         faces = []
         for box, landmark, score in zip(boxes, landmarks, scores):
+            quality_ok = self.is_quality_ok(box, score)
+            if not quality_ok:
+                continue
+
             embedding = self.get_embedding(image_bgr, landmark)
             if embedding is None:
                 continue
@@ -111,10 +126,17 @@ class InsightEmbedder:
                     "bbox": (left, top, right, bottom),
                     "landmark": landmark,
                     "score": float(score),
+                    "quality_ok": quality_ok,
                     "embedding": embedding,
                 }
             )
         return faces
+
+    def is_quality_ok(self, bbox, score):
+        left, top, right, bottom = map(int, bbox)
+        width = max(0, right - left)
+        height = max(0, bottom - top)
+        return width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
 
     def detect(self, image_bgr, scale=1.0):
         # Use MediaPipe FaceMesh to detect faces and extract 5-point landmarks

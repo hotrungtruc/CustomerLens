@@ -4,6 +4,10 @@ from datetime import datetime
 import cv2
 import numpy as np
 from flask import Blueprint, Response, jsonify, request
+import threading
+import time
+
+from app.utils.shared_frame import SharedFrameManager
 
 from app.core.insight_embedding import InsightEmbedder, cosine_similarities
 from app.core.guest_tracking import GuestTrackManager
@@ -13,6 +17,7 @@ from config import (
     CHECKIN_COOLDOWN_SECONDS,
     CUSTOMER_PROFILE_HOLD_SECONDS,
     ENCODE_FILE,
+    GUEST_CREATION_BUFFER_SIZE,
     GUEST_CACHE_FILE,
     FRAME_HEIGHT,
     FRAME_JPEG_QUALITY,
@@ -35,6 +40,8 @@ customer_ids = None
 current_customer_id = None
 current_customer_seen_at = None
 track_manager = None
+shared_frame_mgr = None
+
 
 
 def init_models():
@@ -44,6 +51,7 @@ def init_models():
         ENCODE_FILE,
         guest_cache_file=GUEST_CACHE_FILE,
         buffer_size=TRACK_BUFFER_SIZE,
+        guest_creation_buffer_size=GUEST_CREATION_BUFFER_SIZE,
         similarity_threshold=SIMILARITY_THRESHOLD,
         iou_threshold=TRACK_IOU_THRESHOLD,
         min_bbox_size=MIN_FACE_BBOX_SIZE,
@@ -51,6 +59,69 @@ def init_models():
     )
     encode_list_known = track_manager.known_embeddings
     customer_ids = track_manager.known_ids
+    # create shared frame buffer and start AI worker thread
+    global shared_frame_mgr
+    if shared_frame_mgr is None:
+        shared_frame_mgr = SharedFrameManager(FRAME_WIDTH, FRAME_HEIGHT, 3)
+
+    def _ai_loop():
+        global current_customer_id, current_customer_seen_at
+        while True:
+            try:
+                if embedder is None or track_manager is None:
+                    time.sleep(0.1)
+                    continue
+
+                frame = shared_frame_mgr.read_frame()
+                # run detection + tracking on the shared frame
+                detections = embedder.detect(frame)
+                face_records = []
+                for bbox, landmark, score in zip(*detections):
+                    x1, y1, x2, y2 = map(int, bbox)
+                    quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+                    embedding = None
+                    if quality_ok:
+                        embedding = embedder.get_embedding(frame, landmark)
+
+                    face_records.append(
+                        {
+                            "bbox": (x1, y1, x2, y2),
+                            "score": float(score),
+                            "quality_ok": quality_ok,
+                            "embedding": embedding,
+                        }
+                    )
+
+                tracked_faces = track_manager.process_faces(face_records)
+
+                annot_faces = []
+                for face in tracked_faces:
+                    x1, y1, x2, y2 = face["bbox"]
+                    quality_ok = face["quality_ok"]
+                    customer_id = face["customer_id"]
+                    track_id = face["track_id"]
+
+                    if customer_id:
+                        current_customer_id = customer_id
+                        current_customer_seen_at = datetime.now()
+                        color = (0, 255, 0)
+                        label = str(customer_id)
+                    elif quality_ok:
+                        color = (255, 165, 0)
+                        label = f"T{track_id} buffering"
+                    else:
+                        color = (0, 255, 255)
+                        label = f"T{track_id} low quality"
+
+                    annot_faces.append({"bbox": (x1, y1, x2, y2), "color": color, "label": label, "customer_id": customer_id, "track_id": track_id, "quality_ok": quality_ok})
+
+                shared_frame_mgr.update_annotations(annot_faces, current_customer_id)
+            except Exception:
+                # swallow errors in worker to keep thread alive
+                time.sleep(0.05)
+
+    t = threading.Thread(target=_ai_loop, daemon=True)
+    t.start()
 
 
 def __decode_encodings(payload):
@@ -120,94 +191,32 @@ def camera_feed():
                 break
 
             frame_count += 1
-            frame_display = frame.copy()
-            # Do not clear immediately; use hold window to avoid flicker
+            # write current frame to shared buffer for AI thread
+            if shared_frame_mgr is not None:
+                try:
+                    shared_frame_mgr.write_frame(frame)
+                except Exception:
+                    pass
 
-            if frame_count % PROCESS_EVERY_N_FRAMES == 0:
-                detections = embedder.detect(frame)
-                face_records = []
-
-                for bbox, landmark, score in zip(*detections):
-                    x1, y1, x2, y2 = map(int, bbox)
-                    width = max(0, x2 - x1)
-                    height = max(0, y2 - y1)
-                    quality_ok = width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
-
-                    embedding = None
-                    if quality_ok:
-                        embedding = embedder.get_embedding(frame, landmark)
-
-                    face_records.append(
-                        {
-                            "bbox": (x1, y1, x2, y2),
-                            "score": float(score),
-                            "quality_ok": quality_ok,
-                            "embedding": embedding,
-                        }
-                    )
-
-                tracked_faces = track_manager.process_faces(face_records)
-                last_display_faces = []
-
-                for face in tracked_faces:
-                    x1, y1, x2, y2 = face["bbox"]
-                    quality_ok = face["quality_ok"]
-                    customer_id = face["customer_id"]
-                    track_id = face["track_id"]
-
-                    if customer_id:
-                        current_customer_id = customer_id
-                        current_customer_seen_at = datetime.now()
-                        color = (0, 255, 0)
-                        label = str(customer_id)
-                    elif quality_ok:
-                        color = (255, 165, 0)
-                        label = f"T{track_id} buffering"
-                    else:
-                        color = (0, 255, 255)
-                        label = f"T{track_id} low quality"
-
-                    cv2.rectangle(frame_display, (x1, y1), (x2, y2), color, 3)
-                    cv2.putText(
-                        frame_display,
-                        label,
-                        (x1, max(0, y1 - 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.8,
-                        color,
-                        2,
-                    )
-
-                    last_display_faces.append(
-                        {
-                            "bbox": (x1, y1, x2, y2),
-                            "color": color,
-                            "label": label,
-                        }
-                    )
-
-                # Release recognized ID after hold window expires
-                if current_customer_id and current_customer_seen_at:
-                    elapsed = (datetime.now() - current_customer_seen_at).total_seconds()
-                    if elapsed > CUSTOMER_PROFILE_HOLD_SECONDS:
-                        current_customer_id = None
-                        current_customer_seen_at = None
-            else:
-                # Re-draw last known boxes on skipped frames so bbox stays visible.
-                for face in last_display_faces:
-                    x1, y1, x2, y2 = face["bbox"]
-                    color = face["color"]
-                    label = face["label"]
-                    cv2.rectangle(frame_display, (x1, y1), (x2, y2), color, 3)
-                    cv2.putText(
-                        frame_display,
-                        label,
-                        (x1, max(0, y1 - 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.8,
-                        color,
-                        2,
-                    )
+            # draw annotations provided by AI thread (no heavy copies)
+            frame_display = frame
+            ann = shared_frame_mgr.get_annotations() if shared_frame_mgr is not None else {"faces": []}
+            last_display_faces = []
+            for face in ann.get("faces", []):
+                x1, y1, x2, y2 = face["bbox"]
+                color = face.get("color", (255, 0, 0))
+                label = face.get("label", "")
+                cv2.rectangle(frame_display, (x1, y1), (x2, y2), color, 3)
+                cv2.putText(
+                    frame_display,
+                    label,
+                    (x1, max(0, y1 - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    color,
+                    2,
+                )
+                last_display_faces.append({"bbox": (x1, y1, x2, y2), "color": color, "label": label})
 
             ret, buffer = cv2.imencode(
                 ".jpg", frame_display, [cv2.IMWRITE_JPEG_QUALITY, FRAME_JPEG_QUALITY]

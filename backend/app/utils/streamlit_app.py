@@ -8,7 +8,7 @@ import streamlit as st
 from app.core.insight_embedding import InsightEmbedder
 from app.core.guest_tracking import GuestTrackManager
 from app.db.connection import get_customer_info, get_db_connection, update_attendance
-from config import ENCODE_FILE, GUEST_CACHE_FILE, IMAGES_DIR, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD
+from config import ENCODE_FILE, GUEST_CACHE_FILE, GUEST_CREATION_BUFFER_SIZE, IMAGES_DIR, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD
 
 st.set_page_config(
     page_title="Face Recognition System",
@@ -24,6 +24,7 @@ def load_models():
         ENCODE_FILE,
         guest_cache_file=GUEST_CACHE_FILE,
         buffer_size=TRACK_BUFFER_SIZE,
+        guest_creation_buffer_size=GUEST_CREATION_BUFFER_SIZE,
         similarity_threshold=SIMILARITY_THRESHOLD,
         iou_threshold=TRACK_IOU_THRESHOLD,
         min_bbox_size=MIN_FACE_BBOX_SIZE,
@@ -108,9 +109,7 @@ def main():
 
                 for bbox, landmark, score in zip(*detections):
                     x1, y1, x2, y2 = map(int, bbox)
-                    width = max(0, x2 - x1)
-                    height = max(0, y2 - y1)
-                    quality_ok = width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
+                    quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
 
                     embedding = None
                     if quality_ok:
