@@ -5,6 +5,7 @@ from config import MODELS_DIR
 
 MODELS = {
     "w600k_mbf.onnx": "https://github.com/yakhyo/face-reidentification/releases/download/v0.0.1/w600k_mbf.onnx",
+    "face_landmarker.task": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
 }
 
 
