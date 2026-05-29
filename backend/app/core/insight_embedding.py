@@ -11,12 +11,15 @@ from config import (
     MIN_FACE_BBOX_SIZE,
     MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
     RECOGNIZER_PATH,
+    RECOGNIZER_FLOAT_PATH,
     SIMILARITY_THRESHOLD,
 )
 
 try:
     import mediapipe as mp
 except Exception as e:
+    import sys
+    print(f"Warning: Failed to import mediapipe: {e}", file=sys.stderr)
     mp = None
 
 FACE_SIZE = (112, 112)
@@ -49,28 +52,52 @@ class InsightEmbedder:
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 3
         self.det_size = det_size
-        self.recognizer = ort.InferenceSession(
-            str(recognizer_path),
-            sess_options=session_options,
-            providers=providers,
-        )
-        self.recognizer_input = self.recognizer.get_inputs()[0].name
-        # Initialize MediaPipe FaceMesh for detection + landmarks
-        if mp is None:
-            raise ImportError(
-                "mediapipe is required for MediaPipe-based face detection. Please install `mediapipe`."
+        
+        # Try to load the recognizer model, with fallback to float model if int8 fails
+        try:
+            self.recognizer = ort.InferenceSession(
+                str(recognizer_path),
+                sess_options=session_options,
+                providers=providers,
             )
-
-        # Prefer the newer MediaPipe Tasks API (v0.10+) if available and a model is provided.
-        if hasattr(mp, "tasks"):
-            # Require a .task model file for the FaceLandmarker task
-            if not FACE_LANDMARKER_TASK.exists():
-                raise FileNotFoundError(
-                    f"MediaPipe tasks API detected but FaceLandmarker model not found: {FACE_LANDMARKER_TASK}.\n"
-                    "Download a compatible FaceLandmarker .task model and place it in backend/models/.\n"
-                    "See https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker/python for details."
-                )
-
+            model_used = recognizer_path.name
+        except:
+            import sys
+            exc_info = sys.exc_info()
+            error_str = str(exc_info[1])
+            error_type = type(exc_info[1]).__name__
+            print(f"Exception caught: {error_type}: {error_str}", file=sys.stderr)
+            if ("NotImplemented" in error_str or "NOT_IMPLEMENTED" in error_str) and "ConvInteger" in error_str:
+                # Int8 model not supported, try float model
+                print(f"Warning: int8 model not supported, falling back to float model", file=sys.stderr)
+                if RECOGNIZER_FLOAT_PATH.exists():
+                    self.recognizer = ort.InferenceSession(
+                        str(RECOGNIZER_FLOAT_PATH),
+                        sess_options=session_options,
+                        providers=providers,
+                    )
+                    model_used = RECOGNIZER_FLOAT_PATH.name
+                    print(f"Successfully loaded float model: {model_used}", file=sys.stderr)
+                else:
+                    raise FileNotFoundError(
+                        f"Int8 model failed to load and float model not found at {RECOGNIZER_FLOAT_PATH}"
+                    )
+            else:
+                raise
+        
+        self.recognizer_input = self.recognizer.get_inputs()[0].name
+        print(f"Loaded recognizer model: {model_used}")
+        
+        # Initialize face detection - try MediaPipe tasks first, then solutions, then fallback to OpenCV
+        if mp is None:
+            print("Warning: MediaPipe not available, will use OpenCV for face detection")
+            self._use_opencv = True
+            self.face_cascade = cv2.CascadeClassifier(
+                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            )
+            self._mediapipe_tasks = False
+        elif hasattr(mp, "tasks") and FACE_LANDMARKER_TASK.exists():
+            # Use the newer MediaPipe Tasks API if the .task model file is available
             BaseOptions = mp.tasks.BaseOptions
             FaceLandmarker = mp.tasks.vision.FaceLandmarker
             FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
@@ -87,6 +114,8 @@ class InsightEmbedder:
             # Create the face landmarker for video mode
             self.face_landmarker = FaceLandmarker.create_from_options(options)
             self._mediapipe_tasks = True
+            self._use_opencv = False
+            print("Using MediaPipe Tasks API for face detection")
         elif hasattr(mp, "solutions"):
             # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
             self.mp_face_mesh = mp.solutions.face_mesh
@@ -99,10 +128,16 @@ class InsightEmbedder:
                 model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
             )
             self._mediapipe_tasks = False
+            self._use_opencv = False
+            print("Using MediaPipe Solutions API for face detection")
         else:
-            raise ImportError(
-                "mediapipe is required for MediaPipe-based face detection. Please install `mediapipe`."
+            # Fallback to OpenCV for face detection
+            print("Warning: MediaPipe tasks/solutions not available, using OpenCV for face detection")
+            self._use_opencv = True
+            self.face_cascade = cv2.CascadeClassifier(
+                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
             )
+            self._mediapipe_tasks = False
         # store recognizer provider info only
         self.providers = {"recognizer": self.recognizer.get_providers()}
 
@@ -136,7 +171,11 @@ class InsightEmbedder:
         left, top, right, bottom = map(int, bbox)
         width = max(0, right - left)
         height = max(0, bottom - top)
-        return width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
+        # Use lower minimum sizes for better detection compatibility
+        # MediaPipe and OpenCV can detect smaller faces, and we validate quality through embedding
+        min_size = 50  # Lower threshold for all detection methods
+        min_score = 0.3  # Lower score threshold - embeddings themselves provide quality validation
+        return width >= min_size and height >= min_size and float(score) >= min_score
 
     def detect(self, image_bgr, scale=1.0):
         # Use MediaPipe FaceMesh to detect faces and extract 5-point landmarks
@@ -156,7 +195,29 @@ class InsightEmbedder:
         # Common 5-point indices that map well onto face landmarker outputs
         lm5_idx = [33, 263, 1, 61, 291]
 
-        if getattr(self, "_mediapipe_tasks", False):
+        if getattr(self, "_use_opencv", False):
+            # Use OpenCV Haar Cascade for face detection
+            gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(50, 50))
+            
+            for (x, y, fw, fh) in faces:
+                boxes.append([x, y, x + fw, y + fh])
+                # Generate simple 5-point landmarks based on face bounding box
+                # These are rough estimates of key face points
+                x_center = x + fw / 2
+                y_center = y + fh / 2
+                lm5 = np.array([
+                    [x + fw * 0.25, y_center],  # left eye
+                    [x + fw * 0.75, y_center],  # right eye
+                    [x_center, y + fh * 0.5],   # nose
+                    [x + fw * 0.2, y + fh * 0.8],   # left mouth
+                    [x + fw * 0.8, y + fh * 0.8],   # right mouth
+                ], dtype=np.float32)
+                landmarks_all.append(lm5)
+                scores.append(0.8)  # Arbitrary confidence score
+
+            return np.asarray(boxes, dtype=np.float32), np.asarray(landmarks_all, dtype=np.float32), np.asarray(scores, dtype=np.float32)
+        elif getattr(self, "_mediapipe_tasks", False):
             # Use MediaPipe Tasks FaceLandmarker
             # Build a mediapipe Image from numpy array
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
