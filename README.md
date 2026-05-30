@@ -1,6 +1,6 @@
 # Smart Front-door AI
 
-A restaurant entrance camera system that recognizes and identifies customers in real time. The stack uses a Flask backend (MJPEG streaming, SQLite) and a Next.js frontend.
+A restaurant entrance camera system that recognizes and identifies customers in real time. The stack uses a FastAPI/Uvicorn backend (MJPEG streaming, SQLite) and a Next.js frontend.
 
 ![Demo](frontend/public/demo_05_21.jpg)
 
@@ -93,13 +93,13 @@ python -m app.utils.encodings
 
 `download_models` downloads `w600k_mbf.onnx`, `face_landmarker.task`, and attempts to create an int8 version (`mobilefacenet_int8.onnx`) for optimized inference. If int8 quantization fails, the float version is used automatically.
 
-Run the backend:
+Run the backend with the official ASGI entry point:
 
 ```bash
 python backend/run.py
 ```
 
-Backend runs at `http://localhost:5000`.
+Backend runs at `http://localhost:8000`.
 
 ### 2) Frontend
 
@@ -113,10 +113,10 @@ npm run dev
 
 Frontend runs at `http://localhost:3000`.
 
-By default the frontend calls `http://localhost:5000`. To change it, create `frontend\.env.local`:
+By default the frontend calls `http://localhost:8000`. To change it, create `frontend\.env.local`:
 
 ```text
-NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
 Then restart `npm run dev`.

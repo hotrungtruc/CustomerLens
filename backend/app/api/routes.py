@@ -1,11 +1,12 @@
 import base64
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
-from flask import Blueprint, Response, jsonify, request
 import threading
 import time
+from fastapi import APIRouter, Request
 
 from app.utils.shared_frame import SharedFrameManager
 
@@ -32,7 +33,7 @@ from config import (
     SIMILARITY_THRESHOLD,
 )
 
-api_bp = Blueprint("api", __name__)
+router = APIRouter()
 
 embedder = None
 encode_list_known = None
@@ -41,12 +42,22 @@ current_customer_id = None
 current_customer_seen_at = None
 track_manager = None
 shared_frame_mgr = None
+cpu_executor: ThreadPoolExecutor | None = None
 
 
 
-def init_models():
-    global embedder, encode_list_known, customer_ids, track_manager
+def _run_cpu_bound(func, *args, **kwargs):
+    if cpu_executor is None:
+        return func(*args, **kwargs)
+
+    future = cpu_executor.submit(func, *args, **kwargs)
+    return future.result()
+
+
+def init_models(ai_executor: ThreadPoolExecutor | None = None):
+    global embedder, encode_list_known, customer_ids, track_manager, cpu_executor
     embedder = InsightEmbedder()
+    cpu_executor = ai_executor
     track_manager = GuestTrackManager(
         ENCODE_FILE,
         guest_cache_file=GUEST_CACHE_FILE,
@@ -74,14 +85,14 @@ def init_models():
 
                 frame = shared_frame_mgr.read_frame()
                 # run detection + tracking on the shared frame
-                detections = embedder.detect(frame)
+                detections = _run_cpu_bound(embedder.detect, frame)
                 face_records = []
                 for bbox, landmark, score in zip(*detections):
                     x1, y1, x2, y2 = map(int, bbox)
                     quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
                     embedding = None
                     if quality_ok:
-                        embedding = embedder.get_embedding(frame, landmark)
+                        embedding = _run_cpu_bound(embedder.get_embedding, frame, landmark)
 
                     face_records.append(
                         {
@@ -136,7 +147,7 @@ def __decode_encodings(payload):
     return [], []
 
 
-def __load_customer_image_base64(customer_id):
+def load_customer_image_base64(customer_id):
     for ext in (".png", ".jpg", ".jpeg"):
         path = IMAGES_DIR / f"{customer_id}{ext}"
         if path.exists():
@@ -239,27 +250,20 @@ def camera_feed():
         cap.release()
 
 
-@api_bp.route("/")
+@router.get("/")
 def index():
     return {"status": "ok", "message": "Backend running"}
 
 
-@api_bp.route("/test")
+@router.get("/test")
 def test():
-    return {"status": "ok", "message": "Flask app is running"}
+    return {"status": "ok", "message": "FastAPI backend is running"}
 
 
-@api_bp.route("/video_feed")
-def video_feed():
-    return Response(
-        camera_feed(), mimetype="multipart/x-mixed-replace; boundary=frame"
-    )
-
-
-@api_bp.route("/api/customer_info")
+@router.get("/api/customer_info")
 def api_customer_info():
     if not current_customer_id:
-        return jsonify({"status": "no_detection"})
+        return {"status": "no_detection"}
 
     conn = get_db_connection()
     ensure_schema(conn)
@@ -268,32 +272,30 @@ def api_customer_info():
         customer_info = get_customer_info(conn, current_customer_id)
 
         if not customer_info:
-            return jsonify({"status": "not_found"})
+            return {"status": "not_found"}
 
-        img_base64 = __load_customer_image_base64(current_customer_id)
+        img_base64 = load_customer_image_base64(current_customer_id)
 
-        return jsonify(
-            {
-                "status": "success",
-                "id": customer_info["id"],
-                "name": customer_info["name"],
-                "major": customer_info["major"],
-                "year": customer_info["year"],
-                "starting_year": customer_info["starting_year"],
-                "total_attendance": customer_info["total_attendance"],
-                "standing": customer_info["standing"],
-                "last_attendance_time": customer_info["last_attendance_time"],
-                "image": img_base64,
-            }
-        )
+        return {
+            "status": "success",
+            "id": customer_info["id"],
+            "name": customer_info["name"],
+            "major": customer_info["major"],
+            "year": customer_info["year"],
+            "starting_year": customer_info["starting_year"],
+            "total_attendance": customer_info["total_attendance"],
+            "standing": customer_info["standing"],
+            "last_attendance_time": customer_info["last_attendance_time"],
+            "image": img_base64,
+        }
     finally:
         conn.close()
 
 
-@api_bp.route("/api/check_in", methods=["POST"])
+@router.post("/api/check_in")
 def api_check_in():
     if not current_customer_id:
-        return jsonify({"success": False, "message": "No face detected"})
+        return {"success": False, "message": "No face detected"}
 
     conn = get_db_connection()
     ensure_schema(conn)
@@ -302,7 +304,7 @@ def api_check_in():
         customer_info = get_customer_info(conn, current_customer_id)
 
         if not customer_info:
-            return jsonify({"success": False, "message": "Customer not found"})
+            return {"success": False, "message": "Customer not found"}
 
         try:
             last_time = datetime.strptime(
@@ -320,33 +322,33 @@ def api_check_in():
                 customer_info["total_attendance"] + 1,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
-            return jsonify({"success": True, "message": "Check-in successful"})
+            return {"success": True, "message": "Check-in successful"}
 
         remaining = int(CHECKIN_COOLDOWN_SECONDS - seconds_elapsed)
-        return jsonify({"success": False, "message": f"Please wait {remaining}s"})
+        return {"success": False, "message": f"Please wait {remaining}s"}
     except Exception as e:
-        return jsonify({"success": False, "message": f"Error: {str(e)}"})
+        return {"success": False, "message": f"Error: {str(e)}"}
     finally:
         conn.close()
 
 
-@api_bp.route("/api/promote_guest", methods=["POST"])
-def api_promote_guest():
+@router.post("/api/promote_guest")
+async def api_promote_guest(request: Request):
     """Promote a GUEST_* id into the known encodings.
 
     Expects JSON: { "guest_id": "GUEST_...", "new_id": "<customer_id>" }
     The new_id should correspond to a customer record created in the DB by the frontend.
     """
-    payload = request.get_json() or {}
+    payload = await request.json()
     guest_id = payload.get("guest_id")
     new_id = payload.get("new_id")
     if not guest_id or not new_id:
-        return jsonify({"success": False, "message": "guest_id and new_id required"}), 400
+        return {"success": False, "message": "guest_id and new_id required"}
 
     if not track_manager:
-        return jsonify({"success": False, "message": "track manager not initialized"}), 500
+        return {"success": False, "message": "track manager not initialized"}
 
     ok = track_manager.promote_guest(guest_id, new_id)
     if ok:
-        return jsonify({"success": True})
-    return jsonify({"success": False, "message": "guest not found"}), 404
+        return {"success": True}
+    return {"success": False, "message": "guest not found"}
