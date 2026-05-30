@@ -1,11 +1,13 @@
 import pickle
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
 from app.db.connection import get_db_connection, ensure_schema, insert_guest_record
+from config import NEW_GUEST_DEBOUNCE_SECONDS, NEW_GUEST_DEBOUNCE_SIMILARITY
 
 
 def normalize_embedding(embedding):
@@ -56,6 +58,8 @@ class TrackState:
     resolved_customer_id: str | None = None
     last_seen_frame: int = 0
     first_seen_frame: int = 0
+    first_seen_at: float = 0.0
+    last_seen_at: float = 0.0
 
 
 class GuestTrackManager:
@@ -184,6 +188,7 @@ class GuestTrackManager:
         return f"{self.guest_prefix}_{self.frame_index}_{self.next_track_id:04d}"
 
     def _match_track(self, bbox):
+        now = time.monotonic()
         best_track_id = None
         best_iou = 0.0
         for track_id, track in self.tracks.items():
@@ -202,6 +207,8 @@ class GuestTrackManager:
             bbox=bbox,
             last_seen_frame=self.frame_index,
             first_seen_frame=self.frame_index,
+            first_seen_at=now,
+            last_seen_at=now,
         )
         return track_id
 
@@ -238,11 +245,13 @@ class GuestTrackManager:
         outputs = []
 
         for record in face_records:
+            now = time.monotonic()
             bbox = tuple(map(int, record["bbox"]))
             track_id = self._assign_track(bbox)
             track_state = self.tracks[track_id]
             track_state.bbox = bbox
             track_state.last_seen_frame = self.frame_index
+            track_state.last_seen_at = now
 
             quality_ok = bool(record.get("quality_ok", True))
             embedding = record.get("embedding")
@@ -290,7 +299,23 @@ class GuestTrackManager:
                                 resolved_customer_id = self.guest_ids[guest_idx]
 
                 if resolved_customer_id is None and len(track_state.embeddings) >= self.guest_creation_buffer_size:
-                    resolved_customer_id = self._register_guest(avg_embedding, track_state)
+                    known_similarity = 0.0
+                    if self.known_embeddings:
+                        known_scores = cosine_similarities(self.known_embeddings, avg_embedding)
+                        if known_scores.size > 0:
+                            known_similarity = float(np.max(known_scores))
+
+                    track_age_seconds = now - track_state.first_seen_at
+                    if track_age_seconds < NEW_GUEST_DEBOUNCE_SECONDS:
+                        resolved_customer_id = None
+                    elif known_similarity >= NEW_GUEST_DEBOUNCE_SIMILARITY:
+                        resolved_customer_id = None
+                    else:
+                        resolved_customer_id = self._register_guest(avg_embedding, track_state)
+
+                if resolved_customer_id is None and not str(existing_customer_id).startswith("GUEST_"):
+                    # Keep waiting for more evidence instead of minting a guest too early.
+                    resolved_customer_id = None
                 elif not str(resolved_customer_id).startswith("GUEST_"):
                     track_state.resolved_customer_id = resolved_customer_id
                 else:
