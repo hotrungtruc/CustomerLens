@@ -1,178 +1,144 @@
-# Smart Front-door AI
+ # Face Recognition — Front Door AI
 
-A restaurant entrance camera system that recognizes and identifies customers in real time. The stack uses a FastAPI/Uvicorn backend (MJPEG streaming, SQLite) and a Next.js frontend.
+ Phiên bản hiện tại: tài liệu cập nhật cho kiến trúc và tính năng đang triển khai (backend FastAPI + frontend Next.js).
 
-![Demo](frontend/public/demo_05_21.jpg)
+ Mục tiêu: hệ thống nhận diện khuôn mặt thời gian thực dùng camera trình duyệt (frontend) để gửi frame lên backend xử lý, hiển thị nhiều khách cùng lúc, cho phép chỉnh sửa hồ sơ khách hàng và đồng bộ hiển thị badge track giữa camera và ô khách.
 
-## Features
+ Ảnh minh họa: xem `frontend/public/demo_05_21.jpg` (nếu có).
 
-- Real-time face detection and matching via embeddings
-- Customer profiles stored in SQLite
-- Decoupled React UI for future dashboards
-- Stable MJPEG stream for low-latency video
+ ---
 
-## Model
+ ## Tính năng chính
 
-- **Detection**: MediaPipe Tasks API (automatic, optimized)
-  - `face_landmarker.task` (auto-downloaded, highest accuracy)
-  - Fallback: MediaPipe Solutions API (built-in)
-  - Last resort: OpenCV Haar Cascade (if MediaPipe unavailable)
-- **Recognition/Embedding**: MobileFaceNet ONNX
-  - `mobilefacenet_int8.onnx` (preferred, optimized)
-  - `w600k_mbf.onnx` (fallback if int8 not supported)
+ - Ghi nhận và phân biệt nhiều khách cùng lúc (đa ô / overview)
+ - Camera chạy trên trình duyệt (`getUserMedia`) — backend chỉ nhận frame để xử lý
+ - Đồng bộ badge/track giữa overlay camera và ô thông tin khách (ký hiệu A/B/C...)
+ - Chỉnh sửa thông tin khách ngay trên giao diện: `name`, `phone`, `note` (PUT `/api/customer_profile`)
+ - Cơ sở dữ liệu SQLite đơn giản lưu profile, lượt ghé (`visit_count`) và `note`
+ - Cấu hình dễ chỉnh (backend `config.py`, frontend env)
 
-### Model Download
-`download_models` automatically downloads all required models:
-- ✅ `w600k_mbf.onnx` - embedding model (from GitHub)
-- ✅ `face_landmarker.task` - face detection model (from Google Storage)
-- ✅ `mobilefacenet_int8.onnx` - auto-generated from w600k_mbf if supported
+ ## Kiến trúc nhanh
 
-No manual downloads needed! Everything is automatic.
+ - Backend: FastAPI + Uvicorn (ASGI)
+ - Frontend: Next.js (React) + Tailwind CSS
+ - Models: MediaPipe face detection + MobileFaceNet ONNX embedding
+ - DB: SQLite (file trong `backend/data/`)
+ - Giao tiếp: frontend gọi API backend (base URL qua `NEXT_PUBLIC_API_BASE_URL`)
 
-## System Requirements
+ ## API chính (tóm tắt)
 
-- **Python**: 3.8+
-- **Camera**: USB/built-in webcam (optional for encoding generation)
-- **RAM**: 4GB minimum (8GB+ recommended for smooth operation)
-- **Dependencies**: All Python packages auto-installed via `pip install -r backend\requirements.txt`
+ - `GET /test` — kiểm tra backend chạy
+ - `POST /api/process_frame` — (nội bộ) backend nhận frame (base64 JPEG hoặc binary) để phát hiện & ghi nhận
+ - `GET /api/customers_overview` — trả về danh sách `customers` hiện tại + `frame_size` để frontend vẽ overlay
+   - `customers[]` trường quan trọng: `id`, `name`, `phone`, `note`, `tile_id`, `track_id`, `detected` (bool), `visit_count`, `last_visit`, `bbox` (x,y,w,h)
+   - `frame_size`: `{width, height}` — dùng để scale bbox từ backend sang canvas frontend
+ - `PUT /api/customer_profile` — tạo / cập nhật profile khách
+   - Payload: `{ "id": "KH001" | null, "source_id": <optional>, "name": "Tên khách", "phone": "0123456", "note": "..." }`
+   - Nếu là khách mới (không có `id` cố định) API sẽ gán `KH` tiếp theo (ví dụ `KH001` → `KH002`)
 
-## Project structure
+ Ghi chú: một số endpoint check-in cũ vẫn tồn tại trên server nhưng UI đã loại bỏ nút check-in nếu không dùng.
 
-```
-face-recognition-system/
-├── backend/
-│   ├── app/
-│   │   ├── api/              # API routes + streaming
-│   │   ├── core/             # Face recognition logic
-│   │   ├── db/               # SQLite access
-│   │   └── utils/            # Encodings + model downloader
-│   ├── data/
-│   │   ├── encodings/
-│   │   ├── images/
-│   │   └── face_attendance.db
-│   ├── models/               # ONNX models
-│   ├── config.py
-│   ├── requirements.txt
-│   └── run.py
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── hooks/
-│   │   ├── pages/
-│   │   └── services/
-│   ├── public/
-│   ├── package.json
-│   └── tailwind.config.js
-└── README.md
-```
+ ## Chạy nhanh (local)
 
-## Quick start (Windows)
+ Yêu cầu: Python 3.10+, Node.js 18+.
 
-### 1) Backend
+ 1) Backend
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r backend\requirements.txt
-```
+ ```powershell
+ python -m venv .venv
+ .venv\Scripts\Activate.ps1
+ pip install -r backend/requirements.txt
+ ```
 
-Download models and prepare data:
+ Tải model và chuẩn bị dữ liệu (tự động nếu cần):
 
-```bash
-cd backend
-python -m app.utils.download_models
-python -m app.db.seed_data
-python -m app.utils.encodings
-```
+ ```powershell
+ cd backend
+ python -m app.utils.download_models
+ python -m app.db.seed_data
+ python -m app.utils.encodings
+ ```
 
-**Note**: The backend automatically handles:
-- ✅ All models auto-downloaded
-- ✅ Default: MediaPipe Tasks API (best accuracy)
-- ✅ ONNX int8 → float model fallback if not supported
-- ✅ Fallback: MediaPipe Solutions API → OpenCV if needed
+ Chạy backend:
 
-`download_models` downloads `w600k_mbf.onnx`, `face_landmarker.task`, and attempts to create an int8 version (`mobilefacenet_int8.onnx`) for optimized inference. If int8 quantization fails, the float version is used automatically.
+ ```powershell
+ python backend/run.py
+ ```
 
-Run the backend with the official ASGI entry point:
+ Mặc định backend lắng nghe `http://localhost:8000`.
 
-```bash
-python backend/run.py
-```
+ 2) Frontend
 
-Backend runs at `http://localhost:8000`.
+ ```bash
+ cd frontend
+ npm install
+ npm run dev
+ ```
 
-### 2) Frontend
+ Mặc định frontend chạy `http://localhost:3000` và gọi backend theo `NEXT_PUBLIC_API_BASE_URL`.
 
-Open a new terminal:
+ Tạo file `frontend/.env.local` nếu cần:
 
-```bash
-cd frontend
-npm install #Once time
-npm run dev
-```
+ ```text
+ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+ ```
 
-Frontend runs at `http://localhost:3000`.
+ ## Cấu hình quan trọng
 
-By default the frontend calls `http://localhost:8000`. To change it, create `frontend\.env.local`:
+ - Backend: [backend/config.py](backend/config.py)
+   - `FRAME_WIDTH`, `FRAME_HEIGHT`, `PROCESS_EVERY_N_FRAMES`, `EMBEDDING_EVERY_N_DETECT`, `CHECKIN_COOLDOWN_SECONDS`, `CUSTOMER_INFO_CACHE_TTL_MS`
+ - Frontend: `NEXT_PUBLIC_API_BASE_URL`
+ - CORS: khi chạy dev, cho phép `http://localhost:3000` và `http://localhost:3001` (nếu cần)
 
-```text
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
+ ## Triển khai trên EC2 (tóm tắt)
 
-Then restart `npm run dev`.
+ 1. Trên server (Ubuntu):
 
-## API endpoints
+ ```bash
+ git clone <repo>
+ cd face-recognition-system/backend
+ python -m venv .venv
+ source .venv/bin/activate
+ pip install -r requirements.txt
+ ```
 
-- `GET /video_feed`: MJPEG stream from the camera
-- `GET /api/customer_info`: current customer profile
-- `GET /api/customers_overview`: detected customer tiles for frontend panel
-- `PUT /api/customer_profile`: create/update name, phone, and note for a customer
-- `POST /api/check_in`: check-in the current customer
+ 2. Pull thay đổi và restart (ví dụ):
 
-## Preparing customer photos
+ ```bash
+ cd /home/ubuntu/face-recognition-system
+ git pull origin main
+ # restart backend (vd. run.sh hoặc systemd). ví dụ nohup:
+ nohup .venv/bin/uvicorn app.asgi:app --host 0.0.0.0 --port 80 &
+ ```
 
-1. Put images in: `backend/data/images/`
-2. File name: `{customer_id}.jpg` or `.png`
-3. After adding images, re-generate encodings:
+ 3. Kiểm tra:
 
-```bash
-cd backend
-python -m app.utils.encodings
-```
+ ```bash
+ curl http://127.0.0.1/test
+ curl http://127.0.0.1/api/customers_overview
+ ```
 
-## Quick configuration
+ Ghi chú: SSH key (PEM) và quyền cần chuẩn bị. CORS phải cấu hình nếu frontend host khác domain.
 
-- Camera index, similarity threshold, and cooldown live in [backend/config.py](backend/config.py)
-- To change backend port, edit `host`/`port` in [backend/run.py](backend/run.py)
+ ## Cấu trúc DB (tóm tắt)
 
-## Known Issues & Workarounds
+ - Bảng `customers` (SQLite): `id TEXT, name TEXT, phone TEXT, note TEXT, visit_count INTEGER, last_visit TEXT, ...`
+ - Migrations: `backend/app/db/connection.py` có logic nâng cấp schema để thêm cột `note` khi cần.
 
-### ONNX Runtime Compatibility
-- **Issue**: `NotImplemented: Could not find an implementation for ConvInteger(10)` error
-- **Cause**: Your ONNX Runtime version doesn't support int8 quantized models
-- **Solution**: ✅ **Automatic fallback** - The system automatically detects this error and switches to the float model (`w600k_mbf.onnx`)
-- **What to expect**: You'll see a warning message. The system continues working normally with slightly higher memory usage.
+ ## Kiểm tra nhanh (smoke test)
 
-### MediaPipe Face Detection
-- **Automatic**: `face_landmarker.task` is auto-downloaded by `download_models`
-- **Default**: MediaPipe Tasks API (highest accuracy, optimized)
-- **Fallback order**:
-  1. MediaPipe Tasks API ← **Used by default** (auto-downloaded)
-  2. MediaPipe Solutions API (built-in fallback)
-  3. OpenCV Haar Cascade (only if MediaPipe not installed)
-- **What to expect**: System works out of the box with best accuracy. Check console to confirm which method is used.
+ - `GET /test` → trả về `{"status":"ok"}`
+ - `GET /api/customers_overview` → trả về `customers` array và `frame_size`
+ - Ghi nhận: frontend sẽ hiển thị overlay theo `bbox` và `frame_size`
 
-### Face Detection Quality
-- **Issue**: Small faces or faces from certain angles not detected
-- **Cause**: Strict quality thresholds for bounding box size
-- **Solution**: ✅ **Flexible quality checks** - The system uses adaptive thresholds (min 50×50 px) with embedding-based validation
+ ## Ghi chú phát triển & tối ưu
 
-## Troubleshooting
+ - Đã tách capture ra client (giảm lỗi camera khi chạy trên EC2)
+ - Tối ưu tiếp theo: giảm upload frequency, cache profile, schedule embedding, chuyển sang upload binary frames
+ - Xem các biến cấu hình trong `backend/config.py` để tinh chỉnh hiệu năng
 
-- **Cannot access camera**: Close other apps using the webcam
-- **No customer detected**: Run `python -m app.utils.encodings` to re-generate face embeddings
-- **Model error**: Run `python -m app.utils.download_models` to download all required models
-- **Face not detected in images**: Ensure images have clear, frontal faces; try different angles or ensure minimum 50×50 pixel face size
-- **Models not downloading**: Check internet connection and ensure sufficient storage space
-- **Still having issues?**: Check the console output. You should see "Using MediaPipe Tasks API for face detection" or "Using MediaPipe Solutions API for face detection"
+ ---
+
+ Nếu bạn muốn, tôi có thể: commit & push thay đổi README này lên GitLab và/hoặc deploy lên EC2. Bạn muốn tôi làm tiếp theo không?
+
 
