@@ -1,42 +1,62 @@
 import MessageBanner from "./MessageBanner";
+import { useMemo, useState } from "react";
 
 const emptyState = {
-  title: "Khách mới",
-  detail: "Chưa có dữ liệu khách hàng.",
+  title: "Chua co khach duoc nhan dang",
+  detail: "Thong tin khach se hien thi thanh cac o khi camera nhan dien.",
 };
 
 export default function CustomerInfoCard({
   status,
-  customer,
-  message,
-  checkIn,
-  checkInState,
+  customers,
   error,
 }) {
-  const hasCustomer = status === "success" && customer;
-  const messageVariant =
-    checkInState === "success"
-      ? "success"
-      : checkInState === "error"
-        ? "error"
-        : "warning";
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [selectedTileId, setSelectedTileId] = useState(null);
+  const hasCustomers = status === "success" && customers.length > 0;
+
+  const selectedCustomer = useMemo(() => {
+    if (!customers.length) {
+      return null;
+    }
+    if (!selectedTileId) {
+      return customers[0];
+    }
+    return customers.find((item) => item.tile_id === selectedTileId) || customers[0];
+  }, [customers, selectedTileId]);
+
+  const openDetail = (tileId) => {
+    setSelectedTileId(tileId);
+    setIsExpanded(true);
+  };
+
+  const rankLabel = (count) => {
+    const value = Number(count || 0);
+    if (value >= 30) {
+      return "VIP";
+    }
+    if (value >= 10) {
+      return "Than thiet";
+    }
+    return "Standard";
+  };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full min-h-[640px] flex-col overflow-hidden">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-copper/15 text-copper">
             <span className="text-lg font-semibold">👤</span>
           </div>
           <div>
-            <h2 className="text-2xl">Khách mới</h2>
+            <h2 className="text-2xl">Ket qua nhan dang</h2>
             <p className="text-xs uppercase tracking-[0.3em] text-ink/45">
-              Thông tin khách hàng
+              Danh sach khach hien tai
             </p>
           </div>
         </div>
         <span className="rounded-full border border-copper/20 bg-copper/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.22em] text-copper">
-          {status === "success" ? "CHUẨN ĐK" : "CHƯA ĐK"}
+          {hasCustomers ? `${customers.length} KHACH` : "CHO NHAN DIEN"}
         </span>
       </div>
 
@@ -44,39 +64,42 @@ export default function CustomerInfoCard({
         <MessageBanner variant="error" message={error} className="mb-4" />
       )}
 
-      {hasCustomer ? (
-        <div className="flex flex-1 flex-col gap-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <StatBox label="Mã KH" value={customer.id} />
-            <StatBox label="Tên" value={customer.name} />
-            <StatBox label="SĐT" value={customer.phone} />
-            <StatBox label="Lần đến" value={customer.visit_count} />
+      {hasCustomers ? (
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+          <div className="grid gap-4 md:grid-cols-2">
+            {customers.map((item) => {
+              const isSelected = selectedCustomer?.tile_id === item.tile_id;
+              const detectedLabel = item.detected ? "Nhan ra" : "Chua DK";
+
+              return (
+                <button
+                  key={item.tile_id}
+                  type="button"
+                  onClick={() => openDetail(item.tile_id)}
+                  className={`rounded-2xl border bg-white p-4 text-left transition hover:-translate-y-0.5 hover:shadow-lg ${
+                    isSelected
+                      ? "border-emerald-400 shadow-[0_12px_30px_rgba(16,185,129,0.18)]"
+                      : "border-black/5 shadow-[0_10px_20px_rgba(15,23,42,0.06)]"
+                  }`}
+                >
+                  <div className="mb-4 flex items-start justify-between">
+                    <div>
+                      <p className="text-lg font-semibold text-ink">{item.name || "Khach moi"}</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      {detectedLabel}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-sm text-ink/75">
+                    <TileRow label="Ma KH" value={item.id} />
+                    <TileRow label="Lan den" value={item.visit_count} />
+                    <TileRow label="Hang" value={rankLabel(item.visit_count)} />
+                  </div>
+                </button>
+              );
+            })}
           </div>
-
-          <div className="rounded-2xl border border-dashed border-copper/25 bg-copper/5 px-5 py-4 text-sm text-ink/75">
-            <p className="mb-1 text-xs uppercase tracking-[0.3em] text-copper/70">
-              Ghi chú
-            </p>
-            <p className="leading-6">
-              Lần đến gần nhất: <span className="font-medium text-ink">{customer.last_visit}</span>
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={checkIn}
-            disabled={checkInState === "loading"}
-            className="rounded-xl bg-copper px-6 py-3 text-base font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {checkInState === "loading" ? "Processing..." : "Check in"}
-          </button>
-
-          {message && (
-            <MessageBanner
-              variant={messageVariant}
-              message={message}
-            />
-          )}
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-copper/20 bg-white/70 p-8 text-center text-ink/60">
@@ -87,6 +110,43 @@ export default function CustomerInfoCard({
           <p className="max-w-xs text-sm leading-6">{emptyState.detail}</p>
         </div>
       )}
+
+      <div className={`absolute inset-x-0 bottom-0 z-20 rounded-t-3xl border border-copper/20 bg-white/95 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] backdrop-blur transition-all duration-300 ${isExpanded ? "h-[72%]" : "h-16"}`}>
+        <button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="flex h-16 w-full items-center justify-between px-5"
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-lg">👤</span>
+            <span className="font-semibold text-ink">Thong tin khach hang</span>
+          </div>
+          <span className="text-xl text-ink/70">{isExpanded ? "⌄" : "⌃"}</span>
+        </button>
+
+        {isExpanded && selectedCustomer ? (
+          <div className="h-[calc(100%-4rem)] overflow-y-auto border-t border-black/5 px-5 py-4">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-semibold text-ink">{selectedCustomer.name || "Khach moi"}</h3>
+                <p className="text-xs uppercase tracking-[0.2em] text-ink/45">Chi tiet khach duoc chon</p>
+              </div>
+              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                {selectedCustomer.detected ? "Nhan ra" : "Chua DK"}
+              </span>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <StatBox label="Ma KH" value={selectedCustomer.id} />
+              <StatBox label="Ten" value={selectedCustomer.name} />
+              <StatBox label="SDT" value={selectedCustomer.phone} />
+              <StatBox label="Lan den" value={selectedCustomer.visit_count} />
+              <StatBox label="Hang" value={rankLabel(selectedCustomer.visit_count)} />
+              <StatBox label="Lan cuoi" value={selectedCustomer.last_visit} />
+            </div>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -100,6 +160,15 @@ function StatBox({ label, value }) {
       <div className="text-base font-semibold text-ink">
         {value ?? "Chưa có"}
       </div>
+    </div>
+  );
+}
+
+function TileRow({ label, value }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
+      <span className="text-xs uppercase tracking-[0.18em] text-ink/50">{label}</span>
+      <span className="font-semibold text-ink">{value ?? "-"}</span>
     </div>
   );
 }

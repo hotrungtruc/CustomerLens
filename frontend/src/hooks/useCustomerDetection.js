@@ -1,35 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchCustomerInfo, postCheckIn } from "../services/api";
+import { fetchCustomersOverview } from "../services/api";
 
 export function useCustomerDetection() {
   const [status, setStatus] = useState("idle");
-  const [customer, setCustomer] = useState(null);
-  const [message, setMessage] = useState("");
+  const [customers, setCustomers] = useState([]);
   const [error, setError] = useState("");
-  const [checkInState, setCheckInState] = useState("idle");
   const timerRef = useRef(null);
   const lastSuccessRef = useRef(0);
-  const lastCustomerRef = useRef(null);
+  const lastCustomersRef = useRef([]);
   const graceMs = 2500;
 
-  const pollCustomer = useCallback(async () => {
+  const pollCustomers = useCallback(async () => {
     try {
-      const data = await fetchCustomerInfo();
+      const data = await fetchCustomersOverview();
       if (data.status === "success") {
         setStatus("success");
-        setCustomer(data);
+        setCustomers(data.customers || []);
         setError("");
         lastSuccessRef.current = Date.now();
-        lastCustomerRef.current = data;
+        lastCustomersRef.current = data.customers || [];
       } else {
         const stillFresh = Date.now() - lastSuccessRef.current <= graceMs;
-        if (stillFresh && lastCustomerRef.current) {
+        if (stillFresh && lastCustomersRef.current.length > 0) {
           setStatus("success");
-          setCustomer(lastCustomerRef.current);
+          setCustomers(lastCustomersRef.current);
         } else {
           setStatus(data.status || "idle");
-          setCustomer(null);
-          lastCustomerRef.current = null;
+          setCustomers([]);
+          lastCustomersRef.current = [];
         }
       }
     } catch (err) {
@@ -38,38 +36,19 @@ export function useCustomerDetection() {
   }, []);
 
   useEffect(() => {
-    pollCustomer();
-    timerRef.current = setInterval(pollCustomer, 250);
+    pollCustomers();
+    timerRef.current = setInterval(pollCustomers, 250);
 
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
     };
-  }, [pollCustomer]);
-
-  const checkIn = useCallback(async () => {
-    setCheckInState("loading");
-    setMessage("");
-    try {
-      const data = await postCheckIn();
-      setCheckInState(data.success ? "success" : "warning");
-      setMessage(data.message || "");
-      if (data.success) {
-        await pollCustomer();
-      }
-    } catch (err) {
-      setCheckInState("error");
-      setMessage("Unable to send check-in request");
-    }
-  }, [pollCustomer]);
+  }, [pollCustomers]);
 
   return {
     status,
-    customer,
-    message,
+    customers,
     error,
-    checkIn,
-    checkInState,
   };
 }

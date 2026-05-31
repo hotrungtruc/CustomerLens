@@ -1,3 +1,4 @@
+import base64
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -311,6 +312,57 @@ def api_customer_info():
         conn.close()
 
 
+@router.get("/api/customers_overview")
+def api_customers_overview():
+    if shared_frame_mgr is None:
+        return {"status": "no_detection", "customers": []}
+
+    annotations = shared_frame_mgr.get_annotations()
+    faces = annotations.get("faces", [])
+    if not faces:
+        return {"status": "no_detection", "customers": []}
+
+    conn = get_db_connection()
+    ensure_schema(conn)
+
+    customers = []
+    try:
+        for idx, face in enumerate(faces):
+            customer_id = face.get("customer_id")
+            track_id = face.get("track_id")
+
+            base_payload = {
+                "tile_id": f"tile_{track_id}_{idx}",
+                "track_id": track_id,
+                "detected": bool(customer_id),
+                "id": customer_id or f"T{track_id}",
+                "name": "Khach moi",
+                "phone": None,
+                "visit_count": 0,
+                "last_visit": None,
+            }
+
+            if customer_id:
+                info = get_customer_info(conn, customer_id)
+                if info:
+                    base_payload.update(
+                        {
+                            "id": info["id"],
+                            "name": info["name"] or "Khach moi",
+                            "phone": info["phone"],
+                            "visit_count": info["visit_count"],
+                            "last_visit": info["last_visit"],
+                        }
+                    )
+
+            customers.append(base_payload)
+
+        status = "success" if any(item.get("detected") for item in customers) else "no_detection"
+        return {"status": status, "customers": customers}
+    finally:
+        conn.close()
+
+
 @router.post("/api/check_in")
 def api_check_in():
     if not current_customer_id:
@@ -338,6 +390,43 @@ def api_check_in():
             update_visit_record(
                 conn,
                 current_customer_id,
+                customer_info["visit_count"] + 1,
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            )
+            return {"success": True, "message": "Check-in successful"}
+
+        remaining = int(CHECKIN_COOLDOWN_SECONDS - seconds_elapsed)
+        return {"success": False, "message": f"Please wait {remaining}s"}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+    finally:
+        conn.close()
+
+
+@router.post("/api/check_in/{customer_id}")
+def api_check_in_by_id(customer_id: str):
+    conn = get_db_connection()
+    ensure_schema(conn)
+
+    try:
+        customer_info = get_customer_info(conn, customer_id)
+
+        if not customer_info:
+            return {"success": False, "message": "Customer not found"}
+
+        try:
+            last_time = datetime.strptime(
+                customer_info["last_visit"], "%Y-%m-%d %H:%M:%S"
+            )
+        except (TypeError, ValueError):
+            last_time = datetime.min
+
+        seconds_elapsed = (datetime.now() - last_time).total_seconds()
+
+        if seconds_elapsed > CHECKIN_COOLDOWN_SECONDS:
+            update_visit_record(
+                conn,
+                customer_id,
                 customer_info["visit_count"] + 1,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )

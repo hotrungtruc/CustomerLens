@@ -7,10 +7,7 @@ import { useCustomerDetection } from "../hooks/useCustomerDetection";
 export default function HomePage() {
   const {
     status,
-    customer,
-    message,
-    checkIn,
-    checkInState,
+    customers,
     error,
   } = useCustomerDetection();
 
@@ -41,10 +38,7 @@ export default function HomePage() {
           <section className="panel p-6 animate-floatIn">
             <CustomerInfoCard
               status={status}
-              customer={customer}
-              message={message}
-              checkIn={checkIn}
-              checkInState={checkInState}
+              customers={customers}
               error={error}
             />
           </section>

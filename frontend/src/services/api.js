@@ -9,8 +9,26 @@ export async function fetchCustomerInfo() {
   return response.json();
 }
 
+export async function fetchCustomersOverview() {
+  const response = await fetch(`${API_BASE_URL}/api/customers_overview`);
+  if (!response.ok) {
+    throw new Error("Network error");
+  }
+  return response.json();
+}
+
 export async function postCheckIn() {
   const response = await fetch(`${API_BASE_URL}/api/check_in`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error("Request failed");
+  }
+  return response.json();
+}
+
+export async function postCheckInById(customerId) {
+  const response = await fetch(`${API_BASE_URL}/api/check_in/${customerId}`, {
     method: "POST",
   });
   if (!response.ok) {

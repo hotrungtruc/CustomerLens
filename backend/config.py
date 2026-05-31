@@ -36,6 +36,8 @@ IMAGE_JPEG_QUALITY = 85
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
     "https://face-recognition-system-coral.vercel.app",
     "https://face-recognition-system-f7s4lqogv-justin-ho-s-projects.vercel.app",
 ]
