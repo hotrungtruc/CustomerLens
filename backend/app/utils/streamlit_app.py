@@ -7,7 +7,7 @@ import streamlit as st
 
 from app.core.insight_embedding import InsightEmbedder
 from app.core.guest_tracking import GuestTrackManager
-from app.db.connection import get_customer_info, get_db_connection, update_attendance
+from app.db.connection import get_customer_info, get_db_connection, update_visit_record
 from config import ENCODE_FILE, GUEST_CACHE_FILE, GUEST_CREATION_BUFFER_SIZE, IMAGES_DIR, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD
 
 st.set_page_config(
@@ -54,7 +54,7 @@ def update_attendance_record(conn, customer_id):
 
     try:
         last_time = datetime.strptime(
-            customer_info["last_attendance_time"], "%Y-%m-%d %H:%M:%S"
+            customer_info["last_visit"], "%Y-%m-%d %H:%M:%S"
         )
     except (TypeError, ValueError):
         last_time = datetime.min
@@ -62,10 +62,10 @@ def update_attendance_record(conn, customer_id):
     seconds_elapsed = (datetime.now() - last_time).total_seconds()
 
     if seconds_elapsed > 30:
-        update_attendance(
+        update_visit_record(
             conn,
             customer_id,
-            customer_info["total_attendance"] + 1,
+            customer_info["visit_count"] + 1,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         )
         return True, "Check-in successful"
@@ -175,12 +175,9 @@ def main():
                 st.markdown("### Customer details")
                 st.write(f"Name: {customer_info['name']}")
                 st.write(f"Customer ID: {customer_info['id']}")
-                st.write(f"Customer type: {customer_info['major']}")
-                st.write(f"Tier: {customer_info['year']}")
-                st.write(f"First visit: {customer_info['starting_year']}")
-                st.write(f"Total check-ins: {customer_info['total_attendance']}")
-                st.write(f"Status: {customer_info['standing']}")
-                st.write(f"Last check-in: {customer_info['last_attendance_time']}")
+                st.write(f"Phone: {customer_info['phone'] or '-'}")
+                st.write(f"Visit count: {customer_info['visit_count']}")
+                st.write(f"Last visit: {customer_info['last_visit']}")
 
                 st.divider()
 

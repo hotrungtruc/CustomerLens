@@ -52,12 +52,9 @@ export default function CustomerInfoCard({
             <div className="grid gap-3 text-sm">
               <InfoRow label="Name" value={customer.name} />
               <InfoRow label="Customer ID" value={customer.id} />
-              <InfoRow label="Customer type" value={customer.major} />
-              <InfoRow label="Tier" value={customer.year} />
-              <InfoRow label="First visit" value={customer.starting_year} />
-              <InfoRow label="Total check-ins" value={customer.total_attendance} />
-              <InfoRow label="Status" value={customer.standing} />
-              <InfoRow label="Last check-in" value={customer.last_attendance_time} />
+              <InfoRow label="Phone" value={customer.phone} />
+              <InfoRow label="Visit count" value={customer.visit_count} />
+              <InfoRow label="Last visit" value={customer.last_visit} />
             </div>
           </div>
 

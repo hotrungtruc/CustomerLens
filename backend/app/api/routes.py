@@ -12,7 +12,7 @@ from app.utils.shared_frame import SharedFrameManager
 
 from app.core.insight_embedding import InsightEmbedder, cosine_similarities
 from app.core.guest_tracking import GuestTrackManager
-from app.db.connection import ensure_schema, get_customer_info, get_db_connection, update_attendance
+from app.db.connection import ensure_schema, get_customer_info, get_db_connection, update_visit_record
 from config import (
     CAMERA_INDEX,
     CHECKIN_COOLDOWN_SECONDS,
@@ -322,12 +322,9 @@ def api_customer_info():
             "status": "success",
             "id": customer_info["id"],
             "name": customer_info["name"],
-            "major": customer_info["major"],
-            "year": customer_info["year"],
-            "starting_year": customer_info["starting_year"],
-            "total_attendance": customer_info["total_attendance"],
-            "standing": customer_info["standing"],
-            "last_attendance_time": customer_info["last_attendance_time"],
+            "phone": customer_info["phone"],
+            "visit_count": customer_info["visit_count"],
+            "last_visit": customer_info["last_visit"],
             "image": img_base64,
         }
     finally:
@@ -350,7 +347,7 @@ def api_check_in():
 
         try:
             last_time = datetime.strptime(
-                customer_info["last_attendance_time"], "%Y-%m-%d %H:%M:%S"
+                customer_info["last_visit"], "%Y-%m-%d %H:%M:%S"
             )
         except (TypeError, ValueError):
             last_time = datetime.min
@@ -358,10 +355,10 @@ def api_check_in():
         seconds_elapsed = (datetime.now() - last_time).total_seconds()
 
         if seconds_elapsed > CHECKIN_COOLDOWN_SECONDS:
-            update_attendance(
+            update_visit_record(
                 conn,
                 current_customer_id,
-                customer_info["total_attendance"] + 1,
+                customer_info["visit_count"] + 1,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             return {"success": True, "message": "Check-in successful"}

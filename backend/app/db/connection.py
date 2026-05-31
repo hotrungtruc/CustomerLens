@@ -6,13 +6,10 @@ from config import DB_PATH
 
 CUSTOMER_COLUMNS = {
     "id": "TEXT PRIMARY KEY",
-    "name": "TEXT NOT NULL",
-    "major": "TEXT NOT NULL DEFAULT 'Unknown'",
-    "starting_year": "INTEGER NOT NULL DEFAULT 0",
-    "total_attendance": "INTEGER NOT NULL DEFAULT 0",
-    "standing": "TEXT NOT NULL DEFAULT 'G'",
-    "year": "INTEGER NOT NULL DEFAULT 0",
-    "last_attendance_time": "TEXT NOT NULL DEFAULT '1970-01-01 00:00:00'",
+    "name": "TEXT DEFAULT NULL",
+    "phone": "TEXT DEFAULT NULL",
+    "visit_count": "INTEGER NOT NULL DEFAULT 1",
+    "last_visit": "TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
 }
 
 
@@ -31,37 +28,70 @@ def ensure_schema(conn):
             """
             CREATE TABLE IF NOT EXISTS customers (
                 id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                major TEXT NOT NULL DEFAULT 'Unknown',
-                starting_year INTEGER NOT NULL DEFAULT 0,
-                total_attendance INTEGER NOT NULL DEFAULT 0,
-                standing TEXT NOT NULL DEFAULT 'G',
-                year INTEGER NOT NULL DEFAULT 0,
-                last_attendance_time TEXT NOT NULL DEFAULT '1970-01-01 00:00:00'
+                name TEXT DEFAULT NULL,
+                phone TEXT DEFAULT NULL,
+                visit_count INTEGER NOT NULL DEFAULT 1,
+                last_visit TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
         conn.commit()
         return
 
-    for column_name, column_definition in CUSTOMER_COLUMNS.items():
-        if column_name not in existing_columns:
-            conn.execute(f"ALTER TABLE customers ADD COLUMN {column_name} {column_definition}")
-
-    if {"visit_count", "last_visit"} & existing_columns:
-        conn.execute(
-            """
+    if {"id", "name", "phone", "visit_count", "last_visit"} <= existing_columns:
+        conn.execute("""
             UPDATE customers
             SET
-                total_attendance = COALESCE(total_attendance, visit_count, 0),
-                last_attendance_time = COALESCE(last_attendance_time, last_visit, '1970-01-01 00:00:00'),
-                major = COALESCE(NULLIF(major, ''), 'Unknown'),
-                starting_year = COALESCE(starting_year, 0),
-                standing = COALESCE(NULLIF(standing, ''), 'G'),
-                year = COALESCE(year, 0)
+                name = NULLIF(name, ''),
+                phone = NULLIF(phone, ''),
+                visit_count = COALESCE(visit_count, 1),
+                last_visit = COALESCE(last_visit, CURRENT_TIMESTAMP)
+        """)
+        conn.commit()
+        return
+
+    conn.execute("ALTER TABLE customers RENAME TO customers_legacy")
+    conn.execute(
+        """
+        CREATE TABLE customers (
+            id TEXT PRIMARY KEY,
+            name TEXT DEFAULT NULL,
+            phone TEXT DEFAULT NULL,
+            visit_count INTEGER NOT NULL DEFAULT 1,
+            last_visit TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    legacy_columns = {row[1] for row in conn.execute("PRAGMA table_info(customers_legacy)").fetchall()}
+    if {"visit_count", "last_visit"} <= legacy_columns:
+        conn.execute(
+            """
+            INSERT INTO customers (id, name, phone, visit_count, last_visit)
+            SELECT
+                id,
+                NULLIF(name, ''),
+                NULLIF(phone, ''),
+                COALESCE(visit_count, total_attendance, 1),
+                COALESCE(last_visit, last_attendance_time, CURRENT_TIMESTAMP)
+            FROM customers_legacy
+            """
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO customers (id, name, phone, visit_count, last_visit)
+            SELECT
+                id,
+                NULLIF(name, ''),
+                NULL,
+                COALESCE(total_attendance, 1),
+                COALESCE(last_attendance_time, CURRENT_TIMESTAMP)
+            FROM customers_legacy
             """
         )
 
+    conn.execute("DROP TABLE customers_legacy")
     conn.commit()
 
 
@@ -69,7 +99,7 @@ def get_customer_info(conn, customer_id):
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, name, major, starting_year, total_attendance, standing, year, last_attendance_time
+        SELECT id, name, phone, visit_count, last_visit
         FROM customers WHERE id = ?
         """,
         (customer_id,),
@@ -78,15 +108,15 @@ def get_customer_info(conn, customer_id):
     return dict(row) if row else None
 
 
-def update_attendance(conn, customer_id, total_attendance, last_attendance_time):
+def update_visit_record(conn, customer_id, visit_count, last_visit):
     cursor = conn.cursor()
     cursor.execute(
         """
         UPDATE customers
-        SET total_attendance = ?, last_attendance_time = ?
+        SET visit_count = ?, last_visit = ?
         WHERE id = ?
         """,
-        (total_attendance, last_attendance_time, customer_id),
+        (visit_count, last_visit, customer_id),
     )
     conn.commit()
 
@@ -95,29 +125,23 @@ def upsert_customer(
     conn,
     customer_id,
     name,
-    major,
-    starting_year,
-    total_attendance,
-    standing,
-    year,
-    last_attendance_time,
+    phone,
+    visit_count,
+    last_visit,
 ):
     cursor = conn.cursor()
     cursor.execute(
         """
         INSERT OR REPLACE INTO customers (
-            id, name, major, starting_year, total_attendance, standing, year, last_attendance_time
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            id, name, phone, visit_count, last_visit
+        ) VALUES (?, ?, ?, ?, ?)
         """,
         (
             customer_id,
             name,
-            major,
-            starting_year,
-            total_attendance,
-            standing,
-            year,
-            last_attendance_time,
+            phone,
+            visit_count,
+            last_visit,
         ),
     )
     conn.commit()
@@ -128,11 +152,8 @@ def insert_guest_record(conn, guest_id):
     upsert_customer(
         conn,
         guest_id,
-        "Guest",
-        "Guest",
-        0,
-        0,
-        "G",
-        0,
+        None,
+        None,
+        1,
         now,
     )
