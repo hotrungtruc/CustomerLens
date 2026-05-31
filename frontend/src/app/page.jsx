@@ -1,13 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import CameraStream from "../components/CameraStream";
 import CustomerInfoCard from "../components/CustomerInfoCard";
 import { useCustomerDetection } from "../hooks/useCustomerDetection";
 
 export default function HomePage() {
+  const [selectedTrackId, setSelectedTrackId] = useState(null);
   const {
     status,
     customers,
+    frameSize,
     error,
     refreshCustomers,
   } = useCustomerDetection();
@@ -33,7 +36,11 @@ export default function HomePage() {
                 Live
               </span>
             </div>
-            <CameraStream />
+            <CameraStream
+              customers={customers}
+              frameSize={frameSize}
+              highlightedTrackId={selectedTrackId}
+            />
           </section>
 
           <section className="panel p-6 animate-floatIn">
@@ -42,6 +49,7 @@ export default function HomePage() {
               customers={customers}
               error={error}
               refreshCustomers={refreshCustomers}
+              onSelectTrack={setSelectedTrackId}
             />
           </section>
         </div>

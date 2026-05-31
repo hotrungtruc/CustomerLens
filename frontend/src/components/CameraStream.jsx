@@ -9,7 +9,32 @@ const JPEG_QUALITY = 0.75;
 const MAX_UPLOAD_WIDTH = 640;
 const MAX_UPLOAD_HEIGHT = 360;
 
-export default function CameraStream() {
+const TRACK_BADGE_THEMES = [
+  { base: "bg-sky-500", ring: "ring-sky-300/80" },
+  { base: "bg-fuchsia-500", ring: "ring-fuchsia-300/80" },
+  { base: "bg-amber-500", ring: "ring-amber-300/80" },
+  { base: "bg-emerald-500", ring: "ring-emerald-300/80" },
+  { base: "bg-indigo-500", ring: "ring-indigo-300/80" },
+  { base: "bg-rose-500", ring: "ring-rose-300/80" },
+];
+
+function getTrackBadge(trackId) {
+  const safeTrack = Number(trackId || 0);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const symbol = safeTrack > 0
+    ? alphabet[(safeTrack - 1) % alphabet.length]
+    : "?";
+  return {
+    symbol,
+    theme: TRACK_BADGE_THEMES[safeTrack % TRACK_BADGE_THEMES.length],
+  };
+}
+
+export default function CameraStream({
+  customers = [],
+  frameSize = { width: 640, height: 360 },
+  highlightedTrackId = null,
+}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -280,6 +305,45 @@ export default function CameraStream() {
           muted
           className="h-[420px] w-full object-cover"
         />
+
+        <div className="pointer-events-none absolute inset-0">
+          {customers
+            .filter((customer) => Array.isArray(customer.bbox) && customer.bbox.length === 4)
+            .map((customer) => {
+              const [x1, y1, x2, y2] = customer.bbox;
+              const left = (x1 / frameSize.width) * 100;
+              const top = (y1 / frameSize.height) * 100;
+              const width = ((x2 - x1) / frameSize.width) * 100;
+              const height = ((y2 - y1) / frameSize.height) * 100;
+              const isHighlighted = highlightedTrackId === customer.track_id;
+              const { symbol, theme } = getTrackBadge(customer.track_id);
+
+              return (
+                <div
+                  key={`overlay-${customer.tile_id}`}
+                  className={`absolute rounded-xl border-2 ${
+                    isHighlighted
+                      ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.45)]"
+                      : "border-white/80"
+                  }`}
+                  style={{
+                    left: `${left}%`,
+                    top: `${top}%`,
+                    width: `${Math.max(width, 6)}%`,
+                    height: `${Math.max(height, 8)}%`,
+                  }}
+                >
+                  <div
+                    className={`-mt-8 ml-0 inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ${theme.base} ${theme.ring} ${
+                      isHighlighted ? "scale-110" : ""
+                    }`}
+                  >
+                    {symbol}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
 
         <canvas ref={canvasRef} className="hidden" />
 

@@ -322,12 +322,20 @@ def api_customer_info():
 @router.get("/api/customers_overview")
 def api_customers_overview():
     if shared_frame_mgr is None:
-        return {"status": "no_detection", "customers": []}
+        return {
+            "status": "no_detection",
+            "customers": [],
+            "frame_size": {"width": FRAME_WIDTH, "height": FRAME_HEIGHT},
+        }
 
     annotations = shared_frame_mgr.get_annotations()
     faces = annotations.get("faces", [])
     if not faces:
-        return {"status": "no_detection", "customers": []}
+        return {
+            "status": "no_detection",
+            "customers": [],
+            "frame_size": {"width": shared_frame_mgr.width, "height": shared_frame_mgr.height},
+        }
 
     conn = get_db_connection()
     ensure_schema(conn)
@@ -341,6 +349,7 @@ def api_customers_overview():
             base_payload = {
                 "tile_id": f"tile_{track_id}_{idx}",
                 "track_id": track_id,
+                "bbox": face.get("bbox"),
                 "detected": bool(customer_id),
                 "id": customer_id or f"T{track_id}",
                 "name": "Khach moi",
@@ -367,7 +376,11 @@ def api_customers_overview():
             customers.append(base_payload)
 
         status = "success" if any(item.get("detected") for item in customers) else "no_detection"
-        return {"status": status, "customers": customers}
+        return {
+            "status": status,
+            "customers": customers,
+            "frame_size": {"width": shared_frame_mgr.width, "height": shared_frame_mgr.height},
+        }
     finally:
         conn.close()
 

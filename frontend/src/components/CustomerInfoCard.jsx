@@ -7,11 +7,30 @@ const emptyState = {
   detail: "Thong tin khach se hien thi thanh cac o khi camera nhan dien.",
 };
 
+const TRACK_BADGE_THEMES = [
+  "bg-sky-500",
+  "bg-fuchsia-500",
+  "bg-amber-500",
+  "bg-emerald-500",
+  "bg-indigo-500",
+  "bg-rose-500",
+];
+
+function getTrackBadge(trackId) {
+  const safeTrack = Number(trackId || 0);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  return {
+    symbol: safeTrack > 0 ? alphabet[(safeTrack - 1) % alphabet.length] : "?",
+    tone: TRACK_BADGE_THEMES[safeTrack % TRACK_BADGE_THEMES.length],
+  };
+}
+
 export default function CustomerInfoCard({
   status,
   customers,
   error,
   refreshCustomers,
+  onSelectTrack,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedTileId, setSelectedTileId] = useState(null);
@@ -51,6 +70,17 @@ export default function CustomerInfoCard({
       note: selectedCustomer.note || "",
     });
   }, [isEditing, selectedCustomer]);
+
+  useEffect(() => {
+    if (!onSelectTrack) {
+      return;
+    }
+    if (!selectedCustomer) {
+      onSelectTrack(null);
+      return;
+    }
+    onSelectTrack(selectedCustomer.track_id);
+  }, [onSelectTrack, selectedCustomer]);
 
   const rankLabel = (count) => {
     const value = Number(count || 0);
@@ -164,6 +194,10 @@ export default function CustomerInfoCard({
             {customers.map((item) => {
               const isSelected = selectedCustomer?.tile_id === item.tile_id;
               const detectedLabel = item.detected ? "Nhan ra" : "Chua DK";
+              const detectedClass = item.detected
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-rose-100 text-rose-700";
+              const { symbol, tone } = getTrackBadge(item.track_id);
 
               return (
                 <button
@@ -178,9 +212,14 @@ export default function CustomerInfoCard({
                 >
                   <div className="mb-4 flex items-start justify-between">
                     <div>
-                      <p className="text-lg font-semibold text-ink">{item.name || "Khach moi"}</p>
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white ${tone}`}>
+                          {symbol}
+                        </span>
+                        <p className="text-lg font-semibold text-ink">{item.name || "Khach moi"}</p>
+                      </div>
                     </div>
-                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${detectedClass}`}>
                       {detectedLabel}
                     </span>
                   </div>
@@ -222,7 +261,12 @@ export default function CustomerInfoCard({
           <div className="h-[calc(100%-4rem)] overflow-y-auto border-t border-black/5 px-5 py-4">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-semibold text-ink">{selectedCustomer.name || "Khach moi"}</h3>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white ${getTrackBadge(selectedCustomer.track_id).tone}`}>
+                    {getTrackBadge(selectedCustomer.track_id).symbol}
+                  </span>
+                  <h3 className="text-xl font-semibold text-ink">{selectedCustomer.name || "Khach moi"}</h3>
+                </div>
                 <p className="text-xs uppercase tracking-[0.2em] text-ink/45">Chi tiet khach duoc chon</p>
               </div>
               <div className="flex items-center gap-2">
@@ -234,7 +278,13 @@ export default function CustomerInfoCard({
                 >
                   ✎
                 </button>
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    selectedCustomer.detected
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-rose-100 text-rose-700"
+                  }`}
+                >
                   {selectedCustomer.detected ? "Nhan ra" : "Chua DK"}
                 </span>
               </div>

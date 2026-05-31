@@ -4,6 +4,7 @@ import { fetchCustomersOverview } from "../services/api";
 export function useCustomerDetection() {
   const [status, setStatus] = useState("idle");
   const [customers, setCustomers] = useState([]);
+  const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
   const [error, setError] = useState("");
   const timerRef = useRef(null);
   const lastSuccessRef = useRef(0);
@@ -13,6 +14,12 @@ export function useCustomerDetection() {
   const pollCustomers = useCallback(async () => {
     try {
       const data = await fetchCustomersOverview();
+      if (data.frame_size?.width && data.frame_size?.height) {
+        setFrameSize({
+          width: data.frame_size.width,
+          height: data.frame_size.height,
+        });
+      }
       if (data.status === "success") {
         setStatus("success");
         setCustomers(data.customers || []);
@@ -49,6 +56,7 @@ export function useCustomerDetection() {
   return {
     status,
     customers,
+    frameSize,
     error,
     refreshCustomers: pollCustomers,
   };
