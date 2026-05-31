@@ -17,6 +17,22 @@ export async function fetchCustomersOverview() {
   return response.json();
 }
 
+export async function putCustomerProfile(payload) {
+  const response = await fetch(`${API_BASE_URL}/api/customer_profile`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error("Request failed");
+  }
+
+  return response.json();
+}
+
 export async function postCheckIn() {
   const response = await fetch(`${API_BASE_URL}/api/check_in`, {
     method: "POST",

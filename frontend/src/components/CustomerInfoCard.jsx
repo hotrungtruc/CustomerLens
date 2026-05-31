@@ -1,5 +1,5 @@
 import MessageBanner from "./MessageBanner";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const emptyState = {
   title: "Chua co khach duoc nhan dang",
@@ -10,9 +10,15 @@ export default function CustomerInfoCard({
   status,
   customers,
   error,
+  saveCustomerProfile,
+  saveState,
+  saveMessage,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedTileId, setSelectedTileId] = useState(null);
+  const [nameInput, setNameInput] = useState("");
+  const [phoneInput, setPhoneInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
   const hasCustomers = status === "success" && customers.length > 0;
 
   const selectedCustomer = useMemo(() => {
@@ -30,6 +36,20 @@ export default function CustomerInfoCard({
     setIsExpanded(true);
   };
 
+  useEffect(() => {
+    if (!selectedCustomer) {
+      setNameInput("");
+      setPhoneInput("");
+      setNoteInput("");
+      return;
+    }
+
+    const normalizedName = selectedCustomer.name === "Khach moi" ? "" : (selectedCustomer.name || "");
+    setNameInput(normalizedName);
+    setPhoneInput(selectedCustomer.phone || "");
+    setNoteInput(selectedCustomer.note || "");
+  }, [selectedCustomer?.tile_id]);
+
   const rankLabel = (count) => {
     const value = Number(count || 0);
     if (value >= 30) {
@@ -39,6 +59,28 @@ export default function CustomerInfoCard({
       return "Than thiet";
     }
     return "Standard";
+  };
+
+  const saveVariant =
+    saveState === "success"
+      ? "success"
+      : saveState === "error"
+        ? "error"
+        : "warning";
+
+  const isSaving = saveState === "loading";
+
+  const handleSaveProfile = async () => {
+    if (!selectedCustomer) {
+      return;
+    }
+
+    await saveCustomerProfile({
+      id: selectedCustomer.id,
+      name: nameInput,
+      phone: phoneInput,
+      note: noteInput,
+    });
   };
 
   return (
@@ -93,6 +135,7 @@ export default function CustomerInfoCard({
 
                   <div className="space-y-2 text-sm text-ink/75">
                     <TileRow label="Ma KH" value={item.id} />
+                    <TileRow label="SDT" value={item.phone} />
                     <TileRow label="Lan den" value={item.visit_count} />
                     <TileRow label="Hang" value={rankLabel(item.visit_count)} />
                   </div>
@@ -140,10 +183,67 @@ export default function CustomerInfoCard({
               <StatBox label="Ma KH" value={selectedCustomer.id} />
               <StatBox label="Ten" value={selectedCustomer.name} />
               <StatBox label="SDT" value={selectedCustomer.phone} />
+              <StatBox label="Note" value={selectedCustomer.note} />
               <StatBox label="Lan den" value={selectedCustomer.visit_count} />
               <StatBox label="Hang" value={rankLabel(selectedCustomer.visit_count)} />
               <StatBox label="Lan cuoi" value={selectedCustomer.last_visit} />
             </div>
+
+            <div className="mt-4 rounded-2xl border border-black/5 bg-slate-50/70 p-4">
+              <p className="mb-3 text-xs uppercase tracking-[0.22em] text-ink/45">
+                Chinh sua thong tin khach
+              </p>
+              <div className="grid gap-3">
+                <label className="grid gap-1">
+                  <span className="text-xs uppercase tracking-[0.16em] text-ink/60">Ten</span>
+                  <input
+                    type="text"
+                    value={nameInput}
+                    onChange={(event) => setNameInput(event.target.value)}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
+                    placeholder="Nhap ten khach"
+                  />
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-xs uppercase tracking-[0.16em] text-ink/60">So dien thoai</span>
+                  <input
+                    type="text"
+                    value={phoneInput}
+                    onChange={(event) => setPhoneInput(event.target.value)}
+                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
+                    placeholder="Nhap so dien thoai"
+                  />
+                </label>
+
+                <label className="grid gap-1">
+                  <span className="text-xs uppercase tracking-[0.16em] text-ink/60">Note</span>
+                  <textarea
+                    value={noteInput}
+                    onChange={(event) => setNoteInput(event.target.value)}
+                    className="min-h-[90px] rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
+                    placeholder="Thong tin bo sung ve khach"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleSaveProfile}
+                  disabled={isSaving}
+                  className="mt-1 rounded-xl bg-copper px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSaving ? "Dang luu..." : "Luu thong tin"}
+                </button>
+              </div>
+            </div>
+
+            {saveMessage && (
+              <MessageBanner
+                variant={saveVariant}
+                message={saveMessage}
+                className="mt-4"
+              />
+            )}
           </div>
         ) : null}
       </div>

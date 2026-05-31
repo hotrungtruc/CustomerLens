@@ -12,7 +12,16 @@ from app.utils.shared_frame import SharedFrameManager
 
 from app.core.insight_embedding import InsightEmbedder, cosine_similarities
 from app.core.guest_tracking import GuestTrackManager
-from app.db.connection import ensure_schema, get_customer_info, get_db_connection, update_visit_record
+from app.db.connection import (
+    delete_customer,
+    ensure_schema,
+    get_customer_info,
+    get_db_connection,
+    get_next_customer_id,
+    update_customer_profile,
+    update_visit_record,
+    upsert_customer,
+)
 from config import (
     CAMERA_INDEX,
     CHECKIN_COOLDOWN_SECONDS,
@@ -41,6 +50,13 @@ current_customer_seen_at = None
 track_manager = None
 shared_frame_mgr = None
 cpu_executor: ThreadPoolExecutor | None = None
+
+
+def _to_optional_text(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 
@@ -305,6 +321,7 @@ def api_customer_info():
             "id": customer_info["id"],
             "name": customer_info["name"],
             "phone": customer_info["phone"],
+            "note": customer_info["note"],
             "visit_count": customer_info["visit_count"],
             "last_visit": customer_info["last_visit"],
         }
@@ -338,6 +355,7 @@ def api_customers_overview():
                 "id": customer_id or f"T{track_id}",
                 "name": "Khach moi",
                 "phone": None,
+                "note": None,
                 "visit_count": 0,
                 "last_visit": None,
             }
@@ -350,6 +368,7 @@ def api_customers_overview():
                             "id": info["id"],
                             "name": info["name"] or "Khach moi",
                             "phone": info["phone"],
+                            "note": info["note"],
                             "visit_count": info["visit_count"],
                             "last_visit": info["last_visit"],
                         }
@@ -359,6 +378,77 @@ def api_customers_overview():
 
         status = "success" if any(item.get("detected") for item in customers) else "no_detection"
         return {"status": status, "customers": customers}
+    finally:
+        conn.close()
+
+
+@router.put("/api/customer_profile")
+async def api_customer_profile(request: Request):
+    payload = await request.json()
+
+    customer_id = str(payload.get("id") or "").strip()
+    name = _to_optional_text(payload.get("name"))
+    phone = _to_optional_text(payload.get("phone"))
+    note = _to_optional_text(payload.get("note"))
+
+    if not customer_id:
+        return {"success": False, "message": "id is required"}
+
+    conn = get_db_connection()
+    ensure_schema(conn)
+    try:
+        is_new_customer = customer_id.startswith("GUEST_") or customer_id.startswith("T")
+
+        if is_new_customer:
+            if not name:
+                return {"success": False, "message": "Name is required for new customer"}
+
+            now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            guest_info = get_customer_info(conn, customer_id)
+            visit_count = guest_info["visit_count"] if guest_info else 1
+            last_visit = guest_info["last_visit"] if guest_info else now_text
+
+            new_customer_id = get_next_customer_id(conn)
+            upsert_customer(
+                conn,
+                new_customer_id,
+                name,
+                phone,
+                note,
+                visit_count,
+                last_visit,
+            )
+
+            if customer_id.startswith("GUEST_"):
+                delete_customer(conn, customer_id)
+                if track_manager is not None:
+                    track_manager.promote_guest(customer_id, new_customer_id)
+
+            customer_info = get_customer_info(conn, new_customer_id)
+            return {
+                "success": True,
+                "message": "Customer created",
+                "previous_id": customer_id,
+                "new_id": new_customer_id,
+                "customer": customer_info,
+            }
+
+        current = get_customer_info(conn, customer_id)
+        if not current:
+            return {"success": False, "message": "Customer not found"}
+
+        updated_name = name if name is not None else current["name"]
+        if not updated_name:
+            return {"success": False, "message": "Name is required"}
+
+        update_customer_profile(conn, customer_id, updated_name, phone, note)
+        customer_info = get_customer_info(conn, customer_id)
+        return {
+            "success": True,
+            "message": "Customer updated",
+            "new_id": customer_id,
+            "customer": customer_info,
+        }
     finally:
         conn.close()
 

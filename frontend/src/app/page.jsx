@@ -9,6 +9,9 @@ export default function HomePage() {
     status,
     customers,
     error,
+    saveCustomerProfile,
+    saveState,
+    saveMessage,
   } = useCustomerDetection();
 
   return (
@@ -40,6 +43,9 @@ export default function HomePage() {
               status={status}
               customers={customers}
               error={error}
+              saveCustomerProfile={saveCustomerProfile}
+              saveState={saveState}
+              saveMessage={saveMessage}
             />
           </section>
         </div>

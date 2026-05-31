@@ -125,6 +125,8 @@ Then restart `npm run dev`.
 
 - `GET /video_feed`: MJPEG stream from the camera
 - `GET /api/customer_info`: current customer profile
+- `GET /api/customers_overview`: detected customer tiles for frontend panel
+- `PUT /api/customer_profile`: create/update name, phone, and note for a customer
 - `POST /api/check_in`: check-in the current customer
 
 ## Preparing customer photos
