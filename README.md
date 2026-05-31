@@ -9,7 +9,7 @@ A restaurant entrance camera system that recognizes and identifies customers in 
 - Real-time face detection and matching via embeddings
 - Customer profiles stored in SQLite
 - Decoupled React UI for future dashboards
-- Stable MJPEG stream for low-latency video
+- Browser webcam capture with backend frame analysis
 
 ## Model
 
@@ -113,7 +113,7 @@ npm run dev
 
 Frontend runs at `http://localhost:3000`.
 
-By default the frontend calls `http://localhost:8000`. To change it, create `frontend\.env.local`:
+By default the frontend calls `http://localhost:8000`. To change it for Vercel/EC2, create `frontend\.env.local`:
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
@@ -123,7 +123,7 @@ Then restart `npm run dev`.
 
 ## API endpoints
 
-- `GET /video_feed`: MJPEG stream from the camera
+- `POST /api/process_frame`: receive browser webcam frames for detection
 - `GET /api/customer_info`: current customer profile
 - `POST /api/check_in`: check-in the current customer
 
@@ -167,7 +167,7 @@ python -m app.utils.encodings
 
 ## Troubleshooting
 
-- **Cannot access camera**: Close other apps using the webcam
+- **Cannot access camera**: Camera access requires HTTPS or localhost; on Vercel the browser must allow camera permission
 - **No customer detected**: Run `python -m app.utils.encodings` to re-generate face embeddings
 - **Model error**: Run `python -m app.utils.download_models` to download all required models
 - **Face not detected in images**: Ensure images have clear, frontal faces; try different angles or ensure minimum 50×50 pixel face size

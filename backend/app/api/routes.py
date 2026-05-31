@@ -46,6 +46,84 @@ cpu_executor: ThreadPoolExecutor | None = None
 
 
 
+def _decode_frame_payload(image_data: str | None):
+    if not image_data:
+        return None
+
+    if "," in image_data:
+        _, image_data = image_data.split(",", 1)
+
+    try:
+        raw_bytes = base64.b64decode(image_data)
+    except Exception:
+        return None
+
+    image_array = np.frombuffer(raw_bytes, dtype=np.uint8)
+    return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+
+
+def _process_frame(frame):
+    global current_customer_id, current_customer_seen_at, shared_frame_mgr
+
+    if embedder is None or track_manager is None or frame is None:
+        return []
+
+    detections = _run_cpu_bound(embedder.detect, frame)
+    face_records = []
+    for bbox, landmark, score in zip(*detections):
+        x1, y1, x2, y2 = map(int, bbox)
+        quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+        embedding = None
+        if quality_ok:
+            embedding = _run_cpu_bound(embedder.get_embedding, frame, landmark)
+
+        face_records.append(
+            {
+                "bbox": (x1, y1, x2, y2),
+                "score": float(score),
+                "quality_ok": quality_ok,
+                "embedding": embedding,
+            }
+        )
+
+    tracked_faces = track_manager.process_faces(face_records)
+    annot_faces = []
+
+    for face in tracked_faces:
+        x1, y1, x2, y2 = face["bbox"]
+        quality_ok = face["quality_ok"]
+        customer_id = face["customer_id"]
+        track_id = face["track_id"]
+
+        if customer_id:
+            current_customer_id = customer_id
+            current_customer_seen_at = datetime.now()
+            color = (0, 255, 0)
+            label = str(customer_id)
+        elif quality_ok:
+            color = (255, 165, 0)
+            label = f"T{track_id} buffering"
+        else:
+            color = (0, 255, 255)
+            label = f"T{track_id} low quality"
+
+        annot_faces.append(
+            {
+                "bbox": (x1, y1, x2, y2),
+                "color": color,
+                "label": label,
+                "customer_id": customer_id,
+                "track_id": track_id,
+                "quality_ok": quality_ok,
+            }
+        )
+
+    if shared_frame_mgr is not None:
+        shared_frame_mgr.update_annotations(annot_faces, current_customer_id)
+
+    return annot_faces
+
+
 def _run_cpu_bound(func, *args, **kwargs):
     if cpu_executor is None:
         return func(*args, **kwargs)
@@ -76,57 +154,21 @@ def init_models(ai_executor: ThreadPoolExecutor | None = None):
         shared_frame_mgr = SharedFrameManager(FRAME_WIDTH, FRAME_HEIGHT, 3)
 
     def _ai_loop():
-        global current_customer_id, current_customer_seen_at
+        last_seen_version = -1
         while True:
             try:
-                if embedder is None or track_manager is None:
+                if embedder is None or track_manager is None or shared_frame_mgr is None:
                     time.sleep(0.1)
                     continue
 
+                frame_version = shared_frame_mgr.get_version()
+                if frame_version == last_seen_version:
+                    time.sleep(0.05)
+                    continue
+
                 frame = shared_frame_mgr.read_frame()
-                # run detection + tracking on the shared frame
-                detections = _run_cpu_bound(embedder.detect, frame)
-                face_records = []
-                for bbox, landmark, score in zip(*detections):
-                    x1, y1, x2, y2 = map(int, bbox)
-                    quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
-                    embedding = None
-                    if quality_ok:
-                        embedding = _run_cpu_bound(embedder.get_embedding, frame, landmark)
-
-                    face_records.append(
-                        {
-                            "bbox": (x1, y1, x2, y2),
-                            "score": float(score),
-                            "quality_ok": quality_ok,
-                            "embedding": embedding,
-                        }
-                    )
-
-                tracked_faces = track_manager.process_faces(face_records)
-
-                annot_faces = []
-                for face in tracked_faces:
-                    x1, y1, x2, y2 = face["bbox"]
-                    quality_ok = face["quality_ok"]
-                    customer_id = face["customer_id"]
-                    track_id = face["track_id"]
-
-                    if customer_id:
-                        current_customer_id = customer_id
-                        current_customer_seen_at = datetime.now()
-                        color = (0, 255, 0)
-                        label = str(customer_id)
-                    elif quality_ok:
-                        color = (255, 165, 0)
-                        label = f"T{track_id} buffering"
-                    else:
-                        color = (0, 255, 255)
-                        label = f"T{track_id} low quality"
-
-                    annot_faces.append({"bbox": (x1, y1, x2, y2), "color": color, "label": label, "customer_id": customer_id, "track_id": track_id, "quality_ok": quality_ok})
-
-                shared_frame_mgr.update_annotations(annot_faces, current_customer_id)
+                _process_frame(frame)
+                last_seen_version = frame_version
             except Exception:
                 # swallow errors in worker to keep thread alive
                 time.sleep(0.05)
@@ -330,6 +372,20 @@ def api_check_in():
         return {"success": False, "message": f"Error: {str(e)}"}
     finally:
         conn.close()
+
+
+@router.post("/api/process_frame")
+async def api_process_frame(request: Request):
+    payload = await request.json()
+    frame = _decode_frame_payload(payload.get("image"))
+
+    if frame is None:
+        return {"success": False, "message": "Invalid frame"}
+
+    if shared_frame_mgr is not None:
+        shared_frame_mgr.write_frame(frame)
+
+    return {"success": True}
 
 
 @router.post("/api/promote_guest")

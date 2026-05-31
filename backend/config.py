@@ -15,7 +15,7 @@ FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
 MEDIAPIPE_FACE_MESH_MODEL_SELECTION = 0
 
 SIMILARITY_THRESHOLD = 0.25
-MIN_FACE_BBOX_SIZE = 80
+MIN_FACE_BBOX_SIZE = 75
 MIN_DETECTION_SCORE = 0.75
 TRACK_BUFFER_SIZE = 3
 GUEST_CREATION_BUFFER_SIZE = 10
@@ -36,6 +36,8 @@ IMAGE_JPEG_QUALITY = 85
 CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://face-recognition-system-coral.vercel.app",
+    "https://face-recognition-system-f7s4lqogv-justin-ho-s-projects.vercel.app",
 ]
 
 

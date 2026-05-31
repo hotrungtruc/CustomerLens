@@ -17,6 +17,7 @@ class SharedFrameManager:
         # pre-allocated shared buffer
         self._buffer = np.zeros((height, width, channels), dtype=np.uint8)
         self._lock = threading.Lock()
+        self._version = 0
         # annotations small structure written by AI thread and read by streamer
         self._annotations = {"faces": [], "current_customer_id": None, "ts": 0}
 
@@ -33,14 +34,20 @@ class SharedFrameManager:
                     np.copyto(self._buffer, resized)
                 else:
                     np.copyto(self._buffer, frame)
+                self._version += 1
             except Exception:
                 # fallback: attempt best-effort copy
                 self._buffer[:, :, :] = frame[: self.height, : self.width, : self.channels]
+                self._version += 1
 
     def read_frame(self):
         """Return a view of the shared buffer (no copy)."""
         with self._lock:
             return self._buffer
+
+    def get_version(self):
+        with self._lock:
+            return self._version
 
     def update_annotations(self, faces, current_customer_id=None):
         with self._lock:
