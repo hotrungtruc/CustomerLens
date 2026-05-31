@@ -1,4 +1,3 @@
-import base64
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
@@ -23,8 +22,6 @@ from config import (
     FRAME_HEIGHT,
     FRAME_JPEG_QUALITY,
     FRAME_WIDTH,
-    IMAGES_DIR,
-    IMAGE_JPEG_QUALITY,
     MIN_DETECTION_SCORE,
     MIN_FACE_BBOX_SIZE,
     PROCESS_EVERY_N_FRAMES,
@@ -189,20 +186,6 @@ def __decode_encodings(payload):
     return [], []
 
 
-def load_customer_image_base64(customer_id):
-    for ext in (".png", ".jpg", ".jpeg"):
-        path = IMAGES_DIR / f"{customer_id}{ext}"
-        if path.exists():
-            img = cv2.imread(str(path))
-            if img is None:
-                continue
-            _, buffer = cv2.imencode(
-                ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, IMAGE_JPEG_QUALITY]
-            )
-            return base64.b64encode(buffer).decode()
-    return None
-
-
 def camera_feed():
     global current_customer_id, current_customer_seen_at, track_manager
 
@@ -316,8 +299,6 @@ def api_customer_info():
         if not customer_info:
             return {"status": "not_found"}
 
-        img_base64 = load_customer_image_base64(current_customer_id)
-
         return {
             "status": "success",
             "id": customer_info["id"],
@@ -325,7 +306,6 @@ def api_customer_info():
             "phone": customer_info["phone"],
             "visit_count": customer_info["visit_count"],
             "last_visit": customer_info["last_visit"],
-            "image": img_base64,
         }
     finally:
         conn.close()

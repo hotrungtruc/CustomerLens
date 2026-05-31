@@ -1,8 +1,8 @@
 import MessageBanner from "./MessageBanner";
 
 const emptyState = {
-  title: "Waiting for a face",
-  detail: "Customer details will appear after a successful match.",
+  title: "Khách mới",
+  detail: "Chưa có dữ liệu khách hàng.",
 };
 
 export default function CustomerInfoCard({
@@ -24,9 +24,19 @@ export default function CustomerInfoCard({
   return (
     <div className="flex h-full flex-col">
       <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl">Customer profile</h2>
-        <span className="text-xs uppercase tracking-[0.35em] text-ink/50">
-          {status === "success" ? "Detected" : "Waiting"}
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-copper/15 text-copper">
+            <span className="text-lg font-semibold">👤</span>
+          </div>
+          <div>
+            <h2 className="text-2xl">Khách mới</h2>
+            <p className="text-xs uppercase tracking-[0.3em] text-ink/45">
+              Thông tin khách hàng
+            </p>
+          </div>
+        </div>
+        <span className="rounded-full border border-copper/20 bg-copper/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.22em] text-copper">
+          {status === "success" ? "CHUẨN ĐK" : "CHƯA ĐK"}
         </span>
       </div>
 
@@ -36,26 +46,20 @@ export default function CustomerInfoCard({
 
       {hasCustomer ? (
         <div className="flex flex-1 flex-col gap-5">
-          {customer.image ? (
-            <img
-              src={`data:image/jpeg;base64,${customer.image}`}
-              alt={customer.name}
-              className="h-56 w-full rounded-2xl object-cover"
-            />
-          ) : (
-            <div className="flex h-56 items-center justify-center rounded-2xl border border-dashed border-ink/20 text-ink/50">
-              No photo available
-            </div>
-          )}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <StatBox label="Mã KH" value={customer.id} />
+            <StatBox label="Tên" value={customer.name} />
+            <StatBox label="SĐT" value={customer.phone} />
+            <StatBox label="Lần đến" value={customer.visit_count} />
+          </div>
 
-          <div className="rounded-2xl bg-ink px-5 py-4 text-sand">
-            <div className="grid gap-3 text-sm">
-              <InfoRow label="Name" value={customer.name} />
-              <InfoRow label="Customer ID" value={customer.id} />
-              <InfoRow label="Phone" value={customer.phone} />
-              <InfoRow label="Visit count" value={customer.visit_count} />
-              <InfoRow label="Last visit" value={customer.last_visit} />
-            </div>
+          <div className="rounded-2xl border border-dashed border-copper/25 bg-copper/5 px-5 py-4 text-sm text-ink/75">
+            <p className="mb-1 text-xs uppercase tracking-[0.3em] text-copper/70">
+              Ghi chú
+            </p>
+            <p className="leading-6">
+              Lần đến gần nhất: <span className="font-medium text-ink">{customer.last_visit}</span>
+            </p>
           </div>
 
           <button
@@ -75,20 +79,27 @@ export default function CustomerInfoCard({
           )}
         </div>
       ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-ink/10 bg-white/60 text-center text-ink/60">
-          <p className="text-lg font-medium">{emptyState.title}</p>
-          <p className="max-w-xs text-sm">{emptyState.detail}</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-copper/20 bg-white/70 p-8 text-center text-ink/60">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-copper/10 text-copper">
+            <span className="text-2xl">👤</span>
+          </div>
+          <p className="text-xl font-semibold text-ink">{emptyState.title}</p>
+          <p className="max-w-xs text-sm leading-6">{emptyState.detail}</p>
         </div>
       )}
     </div>
   );
 }
 
-function InfoRow({ label, value }) {
+function StatBox({ label, value }) {
   return (
-    <div className="flex items-start justify-between gap-6 border-b border-white/20 pb-2 last:border-b-0">
-      <span className="text-sand/70">{label}</span>
-      <span className="text-right text-sand">{value ?? "-"}</span>
+    <div className="rounded-2xl border border-black/5 bg-white px-4 py-4 shadow-[0_10px_25px_rgba(15,23,42,0.04)]">
+      <div className="mb-2 text-xs uppercase tracking-[0.24em] text-ink/45">
+        {label}
+      </div>
+      <div className="text-base font-semibold text-ink">
+        {value ?? "Chưa có"}
+      </div>
     </div>
   );
 }
