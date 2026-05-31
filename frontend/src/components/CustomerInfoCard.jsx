@@ -1,5 +1,6 @@
 import MessageBanner from "./MessageBanner";
 import { useEffect, useMemo, useState } from "react";
+import { putCustomerProfile } from "../services/api";
 
 const emptyState = {
   title: "Chua co khach duoc nhan dang",
@@ -10,15 +11,19 @@ export default function CustomerInfoCard({
   status,
   customers,
   error,
-  saveCustomerProfile,
-  saveState,
-  saveMessage,
+  refreshCustomers,
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedTileId, setSelectedTileId] = useState(null);
-  const [nameInput, setNameInput] = useState("");
-  const [phoneInput, setPhoneInput] = useState("");
-  const [noteInput, setNoteInput] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveVariant, setSaveVariant] = useState("success");
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    note: "",
+  });
   const hasCustomers = status === "success" && customers.length > 0;
 
   const selectedCustomer = useMemo(() => {
@@ -37,18 +42,15 @@ export default function CustomerInfoCard({
   };
 
   useEffect(() => {
-    if (!selectedCustomer) {
-      setNameInput("");
-      setPhoneInput("");
-      setNoteInput("");
+    if (!selectedCustomer || isEditing) {
       return;
     }
-
-    const normalizedName = selectedCustomer.name === "Khach moi" ? "" : (selectedCustomer.name || "");
-    setNameInput(normalizedName);
-    setPhoneInput(selectedCustomer.phone || "");
-    setNoteInput(selectedCustomer.note || "");
-  }, [selectedCustomer?.tile_id]);
+    setForm({
+      name: selectedCustomer.name || "",
+      phone: selectedCustomer.phone || "",
+      note: selectedCustomer.note || "",
+    });
+  }, [isEditing, selectedCustomer]);
 
   const rankLabel = (count) => {
     const value = Number(count || 0);
@@ -61,26 +63,76 @@ export default function CustomerInfoCard({
     return "Standard";
   };
 
-  const saveVariant =
-    saveState === "success"
-      ? "success"
-      : saveState === "error"
-        ? "error"
-        : "warning";
-
-  const isSaving = saveState === "loading";
-
-  const handleSaveProfile = async () => {
+  const onStartEdit = () => {
     if (!selectedCustomer) {
       return;
     }
-
-    await saveCustomerProfile({
-      id: selectedCustomer.id,
-      name: nameInput,
-      phone: phoneInput,
-      note: noteInput,
+    setSaveMessage("");
+    setForm({
+      name: selectedCustomer.name || "",
+      phone: selectedCustomer.phone || "",
+      note: selectedCustomer.note || "",
     });
+    setIsEditing(true);
+  };
+
+  const onCancelEdit = () => {
+    setIsEditing(false);
+    setSaveMessage("");
+    if (!selectedCustomer) {
+      return;
+    }
+    setForm({
+      name: selectedCustomer.name || "",
+      phone: selectedCustomer.phone || "",
+      note: selectedCustomer.note || "",
+    });
+  };
+
+  const onSaveProfile = async () => {
+    const trimmedName = (form.name || "").trim();
+    if (!trimmedName) {
+      setSaveVariant("warning");
+      setSaveMessage("Vui long nhap ten khach hang");
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage("");
+
+    try {
+      const response = await putCustomerProfile({
+        id: selectedCustomer?.id,
+        source_id: selectedCustomer?.id,
+        name: trimmedName,
+        phone: form.phone,
+        note: form.note,
+      });
+
+      if (!response.success) {
+        setSaveVariant("error");
+        setSaveMessage(response.message || "Khong the cap nhat khach hang");
+        return;
+      }
+
+      if (response.created) {
+        setSaveVariant("success");
+        setSaveMessage(`Da tao ma KH moi: ${response.customer.id}`);
+      } else {
+        setSaveVariant("success");
+        setSaveMessage("Da cap nhat thong tin khach hang");
+      }
+
+      setIsEditing(false);
+      if (refreshCustomers) {
+        await refreshCustomers();
+      }
+    } catch (saveError) {
+      setSaveVariant("error");
+      setSaveMessage("Khong the ket noi backend de luu thong tin");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -135,7 +187,6 @@ export default function CustomerInfoCard({
 
                   <div className="space-y-2 text-sm text-ink/75">
                     <TileRow label="Ma KH" value={item.id} />
-                    <TileRow label="SDT" value={item.phone} />
                     <TileRow label="Lan den" value={item.visit_count} />
                     <TileRow label="Hang" value={rankLabel(item.visit_count)} />
                   </div>
@@ -174,76 +225,77 @@ export default function CustomerInfoCard({
                 <h3 className="text-xl font-semibold text-ink">{selectedCustomer.name || "Khach moi"}</h3>
                 <p className="text-xs uppercase tracking-[0.2em] text-ink/45">Chi tiet khach duoc chon</p>
               </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                {selectedCustomer.detected ? "Nhan ra" : "Chua DK"}
-              </span>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <StatBox label="Ma KH" value={selectedCustomer.id} />
-              <StatBox label="Ten" value={selectedCustomer.name} />
-              <StatBox label="SDT" value={selectedCustomer.phone} />
-              <StatBox label="Note" value={selectedCustomer.note} />
-              <StatBox label="Lan den" value={selectedCustomer.visit_count} />
-              <StatBox label="Hang" value={rankLabel(selectedCustomer.visit_count)} />
-              <StatBox label="Lan cuoi" value={selectedCustomer.last_visit} />
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-black/5 bg-slate-50/70 p-4">
-              <p className="mb-3 text-xs uppercase tracking-[0.22em] text-ink/45">
-                Chinh sua thong tin khach
-              </p>
-              <div className="grid gap-3">
-                <label className="grid gap-1">
-                  <span className="text-xs uppercase tracking-[0.16em] text-ink/60">Ten</span>
-                  <input
-                    type="text"
-                    value={nameInput}
-                    onChange={(event) => setNameInput(event.target.value)}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
-                    placeholder="Nhap ten khach"
-                  />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-xs uppercase tracking-[0.16em] text-ink/60">So dien thoai</span>
-                  <input
-                    type="text"
-                    value={phoneInput}
-                    onChange={(event) => setPhoneInput(event.target.value)}
-                    className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
-                    placeholder="Nhap so dien thoai"
-                  />
-                </label>
-
-                <label className="grid gap-1">
-                  <span className="text-xs uppercase tracking-[0.16em] text-ink/60">Note</span>
-                  <textarea
-                    value={noteInput}
-                    onChange={(event) => setNoteInput(event.target.value)}
-                    className="min-h-[90px] rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
-                    placeholder="Thong tin bo sung ve khach"
-                  />
-                </label>
-
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleSaveProfile}
-                  disabled={isSaving}
-                  className="mt-1 rounded-xl bg-copper px-4 py-2 text-sm font-semibold text-white transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={onStartEdit}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 bg-white text-lg text-ink transition hover:bg-slate-50"
+                  title="Sua thong tin"
                 >
-                  {isSaving ? "Dang luu..." : "Luu thong tin"}
+                  ✎
                 </button>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  {selectedCustomer.detected ? "Nhan ra" : "Chua DK"}
+                </span>
               </div>
             </div>
 
-            {saveMessage && (
-              <MessageBanner
-                variant={saveVariant}
-                message={saveMessage}
-                className="mt-4"
-              />
+            {isEditing ? (
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <EditField
+                    label="Ten"
+                    value={form.name}
+                    onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
+                    placeholder="Nhap ten khach hang"
+                  />
+                  <EditField
+                    label="SDT"
+                    value={form.phone}
+                    onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
+                    placeholder="Nhap so dien thoai"
+                  />
+                </div>
+
+                <EditField
+                  label="Note"
+                  value={form.note}
+                  onChange={(value) => setForm((prev) => ({ ...prev, note: value }))}
+                  placeholder="Thong tin ghi chu ve khach"
+                  multiline
+                />
+
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={onSaveProfile}
+                    disabled={isSaving}
+                    className="rounded-xl bg-copper px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isSaving ? "Dang luu..." : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancelEdit}
+                    disabled={isSaving}
+                    className="rounded-xl border border-black/10 bg-white px-4 py-2 text-sm font-semibold text-ink transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <StatBox label="Ma KH" value={selectedCustomer.id} />
+                <StatBox label="Ten" value={selectedCustomer.name} />
+                <StatBox label="SDT" value={selectedCustomer.phone} />
+                <StatBox label="Note" value={selectedCustomer.note} />
+                <StatBox label="Lan den" value={selectedCustomer.visit_count} />
+                <StatBox label="Hang" value={rankLabel(selectedCustomer.visit_count)} />
+              </div>
             )}
+
+            {saveMessage ? <MessageBanner variant={saveVariant} message={saveMessage} className="mt-4" /> : null}
           </div>
         ) : null}
       </div>
@@ -270,5 +322,29 @@ function TileRow({ label, value }) {
       <span className="text-xs uppercase tracking-[0.18em] text-ink/50">{label}</span>
       <span className="font-semibold text-ink">{value ?? "-"}</span>
     </div>
+  );
+}
+
+function EditField({ label, value, onChange, placeholder, multiline = false }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-xs uppercase tracking-[0.2em] text-ink/45">{label}</span>
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          rows={3}
+          className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
+        />
+      ) : (
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
+        />
+      )}
+    </label>
   );
 }

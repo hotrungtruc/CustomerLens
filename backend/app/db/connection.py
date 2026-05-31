@@ -1,4 +1,5 @@
 import sqlite3
+import re
 from datetime import datetime
 
 from config import DB_PATH
@@ -43,7 +44,6 @@ def ensure_schema(conn):
     if {"id", "name", "phone", "visit_count", "last_visit"} <= existing_columns:
         if "note" not in existing_columns:
             conn.execute("ALTER TABLE customers ADD COLUMN note TEXT DEFAULT NULL")
-
         conn.execute("""
             UPDATE customers
             SET
@@ -71,9 +71,8 @@ def ensure_schema(conn):
     )
 
     legacy_columns = {row[1] for row in conn.execute("PRAGMA table_info(customers_legacy)").fetchall()}
-    note_projection = "NULLIF(note, '')" if "note" in legacy_columns else "NULL"
-
     if {"visit_count", "last_visit"} <= legacy_columns:
+        note_expr = "NULLIF(note, '')" if "note" in legacy_columns else "NULL"
         conn.execute(
             """
             INSERT INTO customers (id, name, phone, note, visit_count, last_visit)
@@ -82,7 +81,7 @@ def ensure_schema(conn):
                 NULLIF(name, ''),
                 NULLIF(phone, ''),
                 """
-            + note_projection
+            + note_expr
             +
             """,
                 COALESCE(visit_count, total_attendance, 1),
@@ -91,6 +90,7 @@ def ensure_schema(conn):
             """
         )
     else:
+        note_expr = "NULLIF(note, '')" if "note" in legacy_columns else "NULL"
         conn.execute(
             """
             INSERT INTO customers (id, name, phone, note, visit_count, last_visit)
@@ -99,7 +99,7 @@ def ensure_schema(conn):
                 NULLIF(name, ''),
                 NULL,
                 """
-            + note_projection
+            + note_expr
             +
             """,
                 COALESCE(total_attendance, 1),
@@ -123,42 +123,6 @@ def get_customer_info(conn, customer_id):
     )
     row = cursor.fetchone()
     return dict(row) if row else None
-
-
-def get_next_customer_id(conn, min_width=3):
-    rows = conn.execute("SELECT id FROM customers").fetchall()
-
-    max_value = 0
-    width = min_width
-    for row in rows:
-        customer_id = str(row[0])
-        if customer_id.isdigit():
-            max_value = max(max_value, int(customer_id))
-            width = max(width, len(customer_id))
-
-    return str(max_value + 1).zfill(width)
-
-
-def update_customer_profile(conn, customer_id, name, phone, note):
-    conn.execute(
-        """
-        UPDATE customers
-        SET name = ?, phone = ?, note = ?
-        WHERE id = ?
-        """,
-        (
-            name,
-            phone,
-            note,
-            customer_id,
-        ),
-    )
-    conn.commit()
-
-
-def delete_customer(conn, customer_id):
-    conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
-    conn.commit()
 
 
 def update_visit_record(conn, customer_id, visit_count, last_visit):
@@ -213,3 +177,55 @@ def insert_guest_record(conn, guest_id):
         1,
         now,
     )
+
+
+def get_next_customer_id(conn):
+    rows = conn.execute("SELECT id FROM customers").fetchall()
+    max_id = 0
+    for row in rows:
+        raw_id = str(row["id"])
+        if re.fullmatch(r"\d+", raw_id):
+            max_id = max(max_id, int(raw_id))
+    return f"{max_id + 1:03d}"
+
+
+def create_or_update_customer_profile(
+    conn,
+    *,
+    customer_id,
+    name,
+    phone,
+    note,
+):
+    name = (name or "").strip()
+    phone = (phone or "").strip() or None
+    note = (note or "").strip() or None
+
+    if not name:
+        raise ValueError("Name is required")
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    existing = get_customer_info(conn, customer_id) if customer_id else None
+    if existing:
+        conn.execute(
+            """
+            UPDATE customers
+            SET name = ?, phone = ?, note = ?
+            WHERE id = ?
+            """,
+            (name, phone, note, customer_id),
+        )
+        conn.commit()
+        return customer_id, False
+
+    new_id = get_next_customer_id(conn)
+    upsert_customer(
+        conn,
+        new_id,
+        name,
+        phone,
+        note,
+        1,
+        now,
+    )
+    return new_id, True

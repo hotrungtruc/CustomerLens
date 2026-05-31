@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchCustomersOverview, putCustomerProfile } from "../services/api";
+import { fetchCustomersOverview } from "../services/api";
 
 export function useCustomerDetection() {
   const [status, setStatus] = useState("idle");
   const [customers, setCustomers] = useState([]);
   const [error, setError] = useState("");
-  const [saveState, setSaveState] = useState("idle");
-  const [saveMessage, setSaveMessage] = useState("");
   const timerRef = useRef(null);
   const lastSuccessRef = useRef(0);
   const lastCustomersRef = useRef([]);
@@ -48,33 +46,10 @@ export function useCustomerDetection() {
     };
   }, [pollCustomers]);
 
-  const saveCustomerProfile = useCallback(async ({ id, name, phone, note }) => {
-    setSaveState("loading");
-    setSaveMessage("");
-
-    try {
-      const data = await putCustomerProfile({ id, name, phone, note });
-      setSaveState(data.success ? "success" : "warning");
-      setSaveMessage(data.message || "");
-
-      if (data.success) {
-        await pollCustomers();
-      }
-
-      return data;
-    } catch (err) {
-      setSaveState("error");
-      setSaveMessage("Unable to update customer profile");
-      return { success: false };
-    }
-  }, [pollCustomers]);
-
   return {
     status,
     customers,
     error,
-    saveCustomerProfile,
-    saveState,
-    saveMessage,
+    refreshCustomers: pollCustomers,
   };
 }
