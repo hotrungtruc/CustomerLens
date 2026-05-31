@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { API_BASE_URL } from "../services/api";
 
-const CAPTURE_INTERVAL_MS = 900;
+const CAPTURE_INTERVAL_MS = 350;
 const JPEG_QUALITY = 0.75;
+const MAX_UPLOAD_WIDTH = 640;
+const MAX_UPLOAD_HEIGHT = 360;
 
 export default function CameraStream() {
   const videoRef = useRef(null);
@@ -39,8 +41,16 @@ export default function CameraStream() {
     sendingRef.current = true;
 
     try {
-      const width = video.videoWidth || 640;
-      const height = video.videoHeight || 360;
+      const sourceWidth = video.videoWidth || 640;
+      const sourceHeight = video.videoHeight || 360;
+      const scale = Math.min(
+        1,
+        MAX_UPLOAD_WIDTH / sourceWidth,
+        MAX_UPLOAD_HEIGHT / sourceHeight
+      );
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+
       canvas.width = width;
       canvas.height = height;
       context.drawImage(video, 0, 0, width, height);

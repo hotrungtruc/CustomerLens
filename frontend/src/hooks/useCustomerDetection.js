@@ -39,7 +39,7 @@ export function useCustomerDetection() {
 
   useEffect(() => {
     pollCustomer();
-    timerRef.current = setInterval(pollCustomer, 500);
+    timerRef.current = setInterval(pollCustomer, 250);
 
     return () => {
       if (timerRef.current) {
