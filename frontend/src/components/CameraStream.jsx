@@ -13,8 +13,60 @@ export default function CameraStream() {
   const streamRef = useRef(null);
   const timerRef = useRef(null);
   const sendingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const [devices, setDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [status, setStatus] = useState("Requesting camera access...");
   const [error, setError] = useState("");
+
+  const sendFrame = async () => {
+    if (sendingRef.current) {
+      return;
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+
+    if (!video || !canvas || video.readyState < 2) {
+      return;
+    }
+
+    const context = canvas.getContext("2d", { willReadFrequently: false });
+    if (!context) {
+      return;
+    }
+
+    sendingRef.current = true;
+
+    try {
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 360;
+      canvas.width = width;
+      canvas.height = height;
+      context.drawImage(video, 0, 0, width, height);
+
+      const image = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+      await fetch(`${API_BASE_URL}/api/process_frame`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ image }),
+      });
+
+      if (mountedRef.current) {
+        setStatus("Camera live");
+        setError("");
+      }
+    } catch (fetchError) {
+      if (mountedRef.current) {
+        setStatus("Camera live, waiting for backend");
+        setError("Unable to send frames to backend");
+      }
+    } finally {
+      sendingRef.current = false;
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -31,56 +83,20 @@ export default function CameraStream() {
       }
     };
 
-    const sendFrame = async () => {
-      if (sendingRef.current) {
-        return;
+    const loadDevices = async () => {
+      const mediaDevices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = mediaDevices.filter((device) => device.kind === "videoinput");
+      if (cancelled) {
+        return [];
       }
 
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-
-      if (!video || !canvas || video.readyState < 2) {
-        return;
-      }
-
-      const context = canvas.getContext("2d", { willReadFrequently: false });
-      if (!context) {
-        return;
-      }
-
-      sendingRef.current = true;
-
-      try {
-        const width = video.videoWidth || 640;
-        const height = video.videoHeight || 360;
-        canvas.width = width;
-        canvas.height = height;
-        context.drawImage(video, 0, 0, width, height);
-
-        const image = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-        await fetch(`${API_BASE_URL}/api/process_frame`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ image }),
-        });
-
-        if (!cancelled) {
-          setStatus("Camera live");
-          setError("");
-        }
-      } catch (fetchError) {
-        if (!cancelled) {
-          setStatus("Camera live, waiting for backend");
-          setError("Unable to send frames to backend");
-        }
-      } finally {
-        sendingRef.current = false;
-      }
+      setDevices(videoDevices);
+      return videoDevices;
     };
 
-    const startCamera = async () => {
+    const startCamera = async (deviceId = "") => {
+      stopStream();
+
       try {
         if (
           !window.isSecureContext &&
@@ -95,9 +111,13 @@ export default function CameraStream() {
         }
 
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-          },
+          video: deviceId
+            ? {
+                deviceId: { exact: deviceId },
+              }
+            : {
+                facingMode: "user",
+              },
           audio: false,
         });
 
@@ -112,6 +132,11 @@ export default function CameraStream() {
         if (video) {
           video.srcObject = stream;
           await video.play();
+        }
+
+        const discoveredDevices = await loadDevices();
+        if (!deviceId && discoveredDevices.length > 0 && !selectedDeviceId) {
+          setSelectedDeviceId(discoveredDevices[0].deviceId);
         }
 
         setStatus("Camera live");
@@ -134,13 +159,104 @@ export default function CameraStream() {
     return () => {
       cancelled = true;
       stopStream();
+      mountedRef.current = false;
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedDeviceId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const restartCamera = async () => {
+      try {
+        if (cancelled) {
+          return;
+        }
+
+        setStatus("Switching camera...");
+        setError("");
+
+        const mediaDevices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = mediaDevices.filter((device) => device.kind === "videoinput");
+        if (!cancelled) {
+          setDevices(videoDevices);
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: selectedDeviceId },
+          },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+        }
+
+        if (timerRef.current) {
+          window.clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+
+        streamRef.current = stream;
+
+        const video = videoRef.current;
+        if (video) {
+          video.srcObject = stream;
+          await video.play();
+        }
+
+        setStatus("Camera live");
+        timerRef.current = window.setInterval(sendFrame, CAPTURE_INTERVAL_MS);
+      } catch (cameraError) {
+        if (!cancelled) {
+          setStatus("Camera unavailable");
+          setError(
+            cameraError instanceof Error
+              ? cameraError.message
+              : "Unable to access camera"
+          );
+        }
+      }
+    };
+
+    restartCamera();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDeviceId]);
+
+  const handleCameraChange = (event) => {
+    setSelectedDeviceId(event.target.value);
+  };
+
   return (
     <div className="mt-6 overflow-hidden rounded-2xl border border-black/5 bg-ink/95">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-sm text-sand/80">
-        <span>{status}</span>
+      <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 text-sm text-sand/80 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:gap-3">
+          <span>{status}</span>
+          <select
+            value={selectedDeviceId}
+            onChange={handleCameraChange}
+            className="min-w-[240px] rounded-xl border border-white/10 bg-sand px-3 py-2 text-sm text-ink outline-none transition focus:border-copper"
+          >
+            <option value="">Default camera</option>
+            {devices.map((device, index) => (
+              <option key={device.deviceId} value={device.deviceId}>
+                {device.label || `Camera ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
         <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.25em] text-sand/70">
           Browser cam
         </span>
