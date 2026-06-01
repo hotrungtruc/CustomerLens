@@ -34,6 +34,7 @@ export default function CustomerInfoCard({
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [selectedTileId, setSelectedTileId] = useState(null);
+  const [frozenCustomer, setFrozenCustomer] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
@@ -45,20 +46,46 @@ export default function CustomerInfoCard({
   });
   const hasCustomers = status === "success" && customers.length > 0;
 
-  const selectedCustomer = useMemo(() => {
+  const liveSelectedCustomer = useMemo(() => {
     if (!customers.length) {
       return null;
     }
     if (!selectedTileId) {
       return customers[0];
     }
-    return customers.find((item) => item.tile_id === selectedTileId) || customers[0];
+    return customers.find((item) => item.tile_id === selectedTileId) || null;
   }, [customers, selectedTileId]);
 
+  const selectedCustomer = useMemo(() => {
+    if (frozenCustomer) {
+      return frozenCustomer;
+    }
+    if (liveSelectedCustomer) {
+      return liveSelectedCustomer;
+    }
+    if (!customers.length) {
+      return null;
+    }
+    return customers[0];
+  }, [customers, frozenCustomer, liveSelectedCustomer]);
+
   const openDetail = (tileId) => {
+    const nextCustomer = customers.find((item) => item.tile_id === tileId) || null;
     setSelectedTileId(tileId);
+    setFrozenCustomer(nextCustomer);
     setIsExpanded(true);
   };
+
+  useEffect(() => {
+    if (liveSelectedCustomer) {
+      setFrozenCustomer(liveSelectedCustomer);
+      return;
+    }
+
+    if (!selectedTileId) {
+      setFrozenCustomer(null);
+    }
+  }, [liveSelectedCustomer, selectedTileId]);
 
   useEffect(() => {
     if (!selectedCustomer || isEditing) {
