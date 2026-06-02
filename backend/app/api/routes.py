@@ -13,11 +13,11 @@ from app.utils.shared_frame import SharedFrameManager
 from app.core.insight_embedding import InsightEmbedder, cosine_similarities
 from app.core.guest_tracking import GuestTrackManager
 from app.db.connection import (
+    create_or_update_customer_profile,
     ensure_schema,
     get_customer_info,
     get_db_connection,
-    update_visit_record,
-    create_or_update_customer_profile,
+    update_attendance,
 )
 from config import (
     CAMERA_INDEX,
@@ -29,6 +29,8 @@ from config import (
     FRAME_HEIGHT,
     FRAME_JPEG_QUALITY,
     FRAME_WIDTH,
+    IMAGES_DIR,
+    IMAGE_JPEG_QUALITY,
     MIN_DETECTION_SCORE,
     MIN_FACE_BBOX_SIZE,
     PROCESS_EVERY_N_FRAMES,
@@ -193,6 +195,20 @@ def __decode_encodings(payload):
     return [], []
 
 
+def load_customer_image_base64(customer_id):
+    for ext in (".png", ".jpg", ".jpeg"):
+        path = IMAGES_DIR / f"{customer_id}{ext}"
+        if path.exists():
+            img = cv2.imread(str(path))
+            if img is None:
+                continue
+            _, buffer = cv2.imencode(
+                ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, IMAGE_JPEG_QUALITY]
+            )
+            return base64.b64encode(buffer).decode()
+    return None
+
+
 def camera_feed():
     global current_customer_id, current_customer_seen_at, track_manager
 
@@ -306,14 +322,41 @@ def api_customer_info():
         if not customer_info:
             return {"status": "not_found"}
 
+        img_base64 = load_customer_image_base64(current_customer_id)
+
         return {
             "status": "success",
-            "id": customer_info["id"],
+            "id": customer_info["customer_id"],
             "name": customer_info["name"],
-            "phone": customer_info["phone"],
-            "note": customer_info["note"],
-            "visit_count": customer_info["visit_count"],
-            "last_visit": customer_info["last_visit"],
+            "phone": customer_info.get("phone"),
+            "email": customer_info.get("email"),
+            "occupation": customer_info.get("occupation"),
+            "registered_at": customer_info.get("registered_at"),
+            "tenure": customer_info.get("tenure"),
+            "loyalty_tier": customer_info.get("loyalty_tier"),
+            "total_visits": customer_info.get("total_visits", 0),
+            "last_visit": customer_info.get("last_visit"),
+            "total_spending": customer_info.get("total_spending", 0),
+            "service_category": customer_info["service_category"],
+            "service_start_year": customer_info["service_start_year"],
+            "customer_tenure_years": customer_info["customer_tenure_years"],
+            "loyalty_tier": customer_info["loyalty_tier"],
+            "customer_type": customer_info["customer_type"],
+            "customer_status": customer_info["status"],
+            "has_face_embedding": customer_info.get("has_face_embedding"),
+            "face_embedding_dim": customer_info.get("face_embedding_dim"),
+            "face_embedding_model": customer_info.get("face_embedding_model"),
+            "major": customer_info["major"],
+            "year": customer_info["year"],
+            "starting_year": customer_info["starting_year"],
+            "total_attendance": customer_info["total_attendance"],
+            "visit_count": customer_info["total_attendance"],
+            "phone": customer_info.get("phone"),
+            "note": customer_info.get("note"),
+            "standing": customer_info["standing"],
+            "last_attendance_time": customer_info["last_attendance_time"],
+            "last_visit": customer_info["last_attendance_time"],
+            "image": img_base64,
         }
     finally:
         conn.close()
@@ -353,9 +396,32 @@ def api_customers_overview():
                 "detected": bool(customer_id),
                 "id": customer_id or f"T{track_id}",
                 "name": "Khach moi",
+                "email": None,
+                "occupation": "General",
+                "registered_at": None,
+                "tenure": 0,
+                "loyalty_tier": "Standard",
+                "total_visits": 0,
+                "last_visit": None,
+                "total_spending": 0,
+                "service_category": "General",
+                "service_start_year": 0,
+                "customer_tenure_years": 0,
+                "loyalty_tier": "Standard",
+                "customer_type": "guest",
+                "customer_status": "temporary",
+                "has_face_embedding": 0,
+                "face_embedding_dim": None,
+                "face_embedding_model": None,
+                "major": "General",
+                "year": 0,
+                "starting_year": 0,
+                "total_attendance": 0,
+                "visit_count": 0,
                 "phone": None,
                 "note": None,
-                "visit_count": 0,
+                "standing": "G",
+                "last_attendance_time": None,
                 "last_visit": None,
             }
 
@@ -364,12 +430,35 @@ def api_customers_overview():
                 if info:
                     base_payload.update(
                         {
-                            "id": info["id"],
+                            "id": info["customer_id"],
                             "name": info["name"] or "Khach moi",
-                            "phone": info["phone"],
-                            "note": info["note"],
-                            "visit_count": info["visit_count"],
-                            "last_visit": info["last_visit"],
+                            "email": info.get("email"),
+                            "occupation": info.get("occupation", "General"),
+                            "registered_at": info.get("registered_at"),
+                            "tenure": info.get("tenure", 0),
+                            "loyalty_tier": info.get("loyalty_tier", "Standard"),
+                            "total_visits": info.get("total_visits", 0),
+                            "last_visit": info.get("last_visit"),
+                            "total_spending": info.get("total_spending", 0),
+                            "service_category": info.get("service_category", "General"),
+                            "service_start_year": info.get("service_start_year", 0),
+                            "customer_tenure_years": info.get("customer_tenure_years", 0),
+                            "loyalty_tier": info.get("loyalty_tier", "Standard"),
+                            "customer_type": info.get("customer_type", "guest"),
+                            "customer_status": info.get("status", "active"),
+                            "has_face_embedding": info.get("has_face_embedding"),
+                            "face_embedding_dim": info.get("face_embedding_dim"),
+                            "face_embedding_model": info.get("face_embedding_model"),
+                            "major": info.get("major", "General"),
+                            "year": info.get("year", 0),
+                            "starting_year": info.get("starting_year", 0),
+                            "total_attendance": info.get("total_attendance", 0),
+                            "visit_count": info.get("total_attendance", 0),
+                            "phone": info.get("phone"),
+                            "note": info.get("note"),
+                            "standing": info.get("standing", "G"),
+                            "last_attendance_time": info.get("last_attendance_time"),
+                            "last_visit": info.get("last_attendance_time"),
                         }
                     )
 
@@ -393,6 +482,10 @@ async def api_customer_profile(request: Request):
     name = payload.get("name")
     phone = payload.get("phone")
     note = payload.get("note")
+    service_category = payload.get("service_category")
+    service_start_year = payload.get("service_start_year")
+    customer_tenure_years = payload.get("customer_tenure_years")
+    loyalty_tier = payload.get("loyalty_tier")
 
     conn = get_db_connection()
     ensure_schema(conn)
@@ -406,9 +499,14 @@ async def api_customer_profile(request: Request):
             final_id, created = create_or_update_customer_profile(
                 conn,
                 customer_id=writable_id,
+                source_id=source_id,
                 name=name,
                 phone=phone,
                 note=note,
+                service_category=service_category,
+                service_start_year=service_start_year,
+                customer_tenure_years=customer_tenure_years,
+                loyalty_tier=loyalty_tier,
             )
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
@@ -424,12 +522,32 @@ async def api_customer_profile(request: Request):
             "success": True,
             "created": created,
             "customer": {
-                "id": customer_info["id"],
+                "id": customer_info["customer_id"],
+                "customer_id": customer_info["customer_id"],
                 "name": customer_info["name"],
-                "phone": customer_info["phone"],
-                "note": customer_info["note"],
-                "visit_count": customer_info["visit_count"],
-                "last_visit": customer_info["last_visit"],
+                "phone": customer_info.get("phone"),
+                "email": customer_info.get("email"),
+                "occupation": customer_info.get("occupation"),
+                "registered_at": customer_info.get("registered_at"),
+                "tenure": customer_info.get("tenure"),
+                "loyalty_tier": customer_info.get("loyalty_tier"),
+                "total_visits": customer_info.get("total_visits", 0),
+                "last_visit": customer_info.get("last_visit"),
+                "total_spending": customer_info.get("total_spending", 0),
+                "note": customer_info.get("note"),
+                "service_category": customer_info.get("service_category"),
+                "service_start_year": customer_info.get("service_start_year"),
+                "customer_tenure_years": customer_info.get("customer_tenure_years"),
+                "loyalty_tier": customer_info.get("loyalty_tier"),
+                "customer_type": customer_info.get("customer_type"),
+                "customer_status": customer_info.get("status"),
+                "has_face_embedding": customer_info.get("has_face_embedding"),
+                "face_embedding_dim": customer_info.get("face_embedding_dim"),
+                "face_embedding_model": customer_info.get("face_embedding_model"),
+                "visit_count": customer_info.get("total_attendance", 0),
+                "last_visit": customer_info.get("last_attendance_time"),
+                "total_attendance": customer_info.get("total_attendance", 0),
+                "last_attendance_time": customer_info.get("last_attendance_time"),
             },
         }
     finally:
@@ -452,7 +570,7 @@ def api_check_in():
 
         try:
             last_time = datetime.strptime(
-                customer_info["last_visit"], "%Y-%m-%d %H:%M:%S"
+                customer_info["last_attendance_time"], "%Y-%m-%d %H:%M:%S"
             )
         except (TypeError, ValueError):
             last_time = datetime.min
@@ -460,10 +578,10 @@ def api_check_in():
         seconds_elapsed = (datetime.now() - last_time).total_seconds()
 
         if seconds_elapsed > CHECKIN_COOLDOWN_SECONDS:
-            update_visit_record(
+            update_attendance(
                 conn,
                 current_customer_id,
-                customer_info["visit_count"] + 1,
+                customer_info["total_attendance"] + 1,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             return {"success": True, "message": "Check-in successful"}
@@ -489,7 +607,7 @@ def api_check_in_by_id(customer_id: str):
 
         try:
             last_time = datetime.strptime(
-                customer_info["last_visit"], "%Y-%m-%d %H:%M:%S"
+                customer_info["last_attendance_time"], "%Y-%m-%d %H:%M:%S"
             )
         except (TypeError, ValueError):
             last_time = datetime.min
@@ -497,10 +615,10 @@ def api_check_in_by_id(customer_id: str):
         seconds_elapsed = (datetime.now() - last_time).total_seconds()
 
         if seconds_elapsed > CHECKIN_COOLDOWN_SECONDS:
-            update_visit_record(
+            update_attendance(
                 conn,
                 customer_id,
-                customer_info["visit_count"] + 1,
+                customer_info["total_attendance"] + 1,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
             return {"success": True, "message": "Check-in successful"}

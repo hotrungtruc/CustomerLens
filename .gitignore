@@ -60,3 +60,10 @@ Thumbs.db
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
+
+# Local manual backups
+local_backups/
+
+# Local dev server logs
+backend_server*.log
+frontend_server*.log
