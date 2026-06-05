@@ -385,12 +385,12 @@ def api_customers_overview():
 
     customers = []
     try:
-        for idx, face in enumerate(faces):
+        for face in faces:
             customer_id = face.get("customer_id")
             track_id = face.get("track_id")
 
             base_payload = {
-                "tile_id": f"tile_{track_id}_{idx}",
+                "tile_id": f"tile_{track_id}",
                 "track_id": track_id,
                 "bbox": face.get("bbox"),
                 "detected": bool(customer_id),
@@ -465,6 +465,9 @@ def api_customers_overview():
             customers.append(base_payload)
 
         status = "success" if any(item.get("detected") for item in customers) else "no_detection"
+        
+        customers.sort(key=lambda c: c.get("track_id") or 0)
+        
         return {
             "status": status,
             "customers": customers,
