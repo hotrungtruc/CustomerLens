@@ -153,7 +153,7 @@ class InsightEmbedder:
             quality_ok = self.is_quality_ok(box, score)
             if not quality_ok:
                 continue
-
+                
             guest_quality_ok = self.is_guest_quality_ok(box, score, landmark)
 
             embedding = self.get_embedding(image_bgr, landmark)
@@ -179,17 +179,21 @@ class InsightEmbedder:
         return width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
 
     def is_guest_quality_ok(self, bbox, score, landmarks):
+        if not self.is_quality_ok(bbox, score):
+            return False
+            
         left, top, right, bottom = map(int, bbox)
         width = max(0, right - left)
         height = max(0, bottom - top)
         
         if width < GUEST_MIN_FACE_BBOX_SIZE or height < GUEST_MIN_FACE_BBOX_SIZE:
             return False
+            
         if float(score) < GUEST_MIN_DETECTION_SCORE:
             return False
             
-        # Check if face is frontal using distance between left and right eye (landmarks 0 and 1)
-        if landmarks is not None and len(landmarks) >= 2 and width > 0:
+        # Check if frontal face based on eye distance
+        if landmarks is not None and len(landmarks) >= 2:
             left_eye = landmarks[0]
             right_eye = landmarks[1]
             eye_dist = np.linalg.norm(left_eye - right_eye)

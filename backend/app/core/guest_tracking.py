@@ -305,10 +305,8 @@ class GuestTrackManager:
 
                 if resolved_customer_id is None and len(track_state.guest_embeddings) >= self.guest_creation_buffer_size:
                     known_similarity = 0.0
-                    avg_guest_embedding = normalize_embedding(np.mean(track_state.guest_embeddings[-self.guest_creation_buffer_size:], axis=0))
-                    
                     if self.known_embeddings:
-                        known_scores = cosine_similarities(self.known_embeddings, avg_guest_embedding)
+                        known_scores = cosine_similarities(self.known_embeddings, avg_embedding)
                         if known_scores.size > 0:
                             known_similarity = float(np.max(known_scores))
 
@@ -318,7 +316,7 @@ class GuestTrackManager:
                     elif known_similarity >= NEW_GUEST_DEBOUNCE_SIMILARITY:
                         resolved_customer_id = None
                     else:
-                        resolved_customer_id = self._register_guest(avg_guest_embedding, track_state)
+                        resolved_customer_id = self._register_guest(avg_embedding, track_state)
 
                 if resolved_customer_id is None and not str(existing_customer_id).startswith("GUEST_"):
                     # Keep waiting for more evidence instead of minting a guest too early.
