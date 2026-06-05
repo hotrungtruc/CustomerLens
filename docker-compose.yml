@@ -1,0 +1,30 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: faceai_backend
+    restart: unless-stopped
+    ports:
+      # Bind only to localhost so Nginx is the only entry point
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Persistent data outside the container - survives rebuilds
+      - /srv/faceai/models:/app/models:ro
+      - /srv/faceai/data:/app/data
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Limit memory to prevent OOM kills on T3.micro
+    mem_limit: 600m
+    mem_reservation: 300m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

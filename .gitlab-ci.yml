@@ -1,0 +1,35 @@
+stages:
+  - deploy
+
+deploy_production:
+  stage: deploy
+  # Only run on pushes to the main branch
+  only:
+    - main
+  # Use the Docker executor or shell runner on GitLab's shared runners
+  # We SSH into EC2 directly - no container registry needed
+  before_script:
+    - which ssh-agent || (apt-get update -y && apt-get install openssh-client -y)
+    - eval $(ssh-agent -s)
+    - echo "$EC2_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+  script:
+    - echo "=== Deploying to EC2 ==="
+    - |
+      ssh -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" << 'ENDSSH'
+        set -e
+        echo "--- Pulling latest code ---"
+        cd /home/ubuntu/face-recognition-system
+        git pull origin main
+
+        echo "--- Rebuilding and restarting container ---"
+        sudo docker compose down --timeout 30
+        sudo docker compose up --build -d
+        sudo docker image prune -f
+
+        echo "--- Waiting for health check ---"
+        sleep 15
+        sudo docker compose ps
+        echo "=== Deploy successful ==="
+      ENDSSH
