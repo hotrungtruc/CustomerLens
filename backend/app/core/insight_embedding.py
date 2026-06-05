@@ -176,7 +176,11 @@ class InsightEmbedder:
         left, top, right, bottom = map(int, bbox)
         width = max(0, right - left)
         height = max(0, bottom - top)
-        return width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
+        # Use lower minimum sizes for better detection compatibility
+        # MediaPipe and OpenCV can detect smaller faces, and we validate quality through embedding
+        min_size = 50  # Lower threshold for all detection methods
+        min_score = 0.3  # Lower score threshold - embeddings themselves provide quality validation
+        return width >= min_size and height >= min_size and float(score) >= min_score
 
     def is_guest_quality_ok(self, bbox, score, landmarks):
         if not self.is_quality_ok(bbox, score):
@@ -219,6 +223,9 @@ class InsightEmbedder:
 
         # We compute pupil centers by averaging eye contours for better ArcFace alignment
         # lm5 mapping: [Left Pupil, Right Pupil, Nose, Left Mouth, Right Mouth]
+        
+        # Common 5-point indices that map well onto face landmarker outputs
+        lm5_idx = [33, 263, 1, 61, 291]
 
         if getattr(self, "_use_opencv", False):
             # Use OpenCV Haar Cascade for face detection
@@ -240,8 +247,6 @@ class InsightEmbedder:
                 ], dtype=np.float32)
                 landmarks_all.append(lm5)
                 scores.append(0.8)  # Arbitrary confidence score
-
-            return np.asarray(boxes, dtype=np.float32), np.asarray(landmarks_all, dtype=np.float32), np.asarray(scores, dtype=np.float32)
         elif getattr(self, "_mediapipe_tasks", False):
             # Use MediaPipe Tasks FaceLandmarker
             # Build a mediapipe Image from numpy array
@@ -268,17 +273,13 @@ class InsightEmbedder:
                 boxes.append([x_min, y_min, x_max, y_max])
 
                 try:
-                    left_eye = np.mean(pts[[33, 133, 159, 145]], axis=0)
-                    right_eye = np.mean(pts[[362, 263, 386, 374]], axis=0)
-                    lm5 = np.array([left_eye, right_eye, pts[1], pts[61], pts[291]], dtype=np.float32)
+                    lm5 = pts[lm5_idx]
                 except Exception:
                     indices = np.linspace(0, pts.shape[0] - 1, 5, dtype=int)
                     lm5 = pts[indices]
 
                 landmarks_all.append(lm5)
                 scores.append(1.0)
-
-            return np.asarray(boxes, dtype=np.float32), np.asarray(landmarks_all, dtype=np.float32), np.asarray(scores, dtype=np.float32)
         else:
             # Fallback to solutions FaceMesh
             results = self.face_mesh.process(rgb)
@@ -300,9 +301,7 @@ class InsightEmbedder:
                 boxes.append([x_min, y_min, x_max, y_max])
 
                 try:
-                    left_eye = np.mean(pts[[33, 133, 159, 145]], axis=0)
-                    right_eye = np.mean(pts[[362, 263, 386, 374]], axis=0)
-                    lm5 = np.array([left_eye, right_eye, pts[1], pts[61], pts[291]], dtype=np.float32)
+                    lm5 = pts[lm5_idx]
                 except Exception:
                     indices = np.linspace(0, pts.shape[0] - 1, 5, dtype=int)
                     lm5 = pts[indices]
@@ -310,7 +309,17 @@ class InsightEmbedder:
                 landmarks_all.append(lm5)
                 scores.append(1.0)
 
-            return np.asarray(boxes, dtype=np.float32), np.asarray(landmarks_all, dtype=np.float32), np.asarray(scores, dtype=np.float32)
+        boxes_arr = np.asarray(boxes, dtype=np.float32)
+        landmarks_arr = np.asarray(landmarks_all, dtype=np.float32)
+        scores_arr = np.asarray(scores, dtype=np.float32)
+
+        if len(boxes_arr) > 0:
+            keep = nms(boxes_arr, scores_arr, threshold=0.4)
+            boxes_arr = boxes_arr[keep]
+            landmarks_arr = landmarks_arr[keep]
+            scores_arr = scores_arr[keep]
+
+        return boxes_arr, landmarks_arr, scores_arr
 
     def get_embedding(self, image_bgr, landmarks):
         matrix, _ = cv2.estimateAffinePartial2D(
