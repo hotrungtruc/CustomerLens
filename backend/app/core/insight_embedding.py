@@ -13,6 +13,8 @@ from config import (
     RECOGNIZER_PATH,
     RECOGNIZER_FLOAT_PATH,
     SIMILARITY_THRESHOLD,
+    GUEST_MIN_DETECTION_SCORE,
+    GUEST_MIN_FACE_BBOX_SIZE,
 )
 
 try:
@@ -152,6 +154,8 @@ class InsightEmbedder:
             if not quality_ok:
                 continue
 
+            guest_quality_ok = self.is_guest_quality_ok(box, score, landmark)
+
             embedding = self.get_embedding(image_bgr, landmark)
             if embedding is None:
                 continue
@@ -162,6 +166,7 @@ class InsightEmbedder:
                     "landmark": landmark,
                     "score": float(score),
                     "quality_ok": quality_ok,
+                    "guest_quality_ok": guest_quality_ok,
                     "embedding": embedding,
                 }
             )
@@ -172,6 +177,26 @@ class InsightEmbedder:
         width = max(0, right - left)
         height = max(0, bottom - top)
         return width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
+
+    def is_guest_quality_ok(self, bbox, score, landmarks):
+        left, top, right, bottom = map(int, bbox)
+        width = max(0, right - left)
+        height = max(0, bottom - top)
+        
+        if width < GUEST_MIN_FACE_BBOX_SIZE or height < GUEST_MIN_FACE_BBOX_SIZE:
+            return False
+        if float(score) < GUEST_MIN_DETECTION_SCORE:
+            return False
+            
+        # Check if face is frontal using distance between left and right eye (landmarks 0 and 1)
+        if landmarks is not None and len(landmarks) >= 2 and width > 0:
+            left_eye = landmarks[0]
+            right_eye = landmarks[1]
+            eye_dist = np.linalg.norm(left_eye - right_eye)
+            if eye_dist / width < 0.35:
+                return False
+                
+        return True
 
     def detect(self, image_bgr, scale=1.0):
         # Use MediaPipe FaceMesh to detect faces and extract 5-point landmarks

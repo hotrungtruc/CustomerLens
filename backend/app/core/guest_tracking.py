@@ -55,6 +55,7 @@ class TrackState:
     track_id: int
     bbox: tuple
     embeddings: list = field(default_factory=list)
+    guest_embeddings: list = field(default_factory=list)
     resolved_customer_id: str | None = None
     last_seen_frame: int = 0
     first_seen_frame: int = 0
@@ -254,6 +255,7 @@ class GuestTrackManager:
             track_state.last_seen_at = now
 
             quality_ok = bool(record.get("quality_ok", True))
+            guest_quality_ok = bool(record.get("guest_quality_ok", False))
             embedding = record.get("embedding")
             existing_customer_id = track_state.resolved_customer_id
 
@@ -270,7 +272,10 @@ class GuestTrackManager:
                 continue
 
             if quality_ok and embedding is not None:
-                track_state.embeddings.append(normalize_embedding(embedding))
+                norm_emb = normalize_embedding(embedding)
+                track_state.embeddings.append(norm_emb)
+                if guest_quality_ok:
+                    track_state.guest_embeddings.append(norm_emb)
 
             resolved_customer_id = existing_customer_id if existing_customer_id else None
             if len(track_state.embeddings) >= self.buffer_size:
@@ -298,10 +303,12 @@ class GuestTrackManager:
                                 guest_idx = best_index - len(self.known_embeddings)
                                 resolved_customer_id = self.guest_ids[guest_idx]
 
-                if resolved_customer_id is None and len(track_state.embeddings) >= self.guest_creation_buffer_size:
+                if resolved_customer_id is None and len(track_state.guest_embeddings) >= self.guest_creation_buffer_size:
                     known_similarity = 0.0
+                    avg_guest_embedding = normalize_embedding(np.mean(track_state.guest_embeddings[-self.guest_creation_buffer_size:], axis=0))
+                    
                     if self.known_embeddings:
-                        known_scores = cosine_similarities(self.known_embeddings, avg_embedding)
+                        known_scores = cosine_similarities(self.known_embeddings, avg_guest_embedding)
                         if known_scores.size > 0:
                             known_similarity = float(np.max(known_scores))
 
@@ -311,7 +318,7 @@ class GuestTrackManager:
                     elif known_similarity >= NEW_GUEST_DEBOUNCE_SIMILARITY:
                         resolved_customer_id = None
                     else:
-                        resolved_customer_id = self._register_guest(avg_embedding, track_state)
+                        resolved_customer_id = self._register_guest(avg_guest_embedding, track_state)
 
                 if resolved_customer_id is None and not str(existing_customer_id).startswith("GUEST_"):
                     # Keep waiting for more evidence instead of minting a guest too early.
@@ -328,7 +335,7 @@ class GuestTrackManager:
                     "bbox": bbox,
                     "embedding_ready": len(track_state.embeddings) >= self.buffer_size,
                     "quality_ok": quality_ok,
-                    "pending_guest": resolved_customer_id is None and len(track_state.embeddings) < self.guest_creation_buffer_size,
+                    "pending_guest": resolved_customer_id is None and len(track_state.guest_embeddings) < self.guest_creation_buffer_size,
                 }
             )
 
