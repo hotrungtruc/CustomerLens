@@ -171,11 +171,7 @@ class InsightEmbedder:
         left, top, right, bottom = map(int, bbox)
         width = max(0, right - left)
         height = max(0, bottom - top)
-        # Use lower minimum sizes for better detection compatibility
-        # MediaPipe and OpenCV can detect smaller faces, and we validate quality through embedding
-        min_size = 50  # Lower threshold for all detection methods
-        min_score = 0.3  # Lower score threshold - embeddings themselves provide quality validation
-        return width >= min_size and height >= min_size and float(score) >= min_score
+        return width >= MIN_FACE_BBOX_SIZE and height >= MIN_FACE_BBOX_SIZE and float(score) >= MIN_DETECTION_SCORE
 
     def detect(self, image_bgr, scale=1.0):
         # Use MediaPipe FaceMesh to detect faces and extract 5-point landmarks
@@ -192,8 +188,8 @@ class InsightEmbedder:
         landmarks_all = []
         scores = []
 
-        # Common 5-point indices that map well onto face landmarker outputs
-        lm5_idx = [33, 263, 1, 61, 291]
+        # We compute pupil centers by averaging eye contours for better ArcFace alignment
+        # lm5 mapping: [Left Pupil, Right Pupil, Nose, Left Mouth, Right Mouth]
 
         if getattr(self, "_use_opencv", False):
             # Use OpenCV Haar Cascade for face detection
@@ -243,7 +239,9 @@ class InsightEmbedder:
                 boxes.append([x_min, y_min, x_max, y_max])
 
                 try:
-                    lm5 = pts[lm5_idx]
+                    left_eye = np.mean(pts[[33, 133, 159, 145]], axis=0)
+                    right_eye = np.mean(pts[[362, 263, 386, 374]], axis=0)
+                    lm5 = np.array([left_eye, right_eye, pts[1], pts[61], pts[291]], dtype=np.float32)
                 except Exception:
                     indices = np.linspace(0, pts.shape[0] - 1, 5, dtype=int)
                     lm5 = pts[indices]
@@ -273,7 +271,9 @@ class InsightEmbedder:
                 boxes.append([x_min, y_min, x_max, y_max])
 
                 try:
-                    lm5 = pts[lm5_idx]
+                    left_eye = np.mean(pts[[33, 133, 159, 145]], axis=0)
+                    right_eye = np.mean(pts[[362, 263, 386, 374]], axis=0)
+                    lm5 = np.array([left_eye, right_eye, pts[1], pts[61], pts[291]], dtype=np.float32)
                 except Exception:
                     indices = np.linspace(0, pts.shape[0] - 1, 5, dtype=int)
                     lm5 = pts[indices]
