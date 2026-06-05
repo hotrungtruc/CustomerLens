@@ -321,7 +321,7 @@ export default function CameraStream({
               return (
                 <div
                   key={`overlay-${customer.tile_id}`}
-                  className={`absolute rounded-xl border-2 ${
+                  className={`absolute rounded-xl border-2 transition-all duration-300 ease-out ${
                     isHighlighted
                       ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.45)]"
                       : "border-white/80"
