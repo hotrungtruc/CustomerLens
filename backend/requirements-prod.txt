@@ -1,0 +1,8 @@
+# Production-only dependencies (stripped of dev/UI tools like streamlit)
+setuptools<81
+numpy
+opencv-python-headless
+onnxruntime
+mediapipe
+fastapi
+uvicorn[standard]
