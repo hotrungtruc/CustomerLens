@@ -175,7 +175,9 @@ def init_models(ai_executor: ThreadPoolExecutor | None = None):
                 frame = shared_frame_mgr.read_frame()
                 _process_frame(frame)
                 last_seen_version = frame_version
-            except Exception:
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
                 # swallow errors in worker to keep thread alive
                 time.sleep(0.05)
 
