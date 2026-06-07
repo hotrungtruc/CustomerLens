@@ -1,17 +1,20 @@
 import pickle
 import threading
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
-
 import numpy as np
-import scipy.optimize
+
+try:
+    from filterpy.kalman import KalmanFilter
+    from scipy.optimize import linear_sum_assignment
+except ImportError:
+    import sys
+    print("WARNING: filterpy or scipy not installed! Please pip install filterpy scipy", file=sys.stderr)
+    KalmanFilter = None
+    linear_sum_assignment = None
 
 from app.db.connection import get_db_connection, ensure_schema, insert_guest_record
 from config import NEW_GUEST_DEBOUNCE_SECONDS, NEW_GUEST_DEBOUNCE_SIMILARITY
-from app.core.kalman_filter import KalmanFilter
-
-EMA_ALPHA = 0.8  # Exponential Moving Average factor for embeddings
 
 
 def normalize_embedding(embedding):
@@ -25,94 +28,136 @@ def normalize_embedding(embedding):
 def cosine_similarities(known_embeddings, embedding):
     if known_embeddings is None:
         return np.array([])
-
     known = np.asarray(known_embeddings, dtype=np.float32)
     if known.size == 0:
         return np.array([])
-
     return np.dot(known, np.asarray(embedding, dtype=np.float32))
 
 
-def bbox_iou(box_a, box_b):
-    ax1, ay1, ax2, ay2 = box_a
-    bx1, by1, bx2, by2 = box_b
+def bbox_ious(boxes_a, boxes_b):
+    if len(boxes_a) == 0 or len(boxes_b) == 0:
+        return np.zeros((len(boxes_a), len(boxes_b)))
 
-    inter_x1 = max(ax1, bx1)
-    inter_y1 = max(ay1, by1)
-    inter_x2 = min(ax2, bx2)
-    inter_y2 = min(ay2, by2)
+    a_x1, a_y1, a_x2, a_y2 = boxes_a[:, 0:1], boxes_a[:, 1:2], boxes_a[:, 2:3], boxes_a[:, 3:4]
+    b_x1, b_y1, b_x2, b_y2 = boxes_b[:, 0], boxes_b[:, 1], boxes_b[:, 2], boxes_b[:, 3]
 
-    inter_w = max(0, inter_x2 - inter_x1 + 1)
-    inter_h = max(0, inter_y2 - inter_y1 + 1)
+    inter_x1 = np.maximum(a_x1, b_x1)
+    inter_y1 = np.maximum(a_y1, b_y1)
+    inter_x2 = np.minimum(a_x2, b_x2)
+    inter_y2 = np.minimum(a_y2, b_y2)
+
+    inter_w = np.maximum(0, inter_x2 - inter_x1)
+    inter_h = np.maximum(0, inter_y2 - inter_y1)
     inter_area = inter_w * inter_h
 
-    area_a = max(0, ax2 - ax1 + 1) * max(0, ay2 - ay1 + 1)
-    area_b = max(0, bx2 - bx1 + 1) * max(0, by2 - by1 + 1)
-    denom = area_a + area_b - inter_area
-    if denom <= 0:
-        return 0.0
-    return inter_area / denom
+    area_a = (a_x2 - a_x1) * (a_y2 - a_y1)
+    area_b = (b_x2 - b_x1) * (b_y2 - b_y1)
+
+    return inter_area / (area_a + area_b - inter_area + 1e-6)
 
 
-def iou_batch(bboxes1, bboxes2):
-    """
-    Computes 1 - IOU between two arrays of bboxes.
-    bboxes1: (N, 4)
-    bboxes2: (M, 4)
-    Returns: (N, M) matrix of distances (1 - IOU).
-    """
-    bboxes2 = np.expand_dims(bboxes2, 0)
-    bboxes1 = np.expand_dims(bboxes1, 1)
-    
-    xx1 = np.maximum(bboxes1[..., 0], bboxes2[..., 0])
-    yy1 = np.maximum(bboxes1[..., 1], bboxes2[..., 1])
-    xx2 = np.minimum(bboxes1[..., 2], bboxes2[..., 2])
-    yy2 = np.minimum(bboxes1[..., 3], bboxes2[..., 3])
-    w = np.maximum(0., xx2 - xx1 + 1)
-    h = np.maximum(0., yy2 - yy1 + 1)
-    wh = w * h
-    
-    area1 = (bboxes1[..., 2] - bboxes1[..., 0] + 1) * (bboxes1[..., 3] - bboxes1[..., 1] + 1)
-    area2 = (bboxes2[..., 2] - bboxes2[..., 0] + 1) * (bboxes2[..., 3] - bboxes2[..., 1] + 1)
-    
-    iou = wh / (area1 + area2 - wh + 1e-6)
-    return 1.0 - iou
+def linear_assignment(cost_matrix, thresh):
+    if cost_matrix.size == 0:
+        return np.empty((0, 2), dtype=int), tuple(range(cost_matrix.shape[0])), tuple(range(cost_matrix.shape[1]))
+    if linear_sum_assignment is None:
+        return np.empty((0, 2), dtype=int), tuple(range(cost_matrix.shape[0])), tuple(range(cost_matrix.shape[1]))
+        
+    row_ind, col_ind = linear_sum_assignment(cost_matrix)
+    matches, unmatched_a, unmatched_b = [], [], []
+    for r, c in zip(row_ind, col_ind):
+        if cost_matrix[r, c] > thresh:
+            unmatched_a.append(r)
+            unmatched_b.append(c)
+        else:
+            matches.append([r, c])
+    for r in range(cost_matrix.shape[0]):
+        if r not in row_ind: unmatched_a.append(r)
+    for c in range(cost_matrix.shape[1]):
+        if c not in col_ind: unmatched_b.append(c)
+    return np.array(matches, dtype=int), np.array(unmatched_a, dtype=int), np.array(unmatched_b, dtype=int)
 
 
-def bbox_to_z(bbox):
-    x1, y1, x2, y2 = bbox
-    w = x2 - x1
-    h = y2 - y1
-    cx = x1 + w / 2.
-    cy = y1 + h / 2.
-    a = w / h if h > 0 else 0
-    return np.array([cx, cy, a, h])
+class STrack:
+    if KalmanFilter is not None:
+        shared_kalman = KalmanFilter(dim_x=8, dim_z=4)
+        shared_kalman.F = np.eye(8)
+        for i in range(4): shared_kalman.F[i, i+4] = 1.0
+        shared_kalman.H = np.zeros((4, 8))
+        for i in range(4): shared_kalman.H[i, i] = 1.0
+        shared_kalman.P[4:, 4:] *= 1000.
+        shared_kalman.P *= 10.
+        shared_kalman.R *= 10.
+        shared_kalman.Q[-1, -1] *= 0.01
+        shared_kalman.Q[4:, 4:] *= 0.01
 
+    def __init__(self, bbox, track_id, score=1.0):
+        self.track_id = track_id
+        self.score = score
+        if KalmanFilter is not None:
+            self.kf = KalmanFilter(dim_x=8, dim_z=4)
+            self.kf.F = self.shared_kalman.F.copy()
+            self.kf.H = self.shared_kalman.H.copy()
+            self.kf.P = self.shared_kalman.P.copy()
+            self.kf.R = self.shared_kalman.R.copy()
+            self.kf.Q = self.shared_kalman.Q.copy()
+            
+            x1, y1, x2, y2 = bbox
+            w = x2 - x1
+            h = max(y2 - y1, 1e-6)
+            x = x1 + w / 2
+            y = y1 + h / 2
+            a = w / h
+            self.kf.x[:4] = np.array([x, y, a, h]).reshape(4, 1)
+            self.kf.x[4:] = 0.0
+            
+        self.bbox = bbox
+        self.embedding = None
+        self.guest_embeddings = [] # buffer for guest creation
+        self.resolved_customer_id = None
+        now = time.monotonic()
+        self.first_seen_at = now
+        self.last_seen_at = now
+        self.last_seen_frame = 0
+        self.is_activated = False
 
-def z_to_bbox(z):
-    cx, cy, a, h = z
-    w = a * h
-    x1 = cx - w / 2.
-    y1 = cy - h / 2.
-    x2 = cx + w / 2.
-    y2 = cy + h / 2.
-    return np.array([x1, y1, x2, y2])
+    def predict(self):
+        if KalmanFilter is not None:
+            self.kf.predict()
+            self.bbox = self.get_bbox()
 
+    def update(self, bbox, score):
+        self.score = score
+        if KalmanFilter is not None:
+            x1, y1, x2, y2 = bbox
+            w = x2 - x1
+            h = max(y2 - y1, 1e-6)
+            x = x1 + w / 2
+            y = y1 + h / 2
+            a = w / h
+            z = np.array([x, y, a, h])
+            self.kf.update(z)
+            self.bbox = self.get_bbox()
+        else:
+            self.bbox = bbox
+        self.last_seen_at = time.monotonic()
 
-@dataclass
-class TrackState:
-    track_id: int
-    bbox: tuple
-    mean: np.ndarray = None
-    covariance: np.ndarray = None
-    embedding: np.ndarray = None  # Replaced buffer with EMA single embedding
-    guest_embedding: np.ndarray = None
-    resolved_customer_id: str | None = None
-    last_seen_frame: int = 0
-    first_seen_frame: int = 0
-    first_seen_at: float = 0.0
-    last_seen_at: float = 0.0
-    state: str = "Tracked"  # "Tracked" or "Lost"
+    def get_bbox(self):
+        if KalmanFilter is None:
+            return self.bbox
+        x, y, a, h = self.kf.x[:4].flatten()
+        w = a * h
+        x1 = x - w / 2
+        y1 = y - h / 2
+        x2 = x + w / 2
+        y2 = y + h / 2
+        return (x1, y1, x2, y2)
+
+    def update_embedding(self, new_embedding, alpha=0.9):
+        norm_emb = normalize_embedding(new_embedding)
+        if self.embedding is None:
+            self.embedding = norm_emb
+        else:
+            self.embedding = normalize_embedding(alpha * self.embedding + (1 - alpha) * norm_emb)
 
 
 class GuestTrackManager:
@@ -120,26 +165,17 @@ class GuestTrackManager:
         self,
         encode_file,
         guest_cache_file=None,
-        buffer_size=1,  # Redundant now, kept for signature compatibility
-        guest_creation_buffer_size=1,  # Can create guest on first good frame
+        guest_creation_buffer_size=8,
         similarity_threshold=0.38,
-        iou_threshold=0.7,  # Distance threshold for assignment (1 - 0.3)
-        min_bbox_size=100,
-        min_detection_score=0.85,
+        iou_threshold=0.3,
         guest_prefix="GUEST",
     ):
         self.encode_file = Path(encode_file)
         self.guest_cache_file = Path(guest_cache_file) if guest_cache_file else None
-        self.buffer_size = buffer_size
         self.guest_creation_buffer_size = guest_creation_buffer_size
         self.similarity_threshold = similarity_threshold
-        # Distance threshold for assignment (cost is 1 - IOU). So we want cost <= (1.0 - iou_threshold)
-        self.iou_cost_threshold = 1.0 - iou_threshold
-        self.min_bbox_size = min_bbox_size
-        self.min_detection_score = min_detection_score
+        self.iou_threshold = iou_threshold
         self.guest_prefix = guest_prefix
-
-        self.kalman_filter = KalmanFilter()
 
         self.known_embeddings = []
         self.known_ids = []
@@ -181,7 +217,7 @@ class GuestTrackManager:
             try:
                 if self.guest_cache_file.stat().st_size == 0:
                     raise EOFError("empty guest cache file")
-                with open(self.guest_cache_file, "gf") as gf:
+                with open(self.guest_cache_file, "rb") as gf:
                     gpayload = pickle.load(gf)
                 if isinstance(gpayload, (list, tuple)) and len(gpayload) == 2:
                     self.guest_embeddings, self.guest_ids = gpayload
@@ -234,45 +270,6 @@ class GuestTrackManager:
     def _create_guest_id(self):
         return f"{self.guest_prefix}_{self.frame_index}_{self.next_track_id:04d}"
 
-    def _match_tracks(self, bboxes):
-        """
-        ByteTrack-style matching using Kalman filter and Hungarian algorithm.
-        Returns: [(track_id, bbox_idx), ...], [unmatched_bbox_idx, ...], [unmatched_track_id, ...]
-        """
-        track_ids = list(self.tracks.keys())
-        
-        # Predict all tracks
-        for tid in track_ids:
-            track = self.tracks[tid]
-            if track.state != "Removed":
-                track.mean, track.covariance = self.kalman_filter.predict(track.mean, track.covariance)
-                # Update bbox based on prediction
-                pred_bbox = z_to_bbox(track.mean)
-                # prevent negative coordinates if heavily outside
-                track.bbox = tuple(pred_bbox)
-
-        if len(track_ids) == 0 or len(bboxes) == 0:
-            return [], list(range(len(bboxes))), track_ids
-
-        predicted_bboxes = np.array([self.tracks[tid].bbox for tid in track_ids])
-        cost_matrix = iou_batch(predicted_bboxes, np.array(bboxes))
-
-        # Hungarian assignment
-        row_ind, col_ind = scipy.optimize.linear_sum_assignment(cost_matrix)
-
-        matches = []
-        unmatched_bboxes = set(range(len(bboxes)))
-        unmatched_tracks = set(track_ids)
-
-        for r, c in zip(row_ind, col_ind):
-            if cost_matrix[r, c] > self.iou_cost_threshold:
-                continue
-            matches.append((track_ids[r], c))
-            unmatched_bboxes.discard(c)
-            unmatched_tracks.discard(track_ids[r])
-
-        return matches, list(unmatched_bboxes), list(unmatched_tracks)
-
     def _register_guest(self, embedding, track_state):
         guest_id = self._create_guest_id()
         track_state.resolved_customer_id = guest_id
@@ -303,104 +300,101 @@ class GuestTrackManager:
         outputs = []
         now = time.monotonic()
 
-        bboxes = [tuple(map(int, record["bbox"])) for record in face_records]
+        det_high = []
+        det_low = []
         
-        matches, unmatched_bboxes, unmatched_tracks = self._match_tracks(bboxes)
+        for idx, record in enumerate(face_records):
+            score = float(record.get("score", 0.0))
+            if score >= 0.5:
+                det_high.append((idx, record))
+            else:
+                det_low.append((idx, record))
 
-        # 1. Update matched tracks
-        for track_id, bbox_idx in matches:
-            track_state = self.tracks[track_id]
-            bbox = bboxes[bbox_idx]
-            track_state.bbox = bbox
-            track_state.last_seen_frame = self.frame_index
-            track_state.last_seen_at = now
-            track_state.update_count += 1
-            track_state.state = "Tracked"
+        for track in self.tracks.values():
+            track.predict()
+
+        matched_track_ids = set()
+        unmatched_dets = []
+
+        if det_high and self.tracks:
+            track_list = list(self.tracks.values())
+            boxes_a = np.array([t.bbox for t in track_list])
+            boxes_b = np.array([r["bbox"] for _, r in det_high])
             
-            # Kalman update
-            z = bbox_to_z(bbox)
-            track_state.mean, track_state.covariance = self.kalman_filter.update(
-                track_state.mean, track_state.covariance, z
-            )
+            ious = bbox_ious(boxes_a, boxes_b)
+            cost_matrix = 1.0 - ious
+            
+            matches, un_t, un_d = linear_assignment(cost_matrix, thresh=1.0 - self.iou_threshold)
+            
+            for t_idx, d_idx in matches:
+                track = track_list[t_idx]
+                record_idx, record = det_high[d_idx]
+                track.update(record["bbox"], record["score"])
+                track.last_seen_frame = self.frame_index
+                matched_track_ids.add(track.track_id)
+                record["assigned_track"] = track
+                
+            for d_idx in un_d:
+                unmatched_dets.append(det_high[d_idx])
+        else:
+            unmatched_dets.extend(det_high)
 
-        # 2. Create new tracks for unmatched detections
-        for bbox_idx in unmatched_bboxes:
-            bbox = bboxes[bbox_idx]
+        unmatched_tracks = [t for t in self.tracks.values() if t.track_id not in matched_track_ids]
+        if det_low and unmatched_tracks:
+            boxes_a = np.array([t.bbox for t in unmatched_tracks])
+            boxes_b = np.array([r["bbox"] for _, r in det_low])
+            
+            ious = bbox_ious(boxes_a, boxes_b)
+            cost_matrix = 1.0 - ious
+            
+            matches, un_t, un_d = linear_assignment(cost_matrix, thresh=0.5) 
+            
+            for t_idx, d_idx in matches:
+                track = unmatched_tracks[t_idx]
+                record_idx, record = det_low[d_idx]
+                track.update(record["bbox"], record["score"])
+                track.last_seen_frame = self.frame_index
+                matched_track_ids.add(track.track_id)
+                record["assigned_track"] = track
+
+        for record_idx, record in unmatched_dets:
             track_id = self.next_track_id
             self.next_track_id += 1
-            z = bbox_to_z(bbox)
-            mean, covariance = self.kalman_filter.initiate(z)
-            self.tracks[track_id] = TrackState(
-                track_id=track_id,
-                bbox=bbox,
-                mean=mean,
-                covariance=covariance,
-                last_seen_frame=self.frame_index,
-                first_seen_frame=self.frame_index,
-                first_seen_at=now,
-                last_seen_at=now,
-                update_count=1,
-            )
-            matches.append((track_id, bbox_idx))
+            new_track = STrack(record["bbox"], track_id, record["score"])
+            new_track.last_seen_frame = self.frame_index
+            self.tracks[track_id] = new_track
+            record["assigned_track"] = new_track
 
-        # 3. Mark unmatched tracks as Lost
-        for track_id in unmatched_tracks:
-            track = self.tracks[track_id]
-            track.state = "Lost"
-
-        # 4. Cleanup stale/lost tracks
-        stale_cutoff = self.frame_index - 30
-        self.tracks = {
-            tid: trk for tid, trk in self.tracks.items()
-            if trk.last_seen_frame >= stale_cutoff
-        }
-
-        # 5. Process Recognition and EMA for matched faces in this frame
-        for track_id, bbox_idx in matches:
-            record = face_records[bbox_idx]
-            track_state = self.tracks[track_id]
-            bbox = track_state.bbox
-
+        for record in face_records:
+            if "assigned_track" not in record:
+                continue
+                
+            track = record["assigned_track"]
+            bbox = track.bbox
             quality_ok = bool(record.get("quality_ok", True))
             guest_quality_ok = bool(record.get("guest_quality_ok", False))
             embedding = record.get("embedding")
-            existing_customer_id = track_state.resolved_customer_id
-
-            if track_state.update_count > self.buffer_size:
-                if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
-                    # Already matched to a real customer and past buffer, lock it
-                    outputs.append({
-                        "track_id": track_id,
-                        "customer_id": existing_customer_id,
-                        "bbox": bbox,
-                        "embedding_ready": True,
-                        "quality_ok": quality_ok,
-                        "pending_guest": False,
-                    })
-                    continue
-
-            # Update EMA embedding
-            if quality_ok and embedding is not None:
-                norm_emb = normalize_embedding(embedding)
-                if track_state.embedding is None:
-                    track_state.embedding = norm_emb
-                else:
-                    track_state.embedding = normalize_embedding(
-                        EMA_ALPHA * track_state.embedding + (1 - EMA_ALPHA) * norm_emb
-                    )
-
-                if guest_quality_ok:
-                    if track_state.guest_embedding is None:
-                        track_state.guest_embedding = norm_emb
-                    else:
-                        track_state.guest_embedding = normalize_embedding(
-                            EMA_ALPHA * track_state.guest_embedding + (1 - EMA_ALPHA) * norm_emb
-                        )
-
-            resolved_customer_id = existing_customer_id if existing_customer_id else None
             
-            # Instant recognition: Do matching from the first valid frame!
-            if track_state.embedding is not None:
+            existing_customer_id = track.resolved_customer_id
+            
+            if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
+                outputs.append({
+                    "track_id": track.track_id,
+                    "customer_id": existing_customer_id,
+                    "bbox": bbox,
+                    "embedding_ready": True,
+                    "quality_ok": quality_ok,
+                })
+                continue
+                
+            if quality_ok and embedding is not None:
+                track.update_embedding(embedding, alpha=0.9)
+                track.is_activated = True
+                if guest_quality_ok:
+                    track.guest_embeddings.append(normalize_embedding(embedding))
+                    
+            resolved_customer_id = existing_customer_id
+            if track.is_activated and track.embedding is not None:
                 combined_embeddings = []
                 combined_ids = []
                 if self.known_embeddings:
@@ -409,46 +403,43 @@ class GuestTrackManager:
                 if self.guest_embeddings:
                     combined_embeddings.extend(self.guest_embeddings)
                     combined_ids.extend(self.guest_ids)
-
+                    
                 if len(combined_embeddings) > 0:
-                    similarities = cosine_similarities(combined_embeddings, track_state.embedding)
+                    similarities = cosine_similarities(combined_embeddings, track.embedding)
                     if similarities.size > 0:
                         best_index = int(np.argmax(similarities))
                         if float(similarities[best_index]) >= self.similarity_threshold:
                             if best_index < len(self.known_embeddings):
                                 resolved_customer_id = self.known_ids[best_index]
                             else:
-                                guest_idx = best_index - len(self.known_embeddings)
-                                resolved_customer_id = self.guest_ids[guest_idx]
-
-                # Create Guest if no match
-                if resolved_customer_id is None and track_state.guest_embedding is not None:
+                                resolved_customer_id = self.guest_ids[best_index - len(self.known_embeddings)]
+                                
+                if resolved_customer_id is None and len(track.guest_embeddings) >= self.guest_creation_buffer_size:
                     known_similarity = 0.0
                     if self.known_embeddings:
-                        known_scores = cosine_similarities(self.known_embeddings, track_state.embedding)
+                        known_scores = cosine_similarities(self.known_embeddings, track.embedding)
                         if known_scores.size > 0:
                             known_similarity = float(np.max(known_scores))
+                            
+                    track_age_seconds = now - track.first_seen_at
+                    if track_age_seconds >= NEW_GUEST_DEBOUNCE_SECONDS and known_similarity < NEW_GUEST_DEBOUNCE_SIMILARITY:
+                        resolved_customer_id = self._register_guest(track.embedding, track)
 
-                    track_age_seconds = now - track_state.first_seen_at
-                    if track_age_seconds < NEW_GUEST_DEBOUNCE_SECONDS:
-                        resolved_customer_id = None
-                    elif known_similarity >= NEW_GUEST_DEBOUNCE_SIMILARITY:
-                        resolved_customer_id = None
-                    else:
-                        resolved_customer_id = self._register_guest(track_state.embedding, track_state)
-
-                if resolved_customer_id is None and not str(existing_customer_id).startswith("GUEST_"):
-                    resolved_customer_id = None
+                if resolved_customer_id and not str(resolved_customer_id).startswith("GUEST_"):
+                    track.resolved_customer_id = resolved_customer_id
                 else:
-                    track_state.resolved_customer_id = resolved_customer_id
-
+                    track.resolved_customer_id = resolved_customer_id
+                    
             outputs.append({
-                "track_id": track_id,
+                "track_id": track.track_id,
                 "customer_id": resolved_customer_id,
                 "bbox": bbox,
-                "embedding_ready": track_state.embedding is not None,
+                "embedding_ready": track.is_activated,
                 "quality_ok": quality_ok,
-                "pending_guest": resolved_customer_id is None and track_state.guest_embedding is None,
+                "pending_guest": resolved_customer_id is None and len(track.guest_embeddings) < self.guest_creation_buffer_size,
             })
-
+            
+        stale_cutoff = self.frame_index - 30
+        self.tracks = {k: v for k, v in self.tracks.items() if v.last_seen_frame >= stale_cutoff}
+        
         return outputs
