@@ -4,7 +4,9 @@
 
  Mục tiêu: hệ thống nhận diện khuôn mặt thời gian thực dùng camera trình duyệt (frontend) để gửi frame lên backend xử lý, hiển thị nhiều khách cùng lúc, cho phép chỉnh sửa hồ sơ khách hàng và đồng bộ hiển thị badge track giữa camera và ô khách.
 
- Ảnh minh họa: xem `frontend/public/demo_05_21.jpg` (nếu có).
+<p align="center">
+  <img src="assets/demo_7.6.png" alt="Front Door AI Demo" width="900">
+</p>
 
  ---
 
