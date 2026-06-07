@@ -466,7 +466,7 @@ def api_customers_overview():
 
             customers.append(base_payload)
 
-        status = "success" if any(item.get("detected") for item in customers) else "no_detection"
+        status = "success" if len(customers) > 0 else "no_detection"
         
         customers.sort(key=lambda c: c.get("track_id") or 0)
         
