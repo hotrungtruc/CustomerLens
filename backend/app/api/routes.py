@@ -175,9 +175,7 @@ def init_models(ai_executor: ThreadPoolExecutor | None = None):
                 frame = shared_frame_mgr.read_frame()
                 _process_frame(frame)
                 last_seen_version = frame_version
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
+            except Exception:
                 # swallow errors in worker to keep thread alive
                 time.sleep(0.05)
 
@@ -466,7 +464,7 @@ def api_customers_overview():
 
             customers.append(base_payload)
 
-        status = "success" if len(customers) > 0 else "no_detection"
+        status = "success" if any(item.get("detected") for item in customers) else "no_detection"
         
         customers.sort(key=lambda c: c.get("track_id") or 0)
         
