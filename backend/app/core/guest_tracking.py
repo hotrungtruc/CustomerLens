@@ -130,10 +130,11 @@ class GuestTrackManager:
     ):
         self.encode_file = Path(encode_file)
         self.guest_cache_file = Path(guest_cache_file) if guest_cache_file else None
-        self.buffer_size = 1
-        self.guest_creation_buffer_size = 1
+        self.buffer_size = buffer_size
+        self.guest_creation_buffer_size = guest_creation_buffer_size
         self.similarity_threshold = similarity_threshold
-        self.iou_threshold = iou_threshold
+        # Distance threshold for assignment (cost is 1 - IOU). So we want cost <= (1.0 - iou_threshold)
+        self.iou_cost_threshold = 1.0 - iou_threshold
         self.min_bbox_size = min_bbox_size
         self.min_detection_score = min_detection_score
         self.guest_prefix = guest_prefix
@@ -180,7 +181,7 @@ class GuestTrackManager:
             try:
                 if self.guest_cache_file.stat().st_size == 0:
                     raise EOFError("empty guest cache file")
-                with open(self.guest_cache_file, "rb") as gf:
+                with open(self.guest_cache_file, "gf") as gf:
                     gpayload = pickle.load(gf)
                 if isinstance(gpayload, (list, tuple)) and len(gpayload) == 2:
                     self.guest_embeddings, self.guest_ids = gpayload
@@ -264,7 +265,7 @@ class GuestTrackManager:
         unmatched_tracks = set(track_ids)
 
         for r, c in zip(row_ind, col_ind):
-            if cost_matrix[r, c] > self.iou_threshold:
+            if cost_matrix[r, c] > self.iou_cost_threshold:
                 continue
             matches.append((track_ids[r], c))
             unmatched_bboxes.discard(c)
@@ -313,6 +314,7 @@ class GuestTrackManager:
             track_state.bbox = bbox
             track_state.last_seen_frame = self.frame_index
             track_state.last_seen_at = now
+            track_state.update_count += 1
             track_state.state = "Tracked"
             
             # Kalman update
@@ -337,6 +339,7 @@ class GuestTrackManager:
                 first_seen_frame=self.frame_index,
                 first_seen_at=now,
                 last_seen_at=now,
+                update_count=1,
             )
             matches.append((track_id, bbox_idx))
 
@@ -363,17 +366,18 @@ class GuestTrackManager:
             embedding = record.get("embedding")
             existing_customer_id = track_state.resolved_customer_id
 
-            if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
-                # Already matched to a real customer
-                outputs.append({
-                    "track_id": track_id,
-                    "customer_id": existing_customer_id,
-                    "bbox": bbox,
-                    "embedding_ready": True,
-                    "quality_ok": quality_ok,
-                    "pending_guest": False,
-                })
-                continue
+            if track_state.update_count > self.buffer_size:
+                if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
+                    # Already matched to a real customer and past buffer, lock it
+                    outputs.append({
+                        "track_id": track_id,
+                        "customer_id": existing_customer_id,
+                        "bbox": bbox,
+                        "embedding_ready": True,
+                        "quality_ok": quality_ok,
+                        "pending_guest": False,
+                    })
+                    continue
 
             # Update EMA embedding
             if quality_ok and embedding is not None:
