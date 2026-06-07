@@ -253,8 +253,8 @@ export default function CustomerInfoCard({
 
                   <div className="space-y-2 text-sm text-ink/75">
                     <TileRow label="Ma KH" value={item.id} />
-                    <TileRow label="Lan den" value={item.visit_count} />
-                    <TileRow label="Hang" value={rankLabel(item.visit_count)} />
+                    <TileRow label="Lan den" value={item.total_attendance} />
+                    <TileRow label="Hang" value={rankLabel(item.total_attendance)} />
                   </div>
                 </button>
               );
@@ -342,20 +342,6 @@ export default function CustomerInfoCard({
                   multiline
                 />
 
-                <div className="rounded-2xl border border-black/5 bg-slate-50/80 p-4">
-                  <p className="mb-3 text-xs uppercase tracking-[0.2em] text-ink/45">Thong tin chi doc</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <ReadOnlyField label="Ma KH" value={selectedCustomer.id} />
-                    <ReadOnlyField label="Nhom dich vu" value={selectedCustomer.service_category || selectedCustomer.major} />
-                    <ReadOnlyField label="Bat dau su dung" value={selectedCustomer.service_start_year || selectedCustomer.starting_year} />
-                    <ReadOnlyField label="Tham nien" value={selectedCustomer.customer_tenure_years ?? selectedCustomer.year} />
-                    <ReadOnlyField label="Hang khach" value={selectedCustomer.loyalty_tier || selectedCustomer.standing || rankLabel(selectedCustomer.visit_count)} />
-                    <ReadOnlyField label="Lan den" value={selectedCustomer.total_attendance ?? selectedCustomer.visit_count} />
-                    <ReadOnlyField label="Lan cuoi" value={selectedCustomer.last_attendance_time || selectedCustomer.last_visit} />
-                    <ReadOnlyField label="Embedding" value={selectedCustomer.has_face_embedding ? `${selectedCustomer.face_embedding_dim || 0}D` : "Chua co"} />
-                  </div>
-                </div>
-
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
@@ -380,13 +366,13 @@ export default function CustomerInfoCard({
                 <StatBox label="Ma KH" value={selectedCustomer.id} />
                 <StatBox label="Ten" value={selectedCustomer.name} />
                 <StatBox label="SDT" value={selectedCustomer.phone} />
-                <StatBox label="Nhom dich vu" value={selectedCustomer.service_category || selectedCustomer.major} />
-                <StatBox label="Bat dau su dung" value={selectedCustomer.service_start_year || selectedCustomer.starting_year} />
-                <StatBox label="Tham nien" value={selectedCustomer.customer_tenure_years ?? selectedCustomer.year} />
-                <StatBox label="Hang khach" value={selectedCustomer.loyalty_tier || selectedCustomer.standing || rankLabel(selectedCustomer.visit_count)} />
+                <StatBox label="Nhom dich vu" value={selectedCustomer.service_category} />
+                <StatBox label="Bat dau su dung" value={selectedCustomer.service_start_year} />
+                <StatBox label="Tham nien" value={selectedCustomer.customer_tenure_years} />
+                <StatBox label="Hang khach" value={selectedCustomer.loyalty_tier || rankLabel(selectedCustomer.total_attendance)} />
                 <StatBox label="Note" value={selectedCustomer.note} />
-                <StatBox label="Lan den" value={selectedCustomer.total_attendance ?? selectedCustomer.visit_count} />
-                <StatBox label="Lan cuoi" value={selectedCustomer.last_attendance_time || selectedCustomer.last_visit} />
+                <StatBox label="Lan den" value={selectedCustomer.total_attendance} />
+                <StatBox label="Lan cuoi" value={selectedCustomer.last_attendance_time} />
               </div>
             )}
 
@@ -416,19 +402,6 @@ function TileRow({ label, value }) {
     <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
       <span className="text-xs uppercase tracking-[0.18em] text-ink/50">{label}</span>
       <span className="font-semibold text-ink">{value ?? "-"}</span>
-    </div>
-  );
-}
-
-function ReadOnlyField({ label, value }) {
-  return (
-    <div className="rounded-xl border border-black/5 bg-white px-3 py-3">
-      <div className="mb-1 text-[10px] uppercase tracking-[0.2em] text-ink/40">
-        {label}
-      </div>
-      <div className="text-sm font-semibold text-ink/75">
-        {value ?? "Chua co"}
-      </div>
     </div>
   );
 }

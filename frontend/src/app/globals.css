@@ -2,15 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --surface: #fffaf5;
-  --accent: #b85c38;
-  --accent-soft: #e6b9a6;
-  --shadow: rgba(15, 23, 42, 0.18);
-}
-
 * {
   box-sizing: border-box;
+}
+
+html {
+  height: 100%;
 }
 
 body {
@@ -18,15 +15,20 @@ body {
   min-height: 100vh;
   color: #0f172a;
   font-family: var(--font-body), system-ui, sans-serif;
-  background: radial-gradient(circle at top, #fff4e6 0%, #f7f3ec 55%, #ede3d6 100%);
+  background-color: #f8fafc;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-h1, h2, h3 {
-  font-family: var(--font-display), serif;
+h1,
+h2,
+h3 {
+  font-family: var(--font-display), system-ui, sans-serif;
 }
 
-@layer components {
-  .panel {
-    @apply rounded-3xl border border-black/5 bg-white/80 backdrop-blur-lg shadow-glow;
-  }
+button,
+select,
+input,
+textarea {
+  font: inherit;
 }

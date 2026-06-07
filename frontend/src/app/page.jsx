@@ -1,54 +1,414 @@
 "use client";
-import { useState } from "react";
+
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import Sidebar from "../components/Sidebar";
+import PageHeader from "../components/PageHeader";
 import CameraStream from "../components/CameraStream";
-import CustomerInfoCard from "../components/CustomerInfoCard";
 import { useCustomerDetection } from "../hooks/useCustomerDetection";
-export default function HomePage() {
-  const [selectedTrackId, setSelectedTrackId] = useState(null);
-  const {
-    status,
-    customers,
-    frameSize,
-    error,
-    refreshCustomers,
-  } = useCustomerDetection();
+import { getTrackBadge } from "../components/trackBadge";
+import { putCustomerProfile } from "../services/api";
+
+// Phân biệt khách cũ vs khách mới
+function isKnownCustomer(c) {
+  return c.id && /^\d{1,3}$/.test(String(c.id));
+}
+
+function rankLabel(visitCount) {
+  const n = Number(visitCount || 0);
+  if (n >= 30) return "VIP";
+  if (n >= 10) return "Member";
+  return "Guest";
+}
+
+const RANK_COLORS = {
+  VIP: "bg-yellow-100 text-yellow-700",
+  Member: "bg-blue-100 text-blue-700",
+  Guest: "bg-slate-100 text-slate-600",
+};
+
+function Stars({ count }) {
   return (
-    <main className="min-h-screen px-6 py-10">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-10 text-center">
-          <p className="text-sm uppercase tracking-[0.4em] text-copper">Front Desk</p>
-          <h1 className="mt-3 text-4xl font-semibold text-ink md:text-5xl">
-            Smart Front-door AI
-          </h1>
-          <p className="mt-4 text-base text-ink/70">
-            Monitor the entrance camera and refresh customer details in real time.
-          </p>
-        </header>
-        <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
-          <section className="panel p-6 animate-floatIn">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl">Camera</h2>
-              <span className="rounded-full bg-clay px-3 py-1 text-xs uppercase tracking-wide text-ink">
-                Live
-              </span>
+    <div className="flex items-center gap-0.5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <svg key={i} viewBox="0 0 12 12"
+          className={`h-3 w-3 ${i < count ? "fill-amber-400" : "fill-slate-200"}`}>
+          <path d="M6 1l1.4 2.9 3.2.5-2.3 2.2.5 3.2L6 8.2l-2.8 1.6.5-3.2L1.4 4.4l3.2-.5z" />
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+function StatCard({ value, delta, label }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-bold text-slate-900">{value}</span>
+        <span className="flex items-center gap-0.5 text-xs font-medium text-emerald-600">
+          <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 fill-current">
+            <path d="M5 2l4 6H1z" />
+          </svg>
+          {delta}
+        </span>
+      </div>
+      <span className="text-xs text-slate-500">{label}</span>
+    </div>
+  );
+}
+
+// ── Popup thêm khách mới ──────────────────────────────────────────────────────
+function AddCustomerModal({ customer, onClose, onSaved }) {
+  const [form, setForm] = useState({ name: "", phone: "", email: "", rank: "Guest" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const { symbol, theme } = getTrackBadge(customer.track_id);
+
+  const handleChange = (e) => {
+    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) {
+      setError("Vui lòng nhập tên khách hàng.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const result = await putCustomerProfile({
+        id: customer.id,
+        source_id: customer.id,
+        track_id: customer.track_id,
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        rank: form.rank,
+      });
+      onSaved(result);
+    } catch (err) {
+      setError("Lưu thất bại, vui lòng thử lại.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    // Backdrop
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}>
+              {symbol}
             </div>
-            <CameraStream
-              customers={customers}
-              frameSize={frameSize}
-              highlightedTrackId={selectedTrackId}
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Thêm khách hàng mới</p>
+              <p className="text-xs text-slate-400">{customer.id}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+          >
+            <svg viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="2">
+              <path d="M3 3l10 10M13 3L3 13" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Form */}
+        <div className="space-y-4 px-6 py-5">
+          {/* Tên */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">
+              Tên khách hàng <span className="text-red-500">*</span>
+            </label>
+            <input
+              name="name"
+              value={form.name}
+              onChange={handleChange}
+              placeholder="Nguyễn Văn A"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
             />
-          </section>
-          <section className="panel p-6 animate-floatIn">
-            <CustomerInfoCard
-              status={status}
-              customers={customers}
-              error={error}
-              refreshCustomers={refreshCustomers}
-              onSelectTrack={setSelectedTrackId}
+          </div>
+
+          {/* SĐT */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">Số điện thoại</label>
+            <input
+              name="phone"
+              value={form.phone}
+              onChange={handleChange}
+              placeholder="0901 234 567"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
             />
-          </section>
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">Email</label>
+            <input
+              name="email"
+              value={form.email}
+              onChange={handleChange}
+              placeholder="example@email.com"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
+            />
+          </div>
+
+          {/* Hạng */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">Hạng khách hàng</label>
+            <div className="flex gap-2">
+              {["Guest", "Member", "VIP"].map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setForm((prev) => ({ ...prev, rank: r }))}
+                  className={`flex-1 rounded-xl border py-2 text-sm font-medium transition ${form.rank === r
+                    ? "border-blue-500 bg-blue-50 text-blue-700"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+          >
+            Huỷ
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saving ? "Đang lưu..." : "Lưu & Xem hồ sơ"}
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Customer card trong right panel ──────────────────────────────────────────
+function CustomerCard({ c, onClick }) {
+  const known = isKnownCustomer(c);
+  const rank = rankLabel(c.total_attendance);
+  const starCount = rank === "VIP" ? 5 : rank === "Member" ? 4 : 3;
+  const { symbol, theme } = getTrackBadge(c.track_id);
+  const detectedAt = c.detected_at
+    ? new Date(c.detected_at).toLocaleTimeString("vi-VN", {
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    })
+    : "";
+
+  return (
+    <button
+      onClick={() => onClick(c)}
+      className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 transition-colors"
+    >
+      {/* Badge khớp bounding box */}
+      <div className={`h-10 w-10 shrink-0 flex items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}>
+        {symbol}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="truncate text-sm font-medium text-slate-800">
+              {known ? (c.name || `Khách #${c.id}`) : "Khách Mới"}
+            </span>
+            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${RANK_COLORS[rank]}`}>
+              {rank}
+            </span>
+          </div>
+          {detectedAt && (
+            <span className="shrink-0 text-[10px] text-slate-400">{detectedAt}</span>
+          )}
+        </div>
+
+        <span className="text-xs text-slate-400">
+          {known ? `CLIENT_${c.id}` : (c.id || "—")}
+        </span>
+
+        <div className="mt-0.5 flex items-center justify-between">
+          <Stars count={starCount} />
+          {/* Gợi ý hành động */}
+          <span className={`text-[10px] font-medium ${known ? "text-blue-500" : "text-amber-500"}`}>
+            {known ? "Xem hồ sơ →" : "Thêm thông tin +"}
+          </span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+export default function DashboardPage() {
+  const router = useRouter();
+  const { status, customers, frameSize } = useCustomerDetection();
+  const [highlightedTrackId, setHighlightedTrackId] = useState(null);
+  const [modalCustomer, setModalCustomer] = useState(null); // guest đang mở popup
+
+  const handleSelectTrack = useCallback((id) => setHighlightedTrackId(id), []);
+
+  const recentCustomers = status === "success" ? customers.slice(0, 4) : [];
+
+  // Click vào card trong right panel
+  const handleCardClick = useCallback((c) => {
+    setHighlightedTrackId(c.track_id);
+    if (isKnownCustomer(c)) {
+      // Khách cũ → đi thẳng đến trang hồ sơ
+      router.push(`/customers/${c.id}`);
+    } else {
+      // Khách mới → mở popup nhập thông tin
+      setModalCustomer(c);
+    }
+  }, [router]);
+
+  // Sau khi lưu thành công → navigate đến trang hồ sơ mới
+  const handleSaved = useCallback((result) => {
+    setModalCustomer(null);
+    const newId = result?.customer_id || result?.id;
+    if (newId) {
+      router.push(`/customers/${newId}`);
+    } else {
+      router.push("/customers");
+    }
+  }, [router]);
+
+  return (
+    <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[220px_minmax(0,1fr)_280px]">
+
+        {/* Cột 1: Sidebar */}
+        <Sidebar active="overview" />
+
+        {/* Cột 2: Main */}
+        <div className="flex min-w-0 flex-col border-x border-slate-100">
+          <PageHeader
+            title="Smart Front-door AI"
+            subtitle="Quản lý camera của bạn và các thông tin khách hàng theo thời gian thực."
+          />
+
+          <div className="flex-1 p-6">
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              {/* Camera toolbar */}
+              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium text-slate-700">Camera trực tiếp</span>
+                  <span className="flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-500">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
+                    live
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none">
+                    <option>Integrated Camera (DSLR-004)</option>
+                  </select>
+                  <button className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50">
+                    <svg viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.5">
+                      <path d="M2 2h4M2 2v4M14 2h-4M14 2v4M2 14h4M2 14v-4M14 14h-4M14 14v-4" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <CameraStream
+                customers={status === "success" ? customers : []}
+                frameSize={frameSize}
+                highlightedTrackId={highlightedTrackId}
+              />
+
+              {/* Stats bar */}
+              <div className="grid grid-cols-4 divide-x divide-slate-100 border-t border-slate-100">
+                <div className="px-5 py-4"><StatCard value="24" delta="+12%" label="Khách hàng hàng ngày" /></div>
+                <div className="px-5 py-4"><StatCard value="18" delta="+6%" label="Khách đã xác nhận" /></div>
+                <div className="px-5 py-4"><StatCard value="6" delta="+8%" label="Chờ đăng ký" /></div>
+                <div className="px-5 py-4"><StatCard value="96.7%" delta="+2.7%" label="Độ chính xác" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Cột 3: Right panel */}
+        <div className="hidden flex-col lg:flex">
+          <div className="border-b border-slate-100 px-5 py-5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-800">Khách hàng gần đây</span>
+              <Link href="/customers" className="text-xs font-medium text-blue-600 hover:underline">
+                Xem tất cả
+              </Link>
+            </div>
+          </div>
+
+          <div className="flex flex-col divide-y divide-slate-50 overflow-y-auto">
+            {recentCustomers.length > 0 ? (
+              recentCustomers.map((c) => (
+                <CustomerCard
+                  key={c.tile_id ?? c.track_id}
+                  c={c}
+                  onClick={handleCardClick}
+                />
+              ))
+            ) : (
+              <div className="px-5 py-8 text-center text-xs text-slate-400">
+                {status === "success"
+                  ? "Chưa có khách nào trong khung hình"
+                  : "Đang chờ kết nối camera..."}
+              </div>
+            )}
+          </div>
+
+          {/* CTA bottom */}
+          <div className="mt-auto border-t border-slate-100 p-5">
+            <p className="text-sm font-semibold text-slate-800">Thông tin khách hàng</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Theo dõi lịch sử và thông tin chi tiết từng lần ghé thăm.
+            </p>
+            <Link
+              href="/customers"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              Xem chi tiết
+            </Link>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Popup thêm khách mới */}
+      {modalCustomer && (
+        <AddCustomerModal
+          customer={modalCustomer}
+          onClose={() => setModalCustomer(null)}
+          onSaved={handleSaved}
+        />
+      )}
     </main>
   );
 }

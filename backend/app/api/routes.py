@@ -668,3 +668,43 @@ async def api_promote_guest(request: Request):
     if ok:
         return {"success": True}
     return {"success": False, "message": "guest not found"}
+
+@router.get("/api/customers")
+def api_get_all_customers():
+    conn = get_db_connection()
+    ensure_schema(conn)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "\""
+            SELECT customer_id as id, name, phone, note, total_attendance, last_attendance_time
+            FROM customers
+            "\""
+        )
+        rows = cursor.fetchall()
+        customers = [dict(row) for row in rows]
+        return {"status": "success", "customers": customers}
+    finally:
+        conn.close()
+
+@router.get("/api/customer_profile_by_id/{customer_id}")
+def api_get_customer_by_id(customer_id: str):
+    conn = get_db_connection()
+    ensure_schema(conn)
+    try:
+        customer_info = get_customer_info(conn, customer_id)
+        if not customer_info:
+            return {"status": "not_found", "message": f"Customer '{customer_id}' not found"}
+        return {
+            "status": "success",
+            "customer": {
+                "id": customer_info["customer_id"],
+                "name": customer_info["name"],
+                "phone": customer_info.get("phone"),
+                "total_attendance": customer_info["total_attendance"],
+                "last_attendance_time": customer_info["last_attendance_time"],
+                "note": customer_info.get("note"),
+            }
+        }
+    finally:
+        conn.close()

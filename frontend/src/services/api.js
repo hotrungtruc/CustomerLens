@@ -50,3 +50,11 @@ export async function putCustomerProfile(payload) {
   }
   return response.json();
 }
+
+export async function fetchAllCustomers() {
+  const response = await fetch(`${API_BASE_URL}/api/customers`);
+  if (!response.ok) {
+    throw new Error("Network error");
+  }
+  return response.json();
+}

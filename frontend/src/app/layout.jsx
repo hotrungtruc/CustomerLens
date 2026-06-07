@@ -1,25 +1,30 @@
 import "./globals.css";
-import { Playfair_Display, Space_Grotesk } from "next/font/google";
+import { Inter, DM_Sans } from "next/font/google";
+import MobileNav from "../components/MobileNav";
 
-const displayFont = Playfair_Display({
-  subsets: ["latin", "vietnamese"],
+const displayFont = DM_Sans({
+  subsets: ["latin"],
   variable: "--font-display",
+  weight: ["400", "500", "600", "700"],
 });
 
-const bodyFont = Space_Grotesk({
-  subsets: ["latin", "vietnamese"],
+const bodyFont = Inter({
+  subsets: ["latin"],
   variable: "--font-body",
 });
 
 export const metadata = {
-  title: "He thong nhan dien khuon mat",
-  description: "Giao dien diem danh khuon mat",
+  title: "Front Desk AI",
+  description: "Smart front-door AI dashboard for camera monitoring and guest tracking.",
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="vi" className={`${displayFont.variable} ${bodyFont.variable}`}>
-      <body>{children}</body>
+      <body className="antialiased">
+        <MobileNav />
+        <div className="pt-12 lg:pt-0">{children}</div>
+      </body>
     </html>
   );
 }
