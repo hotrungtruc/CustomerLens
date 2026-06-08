@@ -331,13 +331,24 @@ class InsightEmbedder:
             return None
 
         aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
-        blob = cv2.dnn.blobFromImage(
-            aligned,
-            1.0 / 127.5,
-            FACE_SIZE,
-            (127.5, 127.5, 127.5),
-            swapRB=True,
-        )
+        
+        # Check input shape of the model to support NCHW vs NHWC dynamically
+        input_shape = self.recognizer.get_inputs()[0].shape
+        if input_shape[-1] == 3 or input_shape[-1] == '3':
+            # NHWC format (e.g. GhostFaceNet)
+            aligned_rgb = cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)
+            aligned_norm = (aligned_rgb.astype(np.float32) - 127.5) / 127.5
+            blob = np.expand_dims(aligned_norm, axis=0)
+        else:
+            # NCHW format (e.g. MobileFaceNet)
+            blob = cv2.dnn.blobFromImage(
+                aligned,
+                1.0 / 127.5,
+                FACE_SIZE,
+                (127.5, 127.5, 127.5),
+                swapRB=True,
+            )
+
         embedding = self.recognizer.run(None, {self.recognizer_input: blob})[0][0]
         return normalize_embedding(embedding)
 
