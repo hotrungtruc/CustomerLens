@@ -676,10 +676,10 @@ def api_get_all_customers():
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "\""
-            SELECT customer_id as id, name, phone, note, total_attendance, last_attendance_time
+            """
+            SELECT customer_id as id, name, phone, note, total_visits as total_attendance, last_visit as last_attendance_time
             FROM customers
-            "\""
+            """
         )
         rows = cursor.fetchall()
         customers = [dict(row) for row in rows]

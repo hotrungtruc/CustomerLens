@@ -33,7 +33,7 @@ if USE_SUPABASE:
     DB_TYPE = "postgresql"
 else:
     # SQLite Configuration (Local Development)
-    DATA_DIR = Path(__file__).parent.parent / "data"
+    DATA_DIR = Path(__file__).parent / "data"
     PRODUCTION_DB_PATH = DATA_DIR / "database" / "production.db"
     DATABASE_URL = f"sqlite:///{PRODUCTION_DB_PATH}"
     DB_TYPE = "sqlite"
