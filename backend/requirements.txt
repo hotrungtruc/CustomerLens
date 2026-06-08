@@ -8,3 +8,4 @@ streamlit
 mediapipe
 fastapi
 uvicorn[standard]
+scipy

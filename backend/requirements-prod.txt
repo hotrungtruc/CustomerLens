@@ -6,3 +6,4 @@ onnxruntime
 mediapipe
 fastapi
 uvicorn[standard]
+scipy
