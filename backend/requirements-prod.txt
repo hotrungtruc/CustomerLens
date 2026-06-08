@@ -7,3 +7,4 @@ mediapipe
 fastapi
 uvicorn[standard]
 scipy
+onnx
