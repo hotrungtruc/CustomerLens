@@ -41,23 +41,6 @@ function Stars({ count }) {
   );
 }
 
-function StatCard({ value, delta, label }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-baseline gap-2">
-        <span className="text-2xl font-bold text-slate-900">{value}</span>
-        <span className="flex items-center gap-0.5 text-xs font-medium text-emerald-600">
-          <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 fill-current">
-            <path d="M5 2l4 6H1z" />
-          </svg>
-          {delta}
-        </span>
-      </div>
-      <span className="text-xs text-slate-500">{label}</span>
-    </div>
-  );
-}
-
 // ── Popup thêm khách mới ──────────────────────────────────────────────────────
 function AddCustomerModal({ customer, onClose, onSaved }) {
   const [form, setForm] = useState({ name: "", phone: "", email: "", rank: "Guest" });
@@ -312,40 +295,12 @@ export default function DashboardPage() {
 
           <div className="flex-1 p-6">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              {/* Camera toolbar */}
-              <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-medium text-slate-700">Camera trực tiếp</span>
-                  <span className="flex items-center gap-1.5 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-500">
-                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
-                    live
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none">
-                    <option>Integrated Camera (DSLR-004)</option>
-                  </select>
-                  <button className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50">
-                    <svg viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.5">
-                      <path d="M2 2h4M2 2v4M14 2h-4M14 2v4M2 14h4M2 14v-4M14 14h-4M14 14v-4" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
               <CameraStream
                 customers={status === "success" ? customers : []}
                 frameSize={frameSize}
                 highlightedTrackId={highlightedTrackId}
+                framed={false}
               />
-
-              {/* Stats bar */}
-              <div className="grid grid-cols-4 divide-x divide-slate-100 border-t border-slate-100">
-                <div className="px-5 py-4"><StatCard value="24" delta="+12%" label="Khách hàng hàng ngày" /></div>
-                <div className="px-5 py-4"><StatCard value="18" delta="+6%" label="Khách đã xác nhận" /></div>
-                <div className="px-5 py-4"><StatCard value="6" delta="+8%" label="Chờ đăng ký" /></div>
-                <div className="px-5 py-4"><StatCard value="96.7%" delta="+2.7%" label="Độ chính xác" /></div>
-              </div>
             </div>
           </div>
         </div>
@@ -412,3 +367,4 @@ export default function DashboardPage() {
     </main>
   );
 }
+
