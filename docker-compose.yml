@@ -1,8 +1,6 @@
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: face-recognition-system-backend:latest
     container_name: faceai_backend
     restart: unless-stopped
     ports:
@@ -12,8 +10,12 @@ services:
       # Persistent data outside the container - survives rebuilds
       - /srv/faceai/models:/app/models:ro
       - /srv/faceai/data:/app/data
+      - ./backend/config.py:/app/config.py:ro
     environment:
       - PYTHONUNBUFFERED=1
+      - OMP_NUM_THREADS=2
+      - OPENBLAS_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
     # Limit memory to prevent OOM kills on T3.micro
     mem_limit: 600m
     mem_reservation: 300m

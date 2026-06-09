@@ -53,6 +53,7 @@ class InsightEmbedder:
         providers = get_onnx_providers()
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 3
+        session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.det_size = det_size
         
         # Try to load the recognizer model, with fallback to float model if int8 fails
@@ -87,6 +88,7 @@ class InsightEmbedder:
             else:
                 raise
         
+        self._model_name = model_used
         self.recognizer_input = self.recognizer.get_inputs()[0].name
         print(f"Loaded recognizer model: {model_used}")
         
@@ -340,16 +342,30 @@ class InsightEmbedder:
             aligned_norm = (aligned_rgb.astype(np.float32) - 127.5) / 127.5
             blob = np.expand_dims(aligned_norm, axis=0)
         else:
-            # NCHW format (e.g. MobileFaceNet)
+            # NCHW format (e.g. MobileFaceNet, AdaFace)
+            # AdaFace models typically require BGR input, while InsightFace models require RGB
+            is_adaface = 'adaface' in getattr(self, '_model_name', '').lower()
+            swap_rb = not is_adaface
+            
             blob = cv2.dnn.blobFromImage(
                 aligned,
                 1.0 / 127.5,
                 FACE_SIZE,
                 (127.5, 127.5, 127.5),
-                swapRB=True,
+                swapRB=swap_rb,
             )
 
-        embedding = self.recognizer.run(None, {self.recognizer_input: blob})[0][0]
+        # Optimize with IO Binding
+        if not hasattr(self, '_io_binding'):
+            self._io_binding = self.recognizer.io_binding()
+            self._output_name = self.recognizer.get_outputs()[0].name
+
+        self._io_binding.bind_cpu_input(self.recognizer_input, blob)
+        self._io_binding.bind_output(self._output_name)
+        
+        self.recognizer.run_with_iobinding(self._io_binding)
+        embedding = self._io_binding.copy_outputs_to_cpu()[0][0]
+        
         return normalize_embedding(embedding)
 
 
@@ -435,11 +451,18 @@ def nms(boxes, scores, threshold):
 
 
 def normalize_embedding(embedding):
-    embedding = embedding.astype(np.float32)
-    norm = np.linalg.norm(embedding)
-    if norm == 0:
-        return embedding
-    return embedding / norm
+    embedding = np.asarray(embedding, dtype=np.float32)
+    if embedding.ndim == 1:
+        # Optimized for 1D using np.dot
+        norm = np.sqrt(np.dot(embedding, embedding))
+        if norm == 0:
+            return embedding
+        return embedding / norm
+    else:
+        # Vectorized for 2D arrays
+        norm = np.linalg.norm(embedding, axis=1, keepdims=True)
+        norm[norm == 0] = 1.0
+        return embedding / norm
 
 
 def cosine_similarities(known_embeddings, embedding):

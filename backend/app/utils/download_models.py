@@ -4,31 +4,12 @@ import urllib.request
 from config import MODELS_DIR
 
 MODELS = {
-    "w600k_mbf.onnx": "https://github.com/yakhyo/face-reidentification/releases/download/v0.0.1/w600k_mbf.onnx",
     "face_landmarker.task": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
     "ghostface_fp32.onnx": "https://github.com/andestech/ModelZoo/raw/master/GhostFaceNet/Model/ghostface_fp32.onnx",
 }
 
 
-def build_mobilefacenet_int8():
-    src_path = MODELS_DIR / "w600k_mbf.onnx"
-    dst_path = MODELS_DIR / "mobilefacenet_int8.onnx"
 
-    if dst_path.exists():
-        print("mobilefacenet_int8.onnx already exists")
-        return
-
-    if not src_path.exists():
-        print("w600k_mbf.onnx is missing; cannot build mobilefacenet_int8.onnx")
-        return
-
-    try:
-        from onnxruntime.quantization import QuantType, quantize_dynamic
-
-        quantize_dynamic(str(src_path), str(dst_path), weight_type=QuantType.QInt8)
-        print(f"Built int8 model: {dst_path}")
-    except Exception as exc:
-        print(f"Failed to build mobilefacenet_int8.onnx: {exc}")
 
 
 def build_ghostface_int8():
@@ -98,7 +79,6 @@ def main():
         else:
             download_file(url, filename)
 
-    build_mobilefacenet_int8()
     build_ghostface_int8()
 
     print("All models ready.")

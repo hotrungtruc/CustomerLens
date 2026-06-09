@@ -104,10 +104,12 @@ def ensure_schema(conn):
         },
     )
 
+    # Create new schema or keep existing if correct
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS customer_embeddings (
-            customer_id TEXT PRIMARY KEY,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            customer_id TEXT NOT NULL,
             face_embedding BLOB NOT NULL,
             embedding_dim INTEGER NOT NULL DEFAULT 512,
             model_name TEXT NOT NULL DEFAULT 'w600k_mbf',
@@ -117,6 +119,32 @@ def ensure_schema(conn):
         )
         """
     )
+    
+    # Migration: check if customer_embeddings has 'id' column, if not, migrate it
+    columns = _table_columns(conn, "customer_embeddings")
+    if "id" not in columns:
+        conn.execute("ALTER TABLE customer_embeddings RENAME TO customer_embeddings_old")
+        conn.execute(
+            """
+            CREATE TABLE customer_embeddings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id TEXT NOT NULL,
+                face_embedding BLOB NOT NULL,
+                embedding_dim INTEGER NOT NULL DEFAULT 512,
+                model_name TEXT NOT NULL DEFAULT 'w600k_mbf',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO customer_embeddings (customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at)
+            SELECT customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at FROM customer_embeddings_old
+            """
+        )
+        conn.execute("DROP TABLE customer_embeddings_old")
 
     conn.execute(
         """
@@ -262,7 +290,7 @@ def _migrate_embeddings(conn):
         for row in rows:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO customer_embeddings (
+                INSERT INTO customer_embeddings (
                     customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at
                 ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
@@ -291,7 +319,7 @@ def _migrate_embeddings(conn):
             continue
         conn.execute(
             """
-            INSERT OR IGNORE INTO customer_embeddings (
+            INSERT INTO customer_embeddings (
                 customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at
             ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,

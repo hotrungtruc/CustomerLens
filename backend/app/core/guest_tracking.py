@@ -18,10 +18,15 @@ from config import (
 
 def normalize_embedding(embedding):
     embedding = np.asarray(embedding, dtype=np.float32)
-    norm = np.linalg.norm(embedding)
-    if norm == 0:
-        return embedding
-    return embedding / norm
+    if embedding.ndim == 1:
+        norm = np.sqrt(np.dot(embedding, embedding))
+        if norm == 0:
+            return embedding
+        return embedding / norm
+    else:
+        norm = np.linalg.norm(embedding, axis=1, keepdims=True)
+        norm[norm == 0] = 1.0
+        return embedding / norm
 
 
 def cosine_similarities(known_embeddings, embedding):
@@ -114,6 +119,7 @@ class TrackState:
     first_seen_frame: int = 0
     first_seen_at: float = 0.0
     last_seen_at: float = 0.0
+    recent_votes: list = field(default_factory=list)
     
     # Kalman Filter variables
     kf: KalmanFilterCorner = None
@@ -305,10 +311,7 @@ class GuestTrackManager:
             if guest_quality_ok:
                 track_state.guest_embeddings.append(norm_emb)
 
-        resolved_customer_id = existing_customer_id if existing_customer_id else None
-        if len(track_state.embeddings) >= self.buffer_size:
-            avg_embedding = normalize_embedding(np.mean(track_state.embeddings[-self.buffer_size :], axis=0))
-
+            # Build combined lists for matching
             combined_embeddings = []
             combined_ids = []
             if self.known_embeddings:
@@ -317,6 +320,56 @@ class GuestTrackManager:
             if self.guest_embeddings:
                 combined_embeddings.extend(self.guest_embeddings)
                 combined_ids.extend(self.guest_ids)
+
+            # --- Multi-frame Voting Logic ---
+            if len(combined_embeddings) > 0:
+                similarities = cosine_similarities(combined_embeddings, norm_emb)
+                if similarities.size > 0:
+                    best_index = int(np.argmax(similarities))
+                    best_sim = float(similarities[best_index])
+                    # Lower threshold for individual frame vote
+                    if best_sim >= 0.45:
+                        if best_index < len(self.known_embeddings):
+                            voted_id = self.known_ids[best_index]
+                        else:
+                            guest_idx = best_index - len(self.known_embeddings)
+                            voted_id = self.guest_ids[guest_idx]
+                        
+                        track_state.recent_votes.append(voted_id)
+                    else:
+                        # Append None to represent no confident vote for this frame
+                        track_state.recent_votes.append(None)
+                        
+            # Keep only the last 5 votes
+            if len(track_state.recent_votes) > 5:
+                track_state.recent_votes = track_state.recent_votes[-5:]
+                
+            # Tally votes: if 3 out of 5 frames match the same ID, resolve it
+            if len(track_state.recent_votes) >= 3:
+                from collections import Counter
+                valid_votes = [v for v in track_state.recent_votes if v is not None]
+                if valid_votes:
+                    vote_counts = Counter(valid_votes)
+                    top_id, top_count = vote_counts.most_common(1)[0]
+                    if top_count >= 3:
+                        existing_customer_id = top_id
+                        track_state.resolved_customer_id = top_id
+                        
+                        # --- AUTO MERGE LOGIC ---
+                        # If we have low-quality/glasses frames in the buffer and we successfully identified the person,
+                        # we merge an averaged "glasses" template into the face bank to improve future recognition.
+                        if len(track_state.guest_embeddings) > 0 and not str(top_id).startswith("GUEST_"):
+                            avg_g_emb = normalize_embedding(np.mean(track_state.guest_embeddings, axis=0))
+                            self.known_embeddings.append(avg_g_emb)
+                            self.known_ids.append(top_id)
+                            track_state.guest_embeddings.clear()
+                            self.persist_known_embeddings()
+
+        resolved_customer_id = existing_customer_id if existing_customer_id else None
+        
+        # Fallback to mean embedding for resolution or guest creation
+        if resolved_customer_id is None and len(track_state.embeddings) >= self.buffer_size:
+            avg_embedding = normalize_embedding(np.mean(track_state.embeddings[-self.buffer_size :], axis=0))
 
             if len(combined_embeddings) > 0:
                 similarities = cosine_similarities(combined_embeddings, avg_embedding)

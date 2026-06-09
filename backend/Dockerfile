@@ -41,4 +41,8 @@ VOLUME ["/app/models", "/app/data"]
 
 EXPOSE 8000
 
+ENV OMP_NUM_THREADS=2
+ENV OPENBLAS_NUM_THREADS=2
+ENV MKL_NUM_THREADS=2
+
 CMD ["python", "run.py"]

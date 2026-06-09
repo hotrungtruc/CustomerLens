@@ -2,11 +2,8 @@ setuptools<81
 numpy
 opencv-python
 onnxruntime
-sympy
-cvzone
 streamlit
 mediapipe
 fastapi
 uvicorn[standard]
 scipy
-onnx
