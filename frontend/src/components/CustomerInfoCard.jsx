@@ -366,13 +366,9 @@ export default function CustomerInfoCard({
                 <StatBox label="Ma KH" value={selectedCustomer.id} />
                 <StatBox label="Ten" value={selectedCustomer.name} />
                 <StatBox label="SDT" value={selectedCustomer.phone} />
-                <StatBox label="Nhom dich vu" value={selectedCustomer.service_category} />
-                <StatBox label="Bat dau su dung" value={selectedCustomer.service_start_year} />
-                <StatBox label="Tham nien" value={selectedCustomer.customer_tenure_years} />
-                <StatBox label="Hang khach" value={selectedCustomer.loyalty_tier || rankLabel(selectedCustomer.total_attendance)} />
                 <StatBox label="Note" value={selectedCustomer.note} />
                 <StatBox label="Lan den" value={selectedCustomer.total_attendance} />
-                <StatBox label="Lan cuoi" value={selectedCustomer.last_attendance_time} />
+                <StatBox label="Hang" value={rankLabel(selectedCustomer.total_attendance)} />
               </div>
             )}
 

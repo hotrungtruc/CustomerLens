@@ -109,11 +109,10 @@ export default function CustomersPage() {
       displayId,
       name: c.name || "Khách mời",
       visits: c.total_attendance || 0,
-      phone: c.phone || "---",
-      rank: rank,
+      rank,
+      stars: rank === "VIP" ? 5 : rank === "Member" ? 4 : 3,
       lastVisit: formatLastVisit(c.last_attendance_time),
       status,
-      stars: rank === "VIP" ? 5 : rank === "Member" ? 4 : 3,
     };
   });
 
