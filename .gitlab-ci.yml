@@ -20,8 +20,11 @@ deploy_production:
       ssh -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" << 'ENDSSH'
         set -e
         echo "--- Pulling latest code ---"
+        sudo apt-get update -y && sudo apt-get install git-lfs -y
         cd /home/ubuntu/face-recognition-system
+        git lfs install
         git pull origin main
+        git lfs pull
 
         echo "--- Rebuilding and restarting container ---"
         sudo docker compose down --timeout 30
