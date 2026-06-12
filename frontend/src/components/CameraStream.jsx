@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Camera } from "lucide-react";
-
 import { API_BASE_URL } from "../services/api";
 import { getTrackBadge } from "./trackBadge";
 
@@ -15,6 +13,7 @@ export default function CameraStream({
   customers = [],
   frameSize = { width: 640, height: 360 },
   highlightedTrackId = null,
+  framed = true,
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -256,7 +255,7 @@ export default function CameraStream({
   };
 
   return (
-    <div className="overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+    <div className={framed ? "overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]" : "overflow-hidden bg-white"}>
       <div className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 text-sm text-slate-500 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-slate-600">{status}</span>
@@ -324,35 +323,6 @@ export default function CameraStream({
             })}
         </div>
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4">
-          <div className="pointer-events-auto flex items-center gap-2 rounded-[20px] border border-white/10 bg-slate-900/80 px-4 py-3 text-white shadow-[0_16px_40px_rgba(15,23,42,0.35)] backdrop-blur-md">
-            <ToolbarIcon label="Snap" active>
-              <Camera className="h-4.5 w-4.5" />
-            </ToolbarIcon>
-            <ToolbarIcon label="Record">
-              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="5" y="7" width="10" height="10" rx="2" />
-                <path d="M15 10l4-2v8l-4-2z" />
-              </svg>
-            </ToolbarIcon>
-            <ToolbarIcon label="Mic">
-              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M12 14a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v4a3 3 0 0 0 3 3Z" />
-                <path d="M19 11a7 7 0 0 1-14 0" />
-                <path d="M12 18v3" />
-              </svg>
-            </ToolbarIcon>
-            <ToolbarIcon label="Volume">
-              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M11 5 6 9H2v6h4l5 4V5Z" />
-                <path d="M15 9a4 4 0 0 1 0 6" />
-                <path d="M17.5 6.5a7 7 0 0 1 0 11" />
-              </svg>
-            </ToolbarIcon>
-            <ToolbarIcon label="More">...</ToolbarIcon>
-          </div>
-        </div>
-
         <canvas ref={canvasRef} className="hidden" />
 
         {error ? (
@@ -362,18 +332,5 @@ export default function CameraStream({
         ) : null}
       </div>
     </div>
-  );
-}
-
-function ToolbarIcon({ children, label, active = false }) {
-  return (
-    <button
-      type="button"
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-xl transition ${active ? "bg-white text-slate-900 shadow-sm" : "bg-white/10 text-white/85 hover:bg-white/15"
-        }`}
-      title={label}
-    >
-      {children}
-    </button>
   );
 }
