@@ -16,8 +16,12 @@ DATABASE_URL = f"sqlite:///{PRODUCTION_DB_PATH}"
 
 MODELS_DIR = BASE_DIR / "models"
 ADAFACE_PATH = MODELS_DIR / "adaface_ir18.onnx"
-RECOGNIZER_PATH = ADAFACE_PATH if ADAFACE_PATH.exists() else MODELS_DIR / "ghostface_int8.onnx"
-RECOGNIZER_FLOAT_PATH = ADAFACE_PATH if ADAFACE_PATH.exists() else MODELS_DIR / "ghostface_fp32.onnx"
+
+def is_valid_model(path: Path) -> bool:
+    return path.exists() and path.stat().st_size > 1024
+
+RECOGNIZER_PATH = ADAFACE_PATH if is_valid_model(ADAFACE_PATH) else MODELS_DIR / "ghostface_int8.onnx"
+RECOGNIZER_FLOAT_PATH = ADAFACE_PATH if is_valid_model(ADAFACE_PATH) else MODELS_DIR / "ghostface_fp32.onnx"
 FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
 MEDIAPIPE_FACE_MESH_MODEL_SELECTION = 0
 
