@@ -253,8 +253,8 @@ export default function CustomerInfoCard({
 
                   <div className="space-y-2 text-sm text-ink/75">
                     <TileRow label="Ma KH" value={item.id} />
-                    <TileRow label="Lan den" value={item.total_attendance} />
-                    <TileRow label="Hang" value={rankLabel(item.total_attendance)} />
+                    <TileRow label="Lan den" value={item.visit_count} />
+                    <TileRow label="Hang" value={rankLabel(item.visit_count)} />
                   </div>
                 </button>
               );
@@ -367,8 +367,8 @@ export default function CustomerInfoCard({
                 <StatBox label="Ten" value={selectedCustomer.name} />
                 <StatBox label="SDT" value={selectedCustomer.phone} />
                 <StatBox label="Note" value={selectedCustomer.note} />
-                <StatBox label="Lan den" value={selectedCustomer.total_attendance} />
-                <StatBox label="Hang" value={rankLabel(selectedCustomer.total_attendance)} />
+                <StatBox label="Lan den" value={selectedCustomer.visit_count} />
+                <StatBox label="Hang" value={rankLabel(selectedCustomer.visit_count)} />
               </div>
             )}
 

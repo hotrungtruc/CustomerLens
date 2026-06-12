@@ -95,7 +95,7 @@ export default function CustomerDetailPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const rank = customer ? rankLabel(customer.total_attendance) : "Guest";
+  const rank = customer ? rankLabel(customer.visit_count) : "Guest";
   const stars = rankStars(rank);
   const displayId = id
     ? (String(id).startsWith("GUEST_") ? id : `CLIENT_${id}`)
@@ -103,8 +103,8 @@ export default function CustomerDetailPage() {
 
   const statCards = customer
     ? [
-      { label: "Tổng lượt ghé", value: String(customer.total_attendance ?? 0) },
-      { label: "Lần gần nhất", value: formatDate(customer.last_attendance_time) },
+      { label: "Tổng lượt ghé", value: String(customer.visit_count ?? 0) },
+      { label: "Lần gần nhất", value: formatDate(customer.last_visit) },
       { label: "Số điện thoại", value: customer.phone || "Chưa có" },
       { label: "Hạng", value: rank },
     ]
@@ -171,7 +171,7 @@ export default function CustomerDetailPage() {
                         <Calendar className="h-4 w-4 shrink-0 text-slate-400" />
                         <div>
                           <div className="text-xs text-slate-400">Lần gần nhất</div>
-                          <div className="font-medium">{formatDateTime(customer.last_attendance_time)}</div>
+                          <div className="font-medium">{formatDateTime(customer.last_visit)}</div>
                         </div>
                       </div>
 
@@ -240,11 +240,11 @@ export default function CustomerDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
-                        {customer.last_attendance_time ? (
+                        {customer.last_visit ? (
                           <tr className="hover:bg-slate-50/60">
-                            <td className="px-5 py-3.5 text-sm text-slate-700">{formatDate(customer.last_attendance_time)}</td>
-                            <td className="px-5 py-3.5 text-sm text-slate-700">{formatTime(customer.last_attendance_time)}</td>
-                            <td className="px-5 py-3.5 text-sm text-slate-700">{customer.total_attendance ?? 0} lần</td>
+                            <td className="px-5 py-3.5 text-sm text-slate-700">{formatDate(customer.last_visit)}</td>
+                            <td className="px-5 py-3.5 text-sm text-slate-700">{formatTime(customer.last_visit)}</td>
+                            <td className="px-5 py-3.5 text-sm text-slate-700">{customer.visit_count ?? 0} lần</td>
                             <td className="px-5 py-3.5">
                               <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-600">
                                 Hoàn thành

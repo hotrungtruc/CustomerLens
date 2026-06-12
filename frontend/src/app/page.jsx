@@ -212,7 +212,7 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 // ── Customer card trong right panel ──────────────────────────────────────────
 function CustomerCard({ c, onClick }) {
   const known = isKnownCustomer(c);
-  const rank = rankLabel(c.total_attendance);
+  const rank = rankLabel(c.visit_count);
   const starCount = rank === "VIP" ? 5 : rank === "Member" ? 4 : 3;
   const { symbol, theme } = getTrackBadge(c.track_id);
   const detectedAt = c.detected_at
