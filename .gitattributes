@@ -1,3 +1,2 @@
-backend/models/*.onnx filter=lfs diff=lfs merge=lfs -text
 backend/models/*.data filter=lfs diff=lfs merge=lfs -text
-backend/models/*.task filter=lfs diff=lfs merge=lfs -text
+backend/models/adaface_ir18.onnx filter=lfs diff=lfs merge=lfs -text
