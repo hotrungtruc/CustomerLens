@@ -8,7 +8,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       # Persistent data outside the container - survives rebuilds
-      - ./backend/models:/app/models:ro
+      - /srv/faceai/models:/app/models:ro
       - /srv/faceai/data:/app/data
       - ./backend/config.py:/app/config.py:ro
     environment:

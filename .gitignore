@@ -41,7 +41,7 @@ MANIFEST
 *.sqlite3
 
 # Large model files (use LFS or train locally)
-# backend/models/
+backend/models/
 backend/data/encodings/EncodeFile.p
 
 # Temporary files
