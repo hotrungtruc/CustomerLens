@@ -79,8 +79,11 @@ def _process_frame(frame):
     for bbox, landmark, score in zip(*detections):
         x1, y1, x2, y2 = map(int, bbox)
         quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+        
+        liveness_score, is_real = _run_cpu_bound(embedder.check_liveness, frame, (x1, y1, x2, y2))
+        
         embedding = None
-        if quality_ok:
+        if quality_ok and is_real:
             embedding = _run_cpu_bound(embedder.get_embedding, frame, landmark)
 
         face_records.append(
@@ -88,12 +91,31 @@ def _process_frame(frame):
                 "bbox": (x1, y1, x2, y2),
                 "score": float(score),
                 "quality_ok": quality_ok,
+                "is_real": is_real,
+                "liveness_score": liveness_score,
                 "embedding": embedding,
             }
         )
 
-    tracked_faces = track_manager.process_faces(face_records)
+    # Filter out fake faces from tracking
+    real_faces = [f for f in face_records if f.get("is_real", True)]
+    fake_faces = [f for f in face_records if not f.get("is_real", True)]
+    
+    tracked_faces = track_manager.process_faces(real_faces)
     annot_faces = []
+
+    for fake in fake_faces:
+        x1, y1, x2, y2 = fake["bbox"]
+        annot_faces.append(
+            {
+                "bbox": (x1, y1, x2, y2),
+                "color": (0, 0, 255),  # Red for Spoofing
+                "label": f"LUA DAO! ({fake['liveness_score']:.2f})",
+                "customer_id": None,
+                "track_id": None,
+                "quality_ok": False,
+            }
+        )
 
     for face in tracked_faces:
         x1, y1, x2, y2 = face["bbox"]

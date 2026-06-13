@@ -16,6 +16,8 @@ from config import (
     SIMILARITY_THRESHOLD,
     GUEST_MIN_DETECTION_SCORE,
     GUEST_MIN_FACE_BBOX_SIZE,
+    LIVENESS_MODEL_PATH,
+    LIVENESS_THRESHOLD,
 )
 
 try:
@@ -111,6 +113,21 @@ class InsightEmbedder:
             except Exception as e:
                 print(f"Warning: Failed to load SCRFD model: {e}")
 
+        # Initialize Liveness model
+        self.liveness_detector = None
+        if LIVENESS_MODEL_PATH.exists():
+            try:
+                self.liveness_detector = ort.InferenceSession(
+                    str(LIVENESS_MODEL_PATH),
+                    sess_options=session_options,
+                    providers=providers,
+                )
+                self.liveness_input_name = self.liveness_detector.get_inputs()[0].name
+                self.liveness_output_name = self.liveness_detector.get_outputs()[0].name
+                print(f"Loaded Liveness model: {LIVENESS_MODEL_PATH.name}")
+            except Exception as e:
+                print(f"Warning: Failed to load Liveness model: {e}")
+
         # Fallback logic if SCRFD is not available
         if not self._use_scrfd:
             if mp is None:
@@ -179,9 +196,13 @@ class InsightEmbedder:
                 
             guest_quality_ok = self.is_guest_quality_ok(box, score, landmark)
 
-            embedding = self.get_embedding(image_bgr, landmark)
-            if embedding is None:
-                continue
+            # Liveness check
+            liveness_score, is_real = self.check_liveness(image_bgr, box)
+
+            embedding = None
+            if is_real:
+                embedding = self.get_embedding(image_bgr, landmark)
+                
             left, top, right, bottom = box.astype(int)
             faces.append(
                 {
@@ -190,6 +211,8 @@ class InsightEmbedder:
                     "score": float(score),
                     "quality_ok": quality_ok,
                     "guest_quality_ok": guest_quality_ok,
+                    "is_real": is_real,
+                    "liveness_score": float(liveness_score),
                     "embedding": embedding,
                 }
             )
@@ -228,6 +251,49 @@ class InsightEmbedder:
                 return False
                 
         return True
+
+    def check_liveness(self, image_bgr, bbox):
+        if self.liveness_detector is None:
+            # If no model is loaded, assume Real
+            return 1.0, True
+
+        x1, y1, x2, y2 = map(int, bbox)
+        w = x2 - x1
+        h = y2 - y1
+        cx = x1 + w // 2
+        cy = y1 + h // 2
+
+        # 2.7x bounding box expansion for MiniFASNet
+        scale = 2.7
+        new_w = int(w * scale)
+        new_h = int(h * scale)
+
+        img_h, img_w = image_bgr.shape[:2]
+        nx1 = max(0, cx - new_w // 2)
+        ny1 = max(0, cy - new_h // 2)
+        nx2 = min(img_w, cx + new_w // 2)
+        ny2 = min(img_h, cy + new_h // 2)
+
+        crop = image_bgr[ny1:ny2, nx1:nx2]
+        if crop.size == 0:
+            return 0.0, False
+
+        resized = cv2.resize(crop, (80, 80))
+        # Convert to NCHW and normalize to [0, 1]
+        blob = np.expand_dims(resized.transpose(2, 0, 1), axis=0).astype(np.float32) / 255.0
+
+        outputs = self.liveness_detector.run([self.liveness_output_name], {self.liveness_input_name: blob})
+        logits = outputs[0][0]
+        
+        # Softmax to get probabilities
+        exp_logits = np.exp(logits - np.max(logits))
+        probs = exp_logits / np.sum(exp_logits)
+        
+        # Class 0 is Live, Class 1 is Print, Class 2 is Replay
+        liveness_score = float(probs[0])
+        is_real = liveness_score >= LIVENESS_THRESHOLD
+
+        return liveness_score, is_real
 
     def detect(self, image_bgr, scale=1.0):
         # Use MediaPipe FaceMesh to detect faces and extract 5-point landmarks
