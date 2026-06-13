@@ -4,8 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
-import { Search, SlidersHorizontal, ChevronDown } from "lucide-react";
-import { fetchAllCustomers } from "../../services/api";
+import { Search, SlidersHorizontal, ChevronDown, Trash2, Edit, X } from "lucide-react";
+import { fetchAllCustomers, deleteCustomer, putCustomerProfile } from "../../services/api";
 import { useCustomerDetection } from "../../hooks/useCustomerDetection";
 
 const RANK_PILL = {
@@ -67,7 +67,46 @@ export default function CustomersPage() {
   const [query, setQuery] = useState("");
   const [dbCustomers, setDbCustomers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [editingCustomer, setEditingCustomer] = useState(null);
   const { customers: liveCustomers } = useCustomerDetection();
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa khách hàng này? Mọi dữ liệu liên quan sẽ bị xóa.")) return;
+    try {
+      const res = await deleteCustomer(id);
+      if (res.status === "success") {
+        setDbCustomers((prev) => prev.filter((c) => c.id !== id));
+      } else {
+        alert("Lỗi khi xóa khách hàng: " + res.message);
+      }
+    } catch (err) {
+      alert("Lỗi khi kết nối API xóa khách hàng.");
+    }
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    if (!editingCustomer) return;
+    try {
+      const payload = {
+        id: editingCustomer.id,
+        name: editingCustomer.name,
+        phone: editingCustomer.phone,
+        note: editingCustomer.note,
+      };
+      const res = await putCustomerProfile(payload);
+      if (res.success) {
+        setDbCustomers((prev) =>
+          prev.map((c) => (c.id === editingCustomer.id ? { ...c, ...payload } : c))
+        );
+        setEditingCustomer(null);
+      } else {
+        alert("Lỗi khi cập nhật thông tin: " + res.message);
+      }
+    } catch (err) {
+      alert("Lỗi kết nối khi cập nhật thông tin.");
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -113,6 +152,8 @@ export default function CustomersPage() {
       stars: rank === "VIP" ? 5 : rank === "Member" ? 4 : 3,
       lastVisit: formatLastVisit(c.last_visit),
       status,
+      phone: c.phone || "",
+      note: c.note || "",
     };
   });
 
@@ -202,7 +243,7 @@ export default function CustomersPage() {
                 <table className="w-full min-w-[700px] table-auto text-left">
                   <thead>
                     <tr className="border-b border-slate-100">
-                      {["Khách hàng", "Mã ID", "Hạng", "Lượt ghé", "Lần cuối", "Đánh giá", "Trạng thái"].map((col) => (
+                      {["Khách hàng", "Mã ID", "Hạng", "Lượt ghé", "Lần cuối", "Đánh giá", "Trạng thái", "Hành động"].map((col) => (
                         <th key={col} className="px-5 py-3.5 text-xs font-medium text-slate-400">
                           {col}
                         </th>
@@ -232,9 +273,27 @@ export default function CustomersPage() {
                           <Stars count={c.stars} />
                         </td>
                         <td className="px-5 py-4">
-                          <span className={`rounded - full px - 2.5 py - 1 text - xs font - medium ${ STATUS_PILL[c.status] } `}>
+                          <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_PILL[c.status]}`}>
                             {c.status}
                           </span>
+                        </td>
+                        <td className="px-5 py-4 text-slate-400">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setEditingCustomer(c)}
+                              className="p-1.5 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition"
+                              title="Sửa"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(c.id)}
+                              className="p-1.5 hover:bg-red-50 hover:text-red-600 rounded-lg transition"
+                              title="Xóa"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -245,6 +304,68 @@ export default function CustomersPage() {
           </div>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {editingCustomer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-slate-800">Chỉnh sửa thông tin</h3>
+              <button
+                onClick={() => setEditingCustomer(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <form onSubmit={handleEditSave} className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Tên khách hàng</label>
+                  <input
+                    required
+                    value={editingCustomer.name}
+                    onChange={(e) => setEditingCustomer({ ...editingCustomer, name: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Số điện thoại</label>
+                  <input
+                    value={editingCustomer.phone}
+                    onChange={(e) => setEditingCustomer({ ...editingCustomer, phone: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Ghi chú</label>
+                  <textarea
+                    rows={3}
+                    value={editingCustomer.note}
+                    onChange={(e) => setEditingCustomer({ ...editingCustomer, note: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 px-4 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingCustomer(null)}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

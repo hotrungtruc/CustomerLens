@@ -516,6 +516,31 @@ async def api_customer_profile(request: Request):
 
         if source_id.startswith("GUEST_") and final_id != source_id and track_manager is not None:
             track_manager.promote_guest(source_id, final_id)
+            
+            # --- Merge guest data into new customer ---
+            guest_info = get_customer_info(conn, source_id)
+            if guest_info:
+                # Merge visits, spending, and initial creation time
+                conn.execute('''
+                    UPDATE customers 
+                    SET total_visits = ?, last_visit = ?, total_spending = ?, created_at = ?
+                    WHERE customer_id = ?
+                ''', (
+                    guest_info.get("total_visits", 0), 
+                    guest_info.get("last_visit"), 
+                    guest_info.get("total_spending", 0),
+                    guest_info.get("created_at"),
+                    final_id
+                ))
+                
+                # Re-point foreign keys to the new ID
+                conn.execute("UPDATE customer_embeddings SET customer_id = ? WHERE customer_id = ?", (final_id, source_id))
+                conn.execute("UPDATE table_bookings SET customer_id = ? WHERE customer_id = ?", (final_id, source_id))
+                conn.execute("UPDATE orders SET customer_id = ? WHERE customer_id = ?", (final_id, source_id))
+                
+                # Delete the old guest record
+                conn.execute("DELETE FROM customers WHERE customer_id = ?", (source_id,))
+                conn.commit()
 
         customer_info = get_customer_info(conn, final_id)
         if not customer_info:
@@ -666,6 +691,17 @@ async def api_promote_guest(request: Request):
 
     ok = track_manager.promote_guest(guest_id, new_id)
     if ok:
+        conn = get_db_connection()
+        try:
+            guest_info = get_customer_info(conn, guest_id)
+            if guest_info:
+                conn.execute("UPDATE customer_embeddings SET customer_id = ? WHERE customer_id = ?", (new_id, guest_id))
+                conn.execute("UPDATE table_bookings SET customer_id = ? WHERE customer_id = ?", (new_id, guest_id))
+                conn.execute("UPDATE orders SET customer_id = ? WHERE customer_id = ?", (new_id, guest_id))
+                conn.execute("DELETE FROM customers WHERE customer_id = ?", (guest_id,))
+                conn.commit()
+        finally:
+            conn.close()
         return {"success": True}
     return {"success": False, "message": "guest not found"}
 
@@ -706,5 +742,32 @@ def api_get_customer_by_id(customer_id: str):
                 "note": customer_info.get("note"),
             }
         }
+    finally:
+        conn.close()
+
+@router.delete("/api/customers/{customer_id}")
+def api_delete_customer(customer_id: str):
+    conn = get_db_connection()
+    try:
+        ensure_schema(conn)
+        # Check if customer exists
+        customer_info = get_customer_info(conn, customer_id)
+        if not customer_info:
+            return {"status": "not_found", "message": f"Customer '{customer_id}' not found"}
+        
+        # Remove from RAM and track manager
+        if track_manager:
+            track_manager.delete_customer(customer_id)
+            
+        # Delete from DB
+        conn.execute("DELETE FROM customer_embeddings WHERE customer_id = ?", (customer_id,))
+        conn.execute("DELETE FROM table_bookings WHERE customer_id = ?", (customer_id,))
+        conn.execute("DELETE FROM orders WHERE customer_id = ?", (customer_id,))
+        conn.execute("DELETE FROM customers WHERE customer_id = ?", (customer_id,))
+        conn.commit()
+        
+        return {"status": "success", "message": f"Customer '{customer_id}' deleted successfully"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
     finally:
         conn.close()
