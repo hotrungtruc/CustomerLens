@@ -14,12 +14,14 @@ def main():
     embedder = InsightEmbedder(recognizer_path=model_path)
 
     image_path = Path(r"c:\SCHOOL\HK253\BigData\face-recognition-system\backend\data\images\000.jpg")
-    if not image_path.exists():
-        print(f"Test image not found at {image_path}")
-        return
-
     print(f"Loading image from {image_path.name}")
-    image = cv2.imread(str(image_path))
+    if image_path.exists():
+        image = cv2.imread(str(image_path))
+    else:
+        import numpy as np
+        print(f"Test image not found at {image_path}, using a dummy 640x480 black image for testing inference.")
+        image = np.zeros((480, 640, 3), dtype=np.uint8)
+    
     if image is None:
         print("Failed to read image")
         return

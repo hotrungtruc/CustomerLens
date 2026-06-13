@@ -4,6 +4,7 @@ import urllib.request
 from config import MODELS_DIR
 
 MODELS = {
+    "det_10g.onnx": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
     "face_landmarker.task": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
     "ghostface_fp32.onnx": "https://github.com/andestech/ModelZoo/raw/master/GhostFaceNet/Model/ghostface_fp32.onnx",
 }
@@ -35,7 +36,10 @@ def build_ghostface_int8():
 
 def download_file(url, filename):
     try:
-        save_path = MODELS_DIR / filename
+        is_zip = url.endswith(".zip")
+        download_filename = filename + ".zip" if is_zip else filename
+        save_path = MODELS_DIR / download_filename
+        
         req = urllib.request.Request(url)
         req.add_header(
             "User-Agent",
@@ -57,13 +61,32 @@ def download_file(url, filename):
                     if total_size > 0:
                         percent = (downloaded / total_size) * 100
                         print(
-                            f"{filename}: {percent:.1f}% "
+                            f"{download_filename}: {percent:.1f}% "
                             f"({downloaded / (1024 * 1024):.1f}MB / "
                             f"{total_size / (1024 * 1024):.1f}MB)",
                             end="\r",
                         )
 
-        print(f"Saved to {save_path}")
+        print(f"\nSaved to {save_path}")
+        
+        if is_zip:
+            print(f"Extracting {save_path}...")
+            import zipfile
+            with zipfile.ZipFile(save_path, 'r') as zip_ref:
+                # Find the target file in the zip
+                for member in zip_ref.namelist():
+                    if filename in member:
+                        # Extract just the specific file we need
+                        source = zip_ref.open(member)
+                        target_path = MODELS_DIR / filename
+                        with open(target_path, "wb") as target:
+                            import shutil
+                            shutil.copyfileobj(source, target)
+                        print(f"Extracted {filename} to {target_path}")
+                        break
+            # Remove zip file
+            os.remove(save_path)
+            
     except Exception as e:
         print(f"Download failed: {e}")
 
