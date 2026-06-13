@@ -7,7 +7,6 @@ import onnxruntime as ort
 
 from config import (
     FACE_LANDMARKER_TASK,
-    SCRFD_MODEL_PATH,
     MIN_DETECTION_SCORE,
     MIN_FACE_BBOX_SIZE,
     MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
@@ -29,7 +28,6 @@ FACE_SIZE = (112, 112)
 DET_SIZE = (320, 320)  # Optimized for CPU inference speed
 DET_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.4
-SCRFD_STRIDES = (8, 16, 32)
 
 ARC_FACE_TEMPLATE = np.array(
     [
@@ -95,23 +93,8 @@ class InsightEmbedder:
         self.recognizer_input = self.recognizer.get_inputs()[0].name
         print(f"Loaded recognizer model: {model_used}")
         
-        # Initialize face detection - Try SCRFD first
+        # Initialize face detection
         self._use_scrfd = False
-        if SCRFD_MODEL_PATH.exists():
-            try:
-                self.detector = ort.InferenceSession(
-                    str(SCRFD_MODEL_PATH),
-                    sess_options=session_options,
-                    providers=providers,
-                )
-                
-                # Check if detector has IO Binding support optimization
-                self.detector_input = self.detector.get_inputs()[0].name
-                self.detector_output_names = [out.name for out in self.detector.get_outputs()]
-                self._use_scrfd = True
-                print(f"Using SCRFD model for face detection from {SCRFD_MODEL_PATH.name}")
-            except Exception as e:
-                print(f"Warning: Failed to load SCRFD model: {e}")
 
         # Fallback logic if SCRFD is not available
         if not self._use_scrfd:
@@ -252,79 +235,7 @@ class InsightEmbedder:
         # Common 5-point indices that map well onto face landmarker outputs
         lm5_idx = [33, 263, 1, 61, 291]
 
-        if getattr(self, "_use_scrfd", False):
-            # Use SCRFD ONNX model
-            padded_img, ratio = resize_with_padding(image_bgr, self.det_size)
-            
-            # Create blob: SCRFD uses (img - 127.5) / 128.0
-            blob = cv2.dnn.blobFromImage(
-                padded_img, 1.0 / 128.0, self.det_size, (127.5, 127.5, 127.5), swapRB=True
-            )
-            
-            outputs = self.detector.run(self.detector_output_names, {self.detector_input: blob})
-            
-            # Post-process SCRFD outputs
-            fmc = len(SCRFD_STRIDES)
-            # outputs order might vary depending on model export, typically:
-            # score_8, score_16, score_32, bbox_8, bbox_16, bbox_32, kps_8, kps_16, kps_32
-            # Let's assume standard layout (scores, bboxes, kps) sorted by stride
-            # We will search through outputs and match shapes
-            scores_list, bboxes_list, kpss_list = [], [], []
-            for stride in SCRFD_STRIDES:
-                feat_w, feat_h = self.det_size[0] // stride, self.det_size[1] // stride
-                feat_size = feat_w * feat_h * 2
-                
-                stride_scores, stride_bboxes, stride_kpss = None, None, None
-                for out in outputs:
-                    # Depending on export, output could be [1, feat_size, C] or [feat_size, C]
-                    if len(out.shape) == 3 and out.shape[1] == feat_size:
-                        out = out[0]  # strip batch dim
-                        
-                    if len(out.shape) == 2 and out.shape[0] == feat_size:
-                        if out.shape[-1] == 1:
-                            stride_scores = out
-                        elif out.shape[-1] == 4:
-                            stride_bboxes = out
-                        elif out.shape[-1] == 10:
-                            stride_kpss = out
-                
-                if stride_scores is not None and stride_bboxes is not None and stride_kpss is not None:
-                    # Filter by score
-                    idx = np.where(stride_scores[:, 0] >= DET_THRESHOLD)[0]
-                    if len(idx) == 0:
-                        continue
-                        
-                    scores_part = stride_scores[idx, 0]
-                    bboxes_part = stride_bboxes[idx] * stride
-                    kpss_part = stride_kpss[idx] * stride
-                    
-                    anchor_centers = get_anchor_centers(self.det_size, stride)[idx]
-                    
-                    bboxes_part = distance_to_bbox(anchor_centers, bboxes_part)
-                    kpss_part = distance_to_landmarks(anchor_centers, kpss_part)
-                    
-                    scores_list.append(scores_part)
-                    bboxes_list.append(bboxes_part)
-                    kpss_list.append(kpss_part)
-            
-            if scores_list:
-                scores_all = np.vstack([x.reshape(-1, 1) for x in scores_list]).flatten()
-                boxes_all = np.vstack(bboxes_list)
-                kpss_all = np.vstack(kpss_list)
-                
-                # Rescale to original image
-                boxes_all /= ratio
-                kpss_all /= ratio
-                
-                # Apply NMS
-                keep = nms(boxes_all, scores_all, NMS_THRESHOLD)
-                
-                for idx in keep:
-                    boxes.append(boxes_all[idx])
-                    landmarks_all.append(kpss_all[idx])
-                    scores.append(scores_all[idx])
-                    
-        elif getattr(self, "_use_opencv", False):
+        if getattr(self, "_use_opencv", False):
             # Use OpenCV Haar Cascade for face detection
             gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
             faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(50, 50))
@@ -410,8 +321,8 @@ class InsightEmbedder:
         landmarks_arr = np.asarray(landmarks_all, dtype=np.float32)
         scores_arr = np.asarray(scores, dtype=np.float32)
 
-        if len(boxes_arr) > 0 and not getattr(self, "_use_scrfd", False):
-            # NMS for MediaPipe/OpenCV (SCRFD already handles NMS)
+        if len(boxes_arr) > 0:
+            # NMS for MediaPipe/OpenCV
             keep = nms(boxes_arr, scores_arr, threshold=0.4)
             boxes_arr = boxes_arr[keep]
             landmarks_arr = landmarks_arr[keep]

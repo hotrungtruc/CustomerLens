@@ -4,7 +4,6 @@ import urllib.request
 from config import MODELS_DIR
 
 MODELS = {
-    "det_10g.onnx": "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
     "face_landmarker.task": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
     "ghostface_fp32.onnx": "https://github.com/andestech/ModelZoo/raw/master/GhostFaceNet/Model/ghostface_fp32.onnx",
 }
