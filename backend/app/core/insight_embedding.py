@@ -26,7 +26,7 @@ except Exception as e:
     mp = None
 
 FACE_SIZE = (112, 112)
-DET_SIZE = (640, 640)  # Updated to 640x640 as requested
+DET_SIZE = (320, 320)  # Optimized for CPU inference speed
 DET_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.4
 SCRFD_STRIDES = (8, 16, 32)
@@ -55,6 +55,8 @@ class InsightEmbedder:
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 3
         session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        session_options.intra_op_num_threads = 2
+        session_options.inter_op_num_threads = 1
         self.det_size = det_size
         
         # Try to load the recognizer model, with fallback to float model if int8 fails
