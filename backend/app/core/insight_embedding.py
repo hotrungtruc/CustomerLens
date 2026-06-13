@@ -54,8 +54,6 @@ class InsightEmbedder:
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 3
         session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        session_options.intra_op_num_threads = 2
-        session_options.inter_op_num_threads = 1
         self.det_size = det_size
         
         # Try to load the recognizer model, with fallback to float model if int8 fails
