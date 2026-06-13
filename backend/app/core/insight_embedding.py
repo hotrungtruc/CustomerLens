@@ -16,8 +16,6 @@ from config import (
     SIMILARITY_THRESHOLD,
     GUEST_MIN_DETECTION_SCORE,
     GUEST_MIN_FACE_BBOX_SIZE,
-    LIVENESS_MODEL_PATH,
-    LIVENESS_THRESHOLD,
 )
 
 try:
@@ -29,7 +27,7 @@ except Exception as e:
 
 FACE_SIZE = (112, 112)
 DET_SIZE = (640, 640)  # Updated to 640x640 as requested
-DET_THRESHOLD = 0.25
+DET_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.4
 SCRFD_STRIDES = (8, 16, 32)
 
@@ -113,75 +111,57 @@ class InsightEmbedder:
             except Exception as e:
                 print(f"Warning: Failed to load SCRFD model: {e}")
 
-        # Initialize Liveness model
-        self.liveness_detector = None
-        if LIVENESS_MODEL_PATH.exists():
-            try:
-                self.liveness_detector = ort.InferenceSession(
-                    str(LIVENESS_MODEL_PATH),
-                    sess_options=session_options,
-                    providers=providers,
-                )
-                self.liveness_input_name = self.liveness_detector.get_inputs()[0].name
-                self.liveness_output_name = self.liveness_detector.get_outputs()[0].name
-                print(f"Loaded Liveness model: {LIVENESS_MODEL_PATH.name}")
-            except Exception as e:
-                print(f"Warning: Failed to load Liveness model: {e}")
-
-        # Initialize fallback models (MediaPipe/OpenCV) to use if SCRFD fails to detect faces
-        if mp is None:
-            if not self._use_scrfd:
+        # Fallback logic if SCRFD is not available
+        if not self._use_scrfd:
+            if mp is None:
                 print("Warning: MediaPipe not available, will use OpenCV for face detection")
-            self._use_opencv = True
-            self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-            )
-            self._mediapipe_tasks = False
-        elif hasattr(mp, "tasks") and FACE_LANDMARKER_TASK.exists():
-            # Use the newer MediaPipe Tasks API if the .task model file is available
-            BaseOptions = mp.tasks.BaseOptions
-            FaceLandmarker = mp.tasks.vision.FaceLandmarker
-            FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-            VisionRunningMode = mp.tasks.vision.RunningMode
-
-            options = FaceLandmarkerOptions(
-                base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK)),
-                running_mode=VisionRunningMode.VIDEO,
-                num_faces=5,
-                min_face_detection_confidence=0.5,
-                min_tracking_confidence=0.5,
-            )
-
-            # Create the face landmarker for video mode
-            self.face_landmarker = FaceLandmarker.create_from_options(options)
-            self._mediapipe_tasks = True
-            self._use_opencv = False
-            if not self._use_scrfd:
+                self._use_opencv = True
+                self.face_cascade = cv2.CascadeClassifier(
+                    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                )
+                self._mediapipe_tasks = False
+            elif hasattr(mp, "tasks") and FACE_LANDMARKER_TASK.exists():
+                # Use the newer MediaPipe Tasks API if the .task model file is available
+                BaseOptions = mp.tasks.BaseOptions
+                FaceLandmarker = mp.tasks.vision.FaceLandmarker
+                FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+                VisionRunningMode = mp.tasks.vision.RunningMode
+    
+                options = FaceLandmarkerOptions(
+                    base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK)),
+                    running_mode=VisionRunningMode.VIDEO,
+                    num_faces=5,
+                    min_face_detection_confidence=0.5,
+                    min_tracking_confidence=0.5,
+                )
+    
+                # Create the face landmarker for video mode
+                self.face_landmarker = FaceLandmarker.create_from_options(options)
+                self._mediapipe_tasks = True
+                self._use_opencv = False
                 print("Using MediaPipe Tasks API for face detection (Fallback)")
-        elif hasattr(mp, "solutions"):
-            # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
-            self.mp_face_mesh = mp.solutions.face_mesh
-            # refine_landmarks=False keeps performance reasonable
-            self.face_mesh = self.mp_face_mesh.FaceMesh(
-                static_image_mode=False,
-                max_num_faces=5,
-                refine_landmarks=False,
-                min_detection_confidence=0.5,
-                model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
-            )
-            self._mediapipe_tasks = False
-            self._use_opencv = False
-            if not self._use_scrfd:
+            elif hasattr(mp, "solutions"):
+                # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
+                self.mp_face_mesh = mp.solutions.face_mesh
+                # refine_landmarks=False keeps performance reasonable
+                self.face_mesh = self.mp_face_mesh.FaceMesh(
+                    static_image_mode=False,
+                    max_num_faces=5,
+                    refine_landmarks=False,
+                    min_detection_confidence=0.5,
+                    model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
+                )
+                self._mediapipe_tasks = False
+                self._use_opencv = False
                 print("Using MediaPipe Solutions API for face detection (Fallback)")
-        else:
-            # Fallback to OpenCV for face detection
-            if not self._use_scrfd:
+            else:
+                # Fallback to OpenCV for face detection
                 print("Warning: MediaPipe tasks/solutions not available, using OpenCV for face detection")
-            self._use_opencv = True
-            self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-            )
-            self._mediapipe_tasks = False
+                self._use_opencv = True
+                self.face_cascade = cv2.CascadeClassifier(
+                    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                )
+                self._mediapipe_tasks = False
         
         # store recognizer provider info only
         self.providers = {"recognizer": self.recognizer.get_providers()}
@@ -199,13 +179,9 @@ class InsightEmbedder:
                 
             guest_quality_ok = self.is_guest_quality_ok(box, score, landmark)
 
-            # Liveness check
-            liveness_score, is_real = self.check_liveness(image_bgr, box)
-
-            embedding = None
-            if is_real:
-                embedding = self.get_embedding(image_bgr, landmark)
-                
+            embedding = self.get_embedding(image_bgr, landmark)
+            if embedding is None:
+                continue
             left, top, right, bottom = box.astype(int)
             faces.append(
                 {
@@ -214,8 +190,6 @@ class InsightEmbedder:
                     "score": float(score),
                     "quality_ok": quality_ok,
                     "guest_quality_ok": guest_quality_ok,
-                    "is_real": is_real,
-                    "liveness_score": float(liveness_score),
                     "embedding": embedding,
                 }
             )
@@ -254,49 +228,6 @@ class InsightEmbedder:
                 return False
                 
         return True
-
-    def check_liveness(self, image_bgr, bbox):
-        if self.liveness_detector is None:
-            # If no model is loaded, assume Real
-            return 1.0, True
-
-        x1, y1, x2, y2 = map(int, bbox)
-        w = x2 - x1
-        h = y2 - y1
-        cx = x1 + w // 2
-        cy = y1 + h // 2
-
-        # 2.7x bounding box expansion for MiniFASNet
-        scale = 2.7
-        new_w = int(w * scale)
-        new_h = int(h * scale)
-
-        img_h, img_w = image_bgr.shape[:2]
-        nx1 = max(0, cx - new_w // 2)
-        ny1 = max(0, cy - new_h // 2)
-        nx2 = min(img_w, cx + new_w // 2)
-        ny2 = min(img_h, cy + new_h // 2)
-
-        crop = image_bgr[ny1:ny2, nx1:nx2]
-        if crop.size == 0:
-            return 0.0, False
-
-        resized = cv2.resize(crop, (80, 80))
-        # Convert to NCHW and normalize to [0, 1]
-        blob = np.expand_dims(resized.transpose(2, 0, 1), axis=0).astype(np.float32) / 255.0
-
-        outputs = self.liveness_detector.run([self.liveness_output_name], {self.liveness_input_name: blob})
-        logits = outputs[0][0]
-        
-        # Softmax to get probabilities
-        exp_logits = np.exp(logits - np.max(logits))
-        probs = exp_logits / np.sum(exp_logits)
-        
-        # Class 0 is Live, Class 1 is Print, Class 2 is Replay
-        liveness_score = float(probs[0])
-        is_real = liveness_score >= LIVENESS_THRESHOLD
-
-        return liveness_score, is_real
 
     def detect(self, image_bgr, scale=1.0):
         # Use MediaPipe FaceMesh to detect faces and extract 5-point landmarks
@@ -389,11 +320,9 @@ class InsightEmbedder:
                 for idx in keep:
                     boxes.append(boxes_all[idx])
                     landmarks_all.append(kpss_all[idx])
-            if len(boxes) > 0:
-                return np.array(boxes), np.array(landmarks_all), np.array(scores)
-            # If no faces found by SCRFD, fall through to fallbacks
-            
-        if getattr(self, "_use_opencv", False):
+                    scores.append(scores_all[idx])
+                    
+        elif getattr(self, "_use_opencv", False):
             # Use OpenCV Haar Cascade for face detection
             gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
             faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(50, 50))
