@@ -58,13 +58,3 @@ export async function fetchAllCustomers() {
   }
   return response.json();
 }
-
-export async function deleteCustomer(customerId) {
-  const response = await fetch(`${API_BASE_URL}/api/customers/${customerId}`, {
-    method: "DELETE",
-  });
-  if (!response.ok) {
-    throw new Error("Request failed");
-  }
-  return response.json();
-}

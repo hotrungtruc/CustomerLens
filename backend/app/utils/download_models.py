@@ -35,10 +35,7 @@ def build_ghostface_int8():
 
 def download_file(url, filename):
     try:
-        is_zip = url.endswith(".zip")
-        download_filename = filename + ".zip" if is_zip else filename
-        save_path = MODELS_DIR / download_filename
-        
+        save_path = MODELS_DIR / filename
         req = urllib.request.Request(url)
         req.add_header(
             "User-Agent",
@@ -60,32 +57,13 @@ def download_file(url, filename):
                     if total_size > 0:
                         percent = (downloaded / total_size) * 100
                         print(
-                            f"{download_filename}: {percent:.1f}% "
+                            f"{filename}: {percent:.1f}% "
                             f"({downloaded / (1024 * 1024):.1f}MB / "
                             f"{total_size / (1024 * 1024):.1f}MB)",
                             end="\r",
                         )
 
-        print(f"\nSaved to {save_path}")
-        
-        if is_zip:
-            print(f"Extracting {save_path}...")
-            import zipfile
-            with zipfile.ZipFile(save_path, 'r') as zip_ref:
-                # Find the target file in the zip
-                for member in zip_ref.namelist():
-                    if filename in member:
-                        # Extract just the specific file we need
-                        source = zip_ref.open(member)
-                        target_path = MODELS_DIR / filename
-                        with open(target_path, "wb") as target:
-                            import shutil
-                            shutil.copyfileobj(source, target)
-                        print(f"Extracted {filename} to {target_path}")
-                        break
-            # Remove zip file
-            os.remove(save_path)
-            
+        print(f"Saved to {save_path}")
     except Exception as e:
         print(f"Download failed: {e}")
 

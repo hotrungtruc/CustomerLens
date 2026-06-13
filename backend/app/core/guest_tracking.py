@@ -253,32 +253,6 @@ class GuestTrackManager:
             except Exception:
                 return False
 
-    def delete_customer(self, customer_id: str) -> bool:
-        """Remove a customer (or guest) from memory and persist changes."""
-        with self.lock:
-            try:
-                removed = False
-                # Remove from known embeddings if exists
-                while customer_id in self.known_ids:
-                    idx = self.known_ids.index(customer_id)
-                    self.known_embeddings.pop(idx)
-                    self.known_ids.pop(idx)
-                    removed = True
-                
-                # Remove from guest embeddings if exists
-                while customer_id in self.guest_ids:
-                    idx = self.guest_ids.index(customer_id)
-                    self.guest_embeddings.pop(idx)
-                    self.guest_ids.pop(idx)
-                    removed = True
-                
-                if removed:
-                    self.persist_known_embeddings()
-                    self._persist_known_embeddings_async()
-                return removed
-            except Exception:
-                return False
-
     def _create_guest_id(self):
         return f"{self.guest_prefix}_{self.frame_index}_{self.next_track_id:04d}"
 
@@ -354,7 +328,7 @@ class GuestTrackManager:
                     best_index = int(np.argmax(similarities))
                     best_sim = float(similarities[best_index])
                     # Lower threshold for individual frame vote
-                    if best_sim >= 0.55:
+                    if best_sim >= 0.45:
                         if best_index < len(self.known_embeddings):
                             voted_id = self.known_ids[best_index]
                         else:
@@ -584,7 +558,7 @@ class GuestTrackManager:
                     outputs.append(
                         {
                             "track_id": track_id,
-                            "customer_id": resolved_id if resolved_id is not None else "Unknown",
+                            "customer_id": resolved_id,
                             "bbox": bbox,
                             "embedding_ready": embedding_ready,
                             "quality_ok": quality_ok,
@@ -595,7 +569,7 @@ class GuestTrackManager:
                     outputs.append(
                         {
                             "track_id": None,
-                            "customer_id": "Unknown",
+                            "customer_id": None,
                             "bbox": bbox,
                             "embedding_ready": False,
                             "quality_ok": False,

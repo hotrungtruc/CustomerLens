@@ -25,9 +25,10 @@ except Exception as e:
     mp = None
 
 FACE_SIZE = (112, 112)
-DET_SIZE = (320, 320)  # Optimized for CPU inference speed
+DET_SIZE = (320, 320)
 DET_THRESHOLD = 0.5
 NMS_THRESHOLD = 0.4
+SCRFD_STRIDES = (8, 16, 32)
 
 ARC_FACE_TEMPLATE = np.array(
     [
@@ -53,8 +54,6 @@ class InsightEmbedder:
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 3
         session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        session_options.intra_op_num_threads = 2
-        session_options.inter_op_num_threads = 1
         self.det_size = det_size
         
         # Try to load the recognizer model, with fallback to float model if int8 fails
@@ -93,61 +92,56 @@ class InsightEmbedder:
         self.recognizer_input = self.recognizer.get_inputs()[0].name
         print(f"Loaded recognizer model: {model_used}")
         
-        # Initialize face detection
-        self._use_scrfd = False
+        # Initialize face detection - try MediaPipe tasks first, then solutions, then fallback to OpenCV
+        if mp is None:
+            print("Warning: MediaPipe not available, will use OpenCV for face detection")
+            self._use_opencv = True
+            self.face_cascade = cv2.CascadeClassifier(
+                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            )
+            self._mediapipe_tasks = False
+        elif hasattr(mp, "tasks") and FACE_LANDMARKER_TASK.exists():
+            # Use the newer MediaPipe Tasks API if the .task model file is available
+            BaseOptions = mp.tasks.BaseOptions
+            FaceLandmarker = mp.tasks.vision.FaceLandmarker
+            FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+            VisionRunningMode = mp.tasks.vision.RunningMode
 
-        # Fallback logic if SCRFD is not available
-        if not self._use_scrfd:
-            if mp is None:
-                print("Warning: MediaPipe not available, will use OpenCV for face detection")
-                self._use_opencv = True
-                self.face_cascade = cv2.CascadeClassifier(
-                    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-                )
-                self._mediapipe_tasks = False
-            elif hasattr(mp, "tasks") and FACE_LANDMARKER_TASK.exists():
-                # Use the newer MediaPipe Tasks API if the .task model file is available
-                BaseOptions = mp.tasks.BaseOptions
-                FaceLandmarker = mp.tasks.vision.FaceLandmarker
-                FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-                VisionRunningMode = mp.tasks.vision.RunningMode
-    
-                options = FaceLandmarkerOptions(
-                    base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK)),
-                    running_mode=VisionRunningMode.VIDEO,
-                    num_faces=5,
-                    min_face_detection_confidence=0.5,
-                    min_tracking_confidence=0.5,
-                )
-    
-                # Create the face landmarker for video mode
-                self.face_landmarker = FaceLandmarker.create_from_options(options)
-                self._mediapipe_tasks = True
-                self._use_opencv = False
-                print("Using MediaPipe Tasks API for face detection (Fallback)")
-            elif hasattr(mp, "solutions"):
-                # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
-                self.mp_face_mesh = mp.solutions.face_mesh
-                # refine_landmarks=False keeps performance reasonable
-                self.face_mesh = self.mp_face_mesh.FaceMesh(
-                    static_image_mode=False,
-                    max_num_faces=5,
-                    refine_landmarks=False,
-                    min_detection_confidence=0.5,
-                    model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
-                )
-                self._mediapipe_tasks = False
-                self._use_opencv = False
-                print("Using MediaPipe Solutions API for face detection (Fallback)")
-            else:
-                # Fallback to OpenCV for face detection
-                print("Warning: MediaPipe tasks/solutions not available, using OpenCV for face detection")
-                self._use_opencv = True
-                self.face_cascade = cv2.CascadeClassifier(
-                    cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-                )
-                self._mediapipe_tasks = False
-        
+            options = FaceLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK)),
+                running_mode=VisionRunningMode.VIDEO,
+                num_faces=5,
+                min_face_detection_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+
+            # Create the face landmarker for video mode
+            self.face_landmarker = FaceLandmarker.create_from_options(options)
+            self._mediapipe_tasks = True
+            self._use_opencv = False
+            print("Using MediaPipe Tasks API for face detection")
+        elif hasattr(mp, "solutions"):
+            # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
+            self.mp_face_mesh = mp.solutions.face_mesh
+            # refine_landmarks=False keeps performance reasonable
+            self.face_mesh = self.mp_face_mesh.FaceMesh(
+                static_image_mode=False,
+                max_num_faces=5,
+                refine_landmarks=False,
+                min_detection_confidence=0.5,
+                model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
+            )
+            self._mediapipe_tasks = False
+            self._use_opencv = False
+            print("Using MediaPipe Solutions API for face detection")
+        else:
+            # Fallback to OpenCV for face detection
+            print("Warning: MediaPipe tasks/solutions not available, using OpenCV for face detection")
+            self._use_opencv = True
+            self.face_cascade = cv2.CascadeClassifier(
+                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            )
+            self._mediapipe_tasks = False
         # store recognizer provider info only
         self.providers = {"recognizer": self.recognizer.get_providers()}
 
@@ -322,7 +316,6 @@ class InsightEmbedder:
         scores_arr = np.asarray(scores, dtype=np.float32)
 
         if len(boxes_arr) > 0:
-            # NMS for MediaPipe/OpenCV
             keep = nms(boxes_arr, scores_arr, threshold=0.4)
             boxes_arr = boxes_arr[keep]
             landmarks_arr = landmarks_arr[keep]
