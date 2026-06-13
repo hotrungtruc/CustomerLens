@@ -13,7 +13,7 @@ def main():
     print(f"Initializing InsightEmbedder with model: {model_path.name}")
     embedder = InsightEmbedder(recognizer_path=model_path)
 
-    image_path = Path(r"c:\SCHOOL\HK253\BigData\face-recognition-system\backend\data\images\000.jpg")
+    image_path = Path(r"c:\SCHOOL\HK253\BigData\face-recognition-system\backend\t1.jpg")
     print(f"Loading image from {image_path.name}")
     if image_path.exists():
         image = cv2.imread(str(image_path))

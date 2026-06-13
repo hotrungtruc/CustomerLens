@@ -274,7 +274,11 @@ class InsightEmbedder:
                 
                 stride_scores, stride_bboxes, stride_kpss = None, None, None
                 for out in outputs:
-                    if out.shape[1] == feat_size:
+                    # Depending on export, output could be [1, feat_size, C] or [feat_size, C]
+                    if len(out.shape) == 3 and out.shape[1] == feat_size:
+                        out = out[0]  # strip batch dim
+                        
+                    if len(out.shape) == 2 and out.shape[0] == feat_size:
                         if out.shape[-1] == 1:
                             stride_scores = out
                         elif out.shape[-1] == 4:
@@ -284,13 +288,13 @@ class InsightEmbedder:
                 
                 if stride_scores is not None and stride_bboxes is not None and stride_kpss is not None:
                     # Filter by score
-                    idx = np.where(stride_scores[0, :, 0] >= DET_THRESHOLD)[0]
+                    idx = np.where(stride_scores[:, 0] >= DET_THRESHOLD)[0]
                     if len(idx) == 0:
                         continue
                         
-                    scores_part = stride_scores[0, idx, 0]
-                    bboxes_part = stride_bboxes[0, idx] * stride
-                    kpss_part = stride_kpss[0, idx] * stride
+                    scores_part = stride_scores[idx, 0]
+                    bboxes_part = stride_bboxes[idx] * stride
+                    kpss_part = stride_kpss[idx] * stride
                     
                     anchor_centers = get_anchor_centers(self.det_size, stride)[idx]
                     
