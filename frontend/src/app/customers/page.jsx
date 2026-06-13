@@ -1,4 +1,4 @@
-`"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
@@ -24,7 +24,7 @@ function Stars({ count }) {
   return (
     <div className="flex items-center gap-0.5">
       {Array.from({ length: 5 }).map((_, i) => (
-        <svg key={i} viewBox="0 0 12 12" className={`h - 3.5 w - 3.5 ${ i < count ? "fill-amber-400" : "fill-slate-200" } `}>
+        <svg key={i} viewBox="0 0 12 12" className={`h-3.5 w-3.5 ${ i < count ? "fill-amber-400" : "fill-slate-200" } `}>
           <path d="M6 1l1.4 2.9 3.2.5-2.3 2.2.5 3.2L6 8.2l-2.8 1.6.5-3.2L1.4 4.4l3.2-.5z" />
         </svg>
       ))}
