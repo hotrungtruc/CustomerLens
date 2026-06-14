@@ -281,13 +281,25 @@ class GuestTrackManager:
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
-    def _recognize_face(self, track_state, record, now):
+    def _recognize_face(self, track_state, record, now, frame=None, embedder=None):
         quality_ok = bool(record.get("quality_ok", True))
-        embedding = record.get("embedding")
+        
         existing_customer_id = track_state.resolved_customer_id
 
         if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
             return existing_customer_id
+
+        # --- LAZY EMBEDDING EXTRACTION ---
+        if record.get("embedding") is None and quality_ok and frame is not None and embedder is not None and "landmark" in record:
+            try:
+                # We only compute embedding if we don't know who this is yet!
+                record["embedding"] = embedder.get_embedding(frame, record["landmark"])
+            except Exception as e:
+                import sys
+                print(f"Lazy embedding error: {e}", file=sys.stderr)
+                record["embedding"] = None
+
+        embedding = record.get("embedding")
 
         # Calculate guest_quality_ok if not explicitly provided
         guest_quality_ok = record.get("guest_quality_ok")
@@ -404,7 +416,7 @@ class GuestTrackManager:
 
         return resolved_customer_id
 
-    def process_faces(self, face_records):
+    def process_faces(self, face_records, frame=None, embedder=None):
         with self.lock:
             self.frame_index += 1
             now = time.monotonic()
@@ -506,7 +518,7 @@ class GuestTrackManager:
                 track.last_seen_frame = self.frame_index
                 track.last_seen_at = now
 
-                resolved_id = self._recognize_face(track, det, now)
+                resolved_id = self._recognize_face(track, det, now, frame, embedder)
                 matched_detections[id(det)] = (track.track_id, resolved_id)
 
             # 6. Initialize new tracks for unmatched high-score detections
@@ -529,7 +541,7 @@ class GuestTrackManager:
                 )
                 self.tracks[track_id] = new_track
 
-                resolved_id = self._recognize_face(new_track, det, now)
+                resolved_id = self._recognize_face(new_track, det, now, frame, embedder)
                 matched_detections[id(det)] = (track_id, resolved_id)
 
             # 7. Set unmatched tracks as lost

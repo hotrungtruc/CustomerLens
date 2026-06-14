@@ -74,25 +74,26 @@ def _process_frame(frame):
     if embedder is None or track_manager is None or frame is None:
         return []
 
-    detections = _run_cpu_bound(embedder.detect, frame)
+    # Run detection directly (already on AI worker thread)
+    detections = embedder.detect(frame)
     face_records = []
     for bbox, landmark, score in zip(*detections):
         x1, y1, x2, y2 = map(int, bbox)
         quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
-        embedding = None
-        if quality_ok:
-            embedding = _run_cpu_bound(embedder.get_embedding, frame, landmark)
 
+        # Lazy embedding: we just pass the landmark to the tracker.
+        # Tracker will compute embedding only if needed!
         face_records.append(
             {
                 "bbox": (x1, y1, x2, y2),
+                "landmark": landmark,
                 "score": float(score),
                 "quality_ok": quality_ok,
-                "embedding": embedding,
+                "embedding": None,
             }
         )
 
-    tracked_faces = track_manager.process_faces(face_records)
+    tracked_faces = track_manager.process_faces(face_records, frame=frame, embedder=embedder)
     annot_faces = []
 
     for face in tracked_faces:
@@ -161,6 +162,7 @@ def init_models(ai_executor: ThreadPoolExecutor | None = None):
 
     def _ai_loop():
         last_seen_version = -1
+        frame_count = 0
         while True:
             try:
                 if embedder is None or track_manager is None or shared_frame_mgr is None:
@@ -172,9 +174,15 @@ def init_models(ai_executor: ThreadPoolExecutor | None = None):
                     time.sleep(0.05)
                     continue
 
+                last_seen_version = frame_version
+                frame_count += 1
+                
+                # Apply frame sampling to skip unnecessary processing
+                if frame_count % PROCESS_EVERY_N_FRAMES != 0:
+                    continue
+
                 frame = shared_frame_mgr.read_frame()
                 _process_frame(frame)
-                last_seen_version = frame_version
             except Exception:
                 # swallow errors in worker to keep thread alive
                 time.sleep(0.05)
