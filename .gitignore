@@ -69,3 +69,6 @@ local_backups/
 # Local dev server logs
 backend_server*.log
 frontend_server*.log
+
+# AI Agents
+.agents/
