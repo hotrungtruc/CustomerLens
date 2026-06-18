@@ -8,12 +8,16 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from app.db.connection import get_db_connection, ensure_schema, insert_guest_record
+from db_config import USE_SUPABASE
+from app.utils.logger import get_logger
 from config import (
     NEW_GUEST_DEBOUNCE_SECONDS,
     NEW_GUEST_DEBOUNCE_SIMILARITY,
     GUEST_MIN_FACE_BBOX_SIZE,
     GUEST_MIN_DETECTION_SCORE,
 )
+
+logger = get_logger(__name__)
 
 
 def normalize_embedding(embedding):
@@ -126,6 +130,10 @@ class TrackState:
     predicted_bbox: tuple = None
     state: str = "tracked"
 
+    # Track-level customer profile cache (populated on first DB lookup,
+    # reused for every subsequent frame until the track expires).
+    cached_profile: dict | None = None
+
     def __post_init__(self):
         self.kf = KalmanFilterCorner(self.bbox)
         self.predicted_bbox = self.bbox
@@ -164,6 +172,7 @@ class GuestTrackManager:
         self._save_lock = threading.Lock()
         self.guest_embeddings = []
         self.guest_ids = []
+        self.use_pgvector = USE_SUPABASE  # Use HNSW index when Supabase is available
 
         self.load_known_embeddings()
 
@@ -249,6 +258,24 @@ class GuestTrackManager:
                 self.persist_known_embeddings()
                 # update guest cache file async
                 self._persist_known_embeddings_async()
+
+                # Also write promoted embedding to pgvector
+                if self.use_pgvector:
+                    try:
+                        from app.db.vector_search import insert_embedding_with_vector
+                        conn = get_db_connection()
+                        try:
+                            blob = np.asarray(emb, dtype=np.float32).tobytes()
+                            insert_embedding_with_vector(
+                                conn, new_id, blob, emb,
+                                dim=len(emb), model_name="w600k_mbf",
+                            )
+                            conn.commit()
+                        finally:
+                            conn.close()
+                    except Exception:
+                        pass
+
                 return True
             except Exception:
                 return False
@@ -262,16 +289,29 @@ class GuestTrackManager:
         normalized = normalize_embedding(embedding)
         self.guest_embeddings.append(normalized)
         self.guest_ids.append(guest_id)
-        self._insert_guest_into_main_db_async(guest_id)
+        self._insert_guest_into_main_db_async(guest_id, normalized)
         self._persist_known_embeddings_async()
         return guest_id
 
-    def _insert_guest_into_main_db_async(self, guest_id):
+    def _insert_guest_into_main_db_async(self, guest_id, embedding=None):
         def worker():
             try:
                 conn = get_db_connection()
                 ensure_schema(conn)
                 insert_guest_record(conn, guest_id)
+
+                # Also store the embedding in customer_embeddings with pgvector
+                if embedding is not None and self.use_pgvector:
+                    try:
+                        from app.db.vector_search import insert_embedding_with_vector
+                        blob = np.asarray(embedding, dtype=np.float32).tobytes()
+                        insert_embedding_with_vector(
+                            conn, guest_id, blob, embedding,
+                            dim=len(embedding), model_name="w600k_mbf",
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
             finally:
                 try:
                     conn.close()
@@ -280,6 +320,25 @@ class GuestTrackManager:
 
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
+
+    def _query_pgvector(self, embedding, top_k=3):
+        """Query pgvector HNSW index for the closest matches.
+
+        Returns a list of (customer_id, similarity) tuples.
+        Falls back to empty list on any error.
+        """
+        try:
+            from app.db.vector_search import search_similar_faces
+            conn = get_db_connection()
+            try:
+                results = search_similar_faces(
+                    conn, embedding, top_k=top_k, threshold=0.45
+                )
+                return results
+            finally:
+                conn.close()
+        except Exception:
+            return []
 
     def _recognize_face(self, track_state, record, now, frame=None, embedder=None):
         quality_ok = bool(record.get("quality_ok", True))
@@ -295,8 +354,7 @@ class GuestTrackManager:
                 # We only compute embedding if we don't know who this is yet!
                 record["embedding"] = embedder.get_embedding(frame, record["landmark"])
             except Exception as e:
-                import sys
-                print(f"Lazy embedding error: {e}", file=sys.stderr)
+                logger.warning("Lazy embedding error: %s", e)
                 record["embedding"] = None
 
         embedding = record.get("embedding")
@@ -334,7 +392,28 @@ class GuestTrackManager:
                 combined_ids.extend(self.guest_ids)
 
             # --- Multi-frame Voting Logic ---
-            if len(combined_embeddings) > 0:
+            if self.use_pgvector:
+                # pgvector path: query HNSW index in Supabase for nearest match
+                pgvec_results = self._query_pgvector(norm_emb, top_k=3)
+                if pgvec_results:
+                    voted_id = pgvec_results[0][0]  # best match customer_id
+                    track_state.recent_votes.append(voted_id)
+                else:
+                    # Also check in-memory guest embeddings (not yet in DB)
+                    if self.guest_embeddings:
+                        guest_sims = cosine_similarities(self.guest_embeddings, norm_emb)
+                        if guest_sims.size > 0:
+                            best_g_idx = int(np.argmax(guest_sims))
+                            if float(guest_sims[best_g_idx]) >= 0.45:
+                                track_state.recent_votes.append(self.guest_ids[best_g_idx])
+                            else:
+                                track_state.recent_votes.append(None)
+                        else:
+                            track_state.recent_votes.append(None)
+                    else:
+                        track_state.recent_votes.append(None)
+            elif len(combined_embeddings) > 0:
+                # In-memory path (SQLite / fallback)
                 similarities = cosine_similarities(combined_embeddings, norm_emb)
                 if similarities.size > 0:
                     best_index = int(np.argmax(similarities))
@@ -383,7 +462,19 @@ class GuestTrackManager:
         if resolved_customer_id is None and len(track_state.embeddings) >= self.buffer_size:
             avg_embedding = normalize_embedding(np.mean(track_state.embeddings[-self.buffer_size :], axis=0))
 
-            if len(combined_embeddings) > 0:
+            # Try pgvector first for the fallback mean-embedding match
+            if self.use_pgvector:
+                pgvec_results = self._query_pgvector(avg_embedding, top_k=1)
+                if pgvec_results and pgvec_results[0][1] >= self.similarity_threshold:
+                    resolved_customer_id = pgvec_results[0][0]
+                # Also check in-memory guests
+                if not resolved_customer_id and self.guest_embeddings:
+                    guest_sims = cosine_similarities(self.guest_embeddings, avg_embedding)
+                    if guest_sims.size > 0:
+                        best_g_idx = int(np.argmax(guest_sims))
+                        if float(guest_sims[best_g_idx]) >= self.similarity_threshold:
+                            resolved_customer_id = self.guest_ids[best_g_idx]
+            elif len(combined_embeddings) > 0:
                 similarities = cosine_similarities(combined_embeddings, avg_embedding)
                 if similarities.size > 0:
                     best_index = int(np.argmax(similarities))

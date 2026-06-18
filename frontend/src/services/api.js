@@ -27,24 +27,33 @@ export async function postLogin(username, password) {
   return response.json();
 }
 
-export async function fetchCustomerInfo() {
-  const response = await fetch(`${API_BASE_URL}/api/customer_info`);
+export async function fetchCustomerInfo(cameraId = null) {
+  const url = cameraId
+    ? `${API_BASE_URL}/api/customer_info?camera_id=${encodeURIComponent(cameraId)}`
+    : `${API_BASE_URL}/api/customer_info`;
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error("Network error");
   }
   return response.json();
 }
 
-export async function fetchCustomersOverview() {
-  const response = await fetch(`${API_BASE_URL}/api/customers_overview`);
+export async function fetchCustomersOverview(cameraId = null) {
+  const url = cameraId
+    ? `${API_BASE_URL}/api/customers_overview?camera_id=${encodeURIComponent(cameraId)}`
+    : `${API_BASE_URL}/api/customers_overview`;
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error("Network error");
   }
   return response.json();
 }
 
-export async function postCheckIn() {
-  const response = await fetch(`${API_BASE_URL}/api/check_in`, {
+export async function postCheckIn(cameraId = null) {
+  const url = cameraId
+    ? `${API_BASE_URL}/api/check_in?camera_id=${encodeURIComponent(cameraId)}`
+    : `${API_BASE_URL}/api/check_in`;
+  const response = await fetch(url, {
     method: "POST",
   });
   if (!response.ok) {

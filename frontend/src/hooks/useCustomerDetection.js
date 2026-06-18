@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchCustomersOverview } from "../services/api";
-export function useCustomerDetection() {
+export function useCustomerDetection(cameraId = null) {
   const [status, setStatus] = useState("idle");
   const [customers, setCustomers] = useState([]);
   const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
@@ -11,7 +11,7 @@ export function useCustomerDetection() {
   const graceMs = 2500;
   const pollCustomers = useCallback(async () => {
     try {
-      const data = await fetchCustomersOverview();
+      const data = await fetchCustomersOverview(cameraId);
       if (data.frame_size?.width && data.frame_size?.height) {
         setFrameSize({
           width: data.frame_size.width,
@@ -38,7 +38,7 @@ export function useCustomerDetection() {
     } catch (err) {
       setError("Unable to reach the backend");
     }
-  }, []);
+  }, [cameraId]);
   useEffect(() => {
     pollCustomers();
     timerRef.current = setInterval(pollCustomers, 250);

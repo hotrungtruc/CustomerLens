@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import threading
 import time
-from fastapi import APIRouter, Request, HTTPException, Header
+from fastapi import APIRouter, Request, HTTPException, Header, WebSocket, WebSocketDisconnect
 
 # Session store mapping hex tokens to user dicts
 ACTIVE_SESSIONS = {}
@@ -62,15 +62,7 @@ from config import (
 router = APIRouter()
 
 embedder = None
-encode_list_known = None
-customer_ids = None
-current_customer_id = None
-current_customer_seen_at = None
-track_manager = None
-shared_frame_mgr = None
 cpu_executor: ThreadPoolExecutor | None = None
-
-
 
 def _decode_frame_payload(image_data: str | None):
     if not image_data:
@@ -87,68 +79,121 @@ def _decode_frame_payload(image_data: str | None):
     image_array = np.frombuffer(raw_bytes, dtype=np.uint8)
     return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
 
-
-def _process_frame(frame):
-    global current_customer_id, current_customer_seen_at, shared_frame_mgr
-
-    if embedder is None or track_manager is None or frame is None:
-        return []
-
-    # Run detection directly (already on AI worker thread)
-    detections = embedder.detect(frame)
-    face_records = []
-    for bbox, landmark, score in zip(*detections):
-        x1, y1, x2, y2 = map(int, bbox)
-        quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
-
-        # Lazy embedding: we just pass the landmark to the tracker.
-        # Tracker will compute embedding only if needed!
-        face_records.append(
-            {
-                "bbox": (x1, y1, x2, y2),
-                "landmark": landmark,
-                "score": float(score),
-                "quality_ok": quality_ok,
-                "embedding": None,
-            }
+class CameraState:
+    def __init__(self, camera_id: str):
+        self.camera_id = camera_id
+        self.shared_frame_mgr = SharedFrameManager(FRAME_WIDTH, FRAME_HEIGHT, 3)
+        self.track_manager = GuestTrackManager(
+            ENCODE_FILE,
+            guest_cache_file=GUEST_CACHE_FILE,
+            buffer_size=TRACK_BUFFER_SIZE,
+            guest_creation_buffer_size=GUEST_CREATION_BUFFER_SIZE,
+            similarity_threshold=SIMILARITY_THRESHOLD,
+            iou_threshold=TRACK_IOU_THRESHOLD,
+            min_bbox_size=MIN_FACE_BBOX_SIZE,
+            min_detection_score=MIN_DETECTION_SCORE,
+            guest_prefix=f"GUEST_{camera_id}",
         )
+        self.current_customer_id = None
+        self.current_customer_seen_at = None
+        self.active = True
+        self.ai_thread = None
+        self.start_ai_loop()
 
-    tracked_faces = track_manager.process_faces(face_records, frame=frame, embedder=embedder)
-    annot_faces = []
+    def start_ai_loop(self):
+        def _ai_loop():
+            last_seen_version = -1
+            frame_count = 0
+            while self.active:
+                try:
+                    if embedder is None:
+                        time.sleep(0.1)
+                        continue
 
-    for face in tracked_faces:
-        x1, y1, x2, y2 = face["bbox"]
-        quality_ok = face["quality_ok"]
-        customer_id = face["customer_id"]
-        track_id = face["track_id"]
+                    frame_version = self.shared_frame_mgr.get_version()
+                    if frame_version == last_seen_version:
+                        time.sleep(0.05)
+                        continue
 
-        if customer_id:
-            current_customer_id = customer_id
-            current_customer_seen_at = datetime.now()
-            color = (0, 255, 0)
-            label = str(customer_id)
-        elif quality_ok:
-            color = (255, 165, 0)
-            label = f"T{track_id} buffering"
-        else:
-            color = (0, 255, 255)
-            label = f"T{track_id} low quality"
+                    last_seen_version = frame_version
+                    frame_count += 1
+                    
+                    # Apply frame sampling to skip unnecessary processing
+                    if frame_count % PROCESS_EVERY_N_FRAMES != 0:
+                        continue
 
-        annot_faces.append(
-            {
-                "bbox": (x1, y1, x2, y2),
-                "color": color,
-                "label": label,
-                "customer_id": customer_id,
-                "track_id": track_id,
-                "quality_ok": quality_ok,
-            }
-        )
+                    frame = self.shared_frame_mgr.read_frame()
+                    self._process_camera_frame(frame)
+                except Exception:
+                    time.sleep(0.05)
 
-    if shared_frame_mgr is not None:
-        shared_frame_mgr.update_annotations(annot_faces, current_customer_id)
+        self.ai_thread = threading.Thread(target=_ai_loop, daemon=True)
+        self.ai_thread.start()
 
-    return annot_faces
+    def _process_camera_frame(self, frame):
+        if embedder is None or frame is None:
+            return
+
+        detections = embedder.detect(frame)
+        face_records = []
+        for bbox, landmark, score in zip(*detections):
+            x1, y1, x2, y2 = map(int, bbox)
+            quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+
+            face_records.append(
+                {
+                    "bbox": (x1, y1, x2, y2),
+                    "landmark": landmark,
+                    "score": float(score),
+                    "quality_ok": quality_ok,
+                    "embedding": None,
+                }
+            )
+
+        tracked_faces = self.track_manager.process_faces(face_records, frame=frame, embedder=embedder)
+        annot_faces = []
+
+        for face in tracked_faces:
+            x1, y1, x2, y2 = face["bbox"]
+            quality_ok = face["quality_ok"]
+            customer_id = face["customer_id"]
+            track_id = face["track_id"]
+
+            if customer_id:
+                self.current_customer_id = customer_id
+                self.current_customer_seen_at = datetime.now()
+                color = (0, 255, 0)
+                label = str(customer_id)
+            elif quality_ok:
+                color = (255, 165, 0)
+                label = f"T{track_id} buffering"
+            else:
+                color = (0, 255, 255)
+                label = f"T{track_id} low quality"
+
+            annot_faces.append(
+                {
+                    "bbox": (x1, y1, x2, y2),
+                    "color": color,
+                    "label": label,
+                    "customer_id": customer_id,
+                    "track_id": track_id,
+                    "quality_ok": quality_ok,
+                }
+            )
+
+        self.shared_frame_mgr.update_annotations(annot_faces, self.current_customer_id)
+
+
+CAMERA_STATES = {}
+CAMERA_STATES_LOCK = threading.Lock()
+
+def get_camera_state(camera_id: str | None = None) -> CameraState:
+    cid = (camera_id or "default").strip()
+    with CAMERA_STATES_LOCK:
+        if cid not in CAMERA_STATES:
+            CAMERA_STATES[cid] = CameraState(cid)
+        return CAMERA_STATES[cid]
 
 
 def _run_cpu_bound(func, *args, **kwargs):
@@ -160,55 +205,12 @@ def _run_cpu_bound(func, *args, **kwargs):
 
 
 def init_models(ai_executor: ThreadPoolExecutor | None = None):
-    global embedder, encode_list_known, customer_ids, track_manager, cpu_executor
+    global embedder, cpu_executor
     embedder = InsightEmbedder()
     cpu_executor = ai_executor
-    track_manager = GuestTrackManager(
-        ENCODE_FILE,
-        guest_cache_file=GUEST_CACHE_FILE,
-        buffer_size=TRACK_BUFFER_SIZE,
-        guest_creation_buffer_size=GUEST_CREATION_BUFFER_SIZE,
-        similarity_threshold=SIMILARITY_THRESHOLD,
-        iou_threshold=TRACK_IOU_THRESHOLD,
-        min_bbox_size=MIN_FACE_BBOX_SIZE,
-        min_detection_score=MIN_DETECTION_SCORE,
-    )
-    encode_list_known = track_manager.known_embeddings
-    customer_ids = track_manager.known_ids
-    # create shared frame buffer and start AI worker thread
-    global shared_frame_mgr
-    if shared_frame_mgr is None:
-        shared_frame_mgr = SharedFrameManager(FRAME_WIDTH, FRAME_HEIGHT, 3)
-
-    def _ai_loop():
-        last_seen_version = -1
-        frame_count = 0
-        while True:
-            try:
-                if embedder is None or track_manager is None or shared_frame_mgr is None:
-                    time.sleep(0.1)
-                    continue
-
-                frame_version = shared_frame_mgr.get_version()
-                if frame_version == last_seen_version:
-                    time.sleep(0.05)
-                    continue
-
-                last_seen_version = frame_version
-                frame_count += 1
-                
-                # Apply frame sampling to skip unnecessary processing
-                if frame_count % PROCESS_EVERY_N_FRAMES != 0:
-                    continue
-
-                frame = shared_frame_mgr.read_frame()
-                _process_frame(frame)
-            except Exception:
-                # swallow errors in worker to keep thread alive
-                time.sleep(0.05)
-
-    t = threading.Thread(target=_ai_loop, daemon=True)
-    t.start()
+    
+    # Initialize default camera state
+    get_camera_state("default")
 
 
 def __decode_encodings(payload):
@@ -224,6 +226,14 @@ def __decode_encodings(payload):
 
 
 def load_customer_image_base64(customer_id):
+    # Try Supabase Storage first (returns public URL as-is for cloud-native serving)
+    from app.db.supabase_storage import STORAGE_ENABLED, get_public_url
+    if STORAGE_ENABLED:
+        url = get_public_url(customer_id)
+        if url:
+            return url  # Return cloud URL directly — frontend handles both URLs and base64
+
+    # Fall back to local filesystem
     for ext in (".png", ".jpg", ".jpeg"):
         path = IMAGES_DIR / f"{customer_id}{ext}"
         if path.exists():
@@ -384,20 +394,21 @@ async def api_login(request: Request):
 
 
 @router.get("/api/customer_info")
-def api_customer_info():
-    if not current_customer_id:
+def api_customer_info(camera_id: str | None = None):
+    state = get_camera_state(camera_id)
+    if not state.current_customer_id:
         return {"status": "no_detection"}
 
     conn = get_db_connection()
     ensure_schema(conn)
 
     try:
-        customer_info = get_customer_info(conn, current_customer_id)
+        customer_info = get_customer_info(conn, state.current_customer_id)
 
         if not customer_info:
             return {"status": "not_found"}
 
-        img_base64 = load_customer_image_base64(current_customer_id)
+        img_base64 = load_customer_image_base64(state.current_customer_id)
 
         return {
             "status": "success",
@@ -437,117 +448,142 @@ def api_customer_info():
         conn.close()
 
 
+def _apply_profile_to_payload(payload: dict, info: dict):
+    """Populate a payload dict from a customer profile dict."""
+    payload.update({
+        "id": info["customer_id"],
+        "name": info["name"] or "Khach moi",
+        "email": info.get("email"),
+        "occupation": info.get("occupation", "General"),
+        "registered_at": info.get("registered_at"),
+        "tenure": info.get("tenure", 0),
+        "loyalty_tier": info.get("loyalty_tier", "Standard"),
+        "total_visits": info.get("total_visits", 0),
+        "last_visit": info.get("last_visit"),
+        "total_spending": info.get("total_spending", 0),
+        "service_category": info.get("service_category", "General"),
+        "service_start_year": info.get("service_start_year", 0),
+        "customer_tenure_years": info.get("customer_tenure_years", 0),
+        "customer_type": info.get("customer_type", "guest"),
+        "customer_status": info.get("status", "active"),
+        "has_face_embedding": info.get("has_face_embedding"),
+        "face_embedding_dim": info.get("face_embedding_dim"),
+        "face_embedding_model": info.get("face_embedding_model"),
+        "major": info.get("major", "General"),
+        "year": info.get("year", 0),
+        "starting_year": info.get("starting_year", 0),
+        "total_attendance": info.get("total_attendance", 0),
+        "visit_count": info.get("total_attendance", 0),
+        "phone": info.get("phone"),
+        "note": info.get("note"),
+        "standing": info.get("standing", "G"),
+        "last_attendance_time": info.get("last_attendance_time"),
+        "last_visit": info.get("last_attendance_time"),
+    })
+
+
+def _invalidate_profile_cache(customer_id: str):
+    """Clear cached_profile for a customer_id across all active camera states."""
+    with CAMERA_STATES_LOCK:
+        for cid, cam_state in CAMERA_STATES.items():
+            if cam_state.track_manager:
+                for tid, track in cam_state.track_manager.tracks.items():
+                    if track.cached_profile and track.cached_profile.get("customer_id") == customer_id:
+                        track.cached_profile = None
+
+
+def _build_customers_payload(faces: list, conn, camera_state=None) -> list:
+    """Build the customers list from raw face annotations + DB lookups.
+
+    Uses track-level caching: on the first frame where a face is recognized,
+    the profile is fetched from the database and stored in TrackState.cached_profile.
+    All subsequent frames for the same track reuse the cache (0 DB queries).
+    """
+    customers = []
+    tracks = camera_state.track_manager.tracks if camera_state and camera_state.track_manager else {}
+
+    for face in faces:
+        customer_id = face.get("customer_id")
+        track_id = face.get("track_id")
+
+        payload = {
+            "tile_id": f"tile_{track_id}",
+            "track_id": track_id,
+            "bbox": face.get("bbox"),
+            "detected": bool(customer_id),
+            "id": customer_id or f"T{track_id}",
+            "name": "Khach moi",
+            "email": None,
+            "occupation": "General",
+            "registered_at": None,
+            "tenure": 0,
+            "loyalty_tier": "Standard",
+            "total_visits": 0,
+            "last_visit": None,
+            "total_spending": 0,
+            "service_category": "General",
+            "service_start_year": 0,
+            "customer_tenure_years": 0,
+            "customer_type": "guest",
+            "customer_status": "temporary",
+            "has_face_embedding": 0,
+            "face_embedding_dim": None,
+            "face_embedding_model": None,
+            "major": "General",
+            "year": 0,
+            "starting_year": 0,
+            "total_attendance": 0,
+            "visit_count": 0,
+            "phone": None,
+            "note": None,
+            "standing": "G",
+            "last_attendance_time": None,
+        }
+
+        if customer_id:
+            # 1) Check track-level cache first
+            track = tracks.get(track_id)
+            info = track.cached_profile if track else None
+
+            # 2) Cache miss → query DB and store in track
+            if not info:
+                info = get_customer_info(conn, customer_id)
+                if info and track:
+                    track.cached_profile = info
+
+            if info:
+                _apply_profile_to_payload(payload, info)
+
+        customers.append(payload)
+
+    customers.sort(key=lambda c: c.get("track_id") or 0)
+    return customers
+
+
 @router.get("/api/customers_overview")
-def api_customers_overview():
-    if shared_frame_mgr is None:
+def api_customers_overview(camera_id: str | None = None):
+    state = get_camera_state(camera_id)
+    if state.shared_frame_mgr is None:
         return {
             "status": "no_detection",
             "customers": [],
             "frame_size": {"width": FRAME_WIDTH, "height": FRAME_HEIGHT},
         }
 
-    annotations = shared_frame_mgr.get_annotations()
+    annotations = state.shared_frame_mgr.get_annotations()
     faces = annotations.get("faces", [])
+    w = state.shared_frame_mgr.width
+    h = state.shared_frame_mgr.height
+
     if not faces:
-        return {
-            "status": "no_detection",
-            "customers": [],
-            "frame_size": {"width": shared_frame_mgr.width, "height": shared_frame_mgr.height},
-        }
+        return {"status": "no_detection", "customers": [], "frame_size": {"width": w, "height": h}}
 
     conn = get_db_connection()
     ensure_schema(conn)
-
-    customers = []
     try:
-        for face in faces:
-            customer_id = face.get("customer_id")
-            track_id = face.get("track_id")
-
-            base_payload = {
-                "tile_id": f"tile_{track_id}",
-                "track_id": track_id,
-                "bbox": face.get("bbox"),
-                "detected": bool(customer_id),
-                "id": customer_id or f"T{track_id}",
-                "name": "Khach moi",
-                "email": None,
-                "occupation": "General",
-                "registered_at": None,
-                "tenure": 0,
-                "loyalty_tier": "Standard",
-                "total_visits": 0,
-                "last_visit": None,
-                "total_spending": 0,
-                "service_category": "General",
-                "service_start_year": 0,
-                "customer_tenure_years": 0,
-                "loyalty_tier": "Standard",
-                "customer_type": "guest",
-                "customer_status": "temporary",
-                "has_face_embedding": 0,
-                "face_embedding_dim": None,
-                "face_embedding_model": None,
-                "major": "General",
-                "year": 0,
-                "starting_year": 0,
-                "total_attendance": 0,
-                "visit_count": 0,
-                "phone": None,
-                "note": None,
-                "standing": "G",
-                "last_attendance_time": None,
-                "last_visit": None,
-            }
-
-            if customer_id:
-                info = get_customer_info(conn, customer_id)
-                if info:
-                    base_payload.update(
-                        {
-                            "id": info["customer_id"],
-                            "name": info["name"] or "Khach moi",
-                            "email": info.get("email"),
-                            "occupation": info.get("occupation", "General"),
-                            "registered_at": info.get("registered_at"),
-                            "tenure": info.get("tenure", 0),
-                            "loyalty_tier": info.get("loyalty_tier", "Standard"),
-                            "total_visits": info.get("total_visits", 0),
-                            "last_visit": info.get("last_visit"),
-                            "total_spending": info.get("total_spending", 0),
-                            "service_category": info.get("service_category", "General"),
-                            "service_start_year": info.get("service_start_year", 0),
-                            "customer_tenure_years": info.get("customer_tenure_years", 0),
-                            "loyalty_tier": info.get("loyalty_tier", "Standard"),
-                            "customer_type": info.get("customer_type", "guest"),
-                            "customer_status": info.get("status", "active"),
-                            "has_face_embedding": info.get("has_face_embedding"),
-                            "face_embedding_dim": info.get("face_embedding_dim"),
-                            "face_embedding_model": info.get("face_embedding_model"),
-                            "major": info.get("major", "General"),
-                            "year": info.get("year", 0),
-                            "starting_year": info.get("starting_year", 0),
-                            "total_attendance": info.get("total_attendance", 0),
-                            "visit_count": info.get("total_attendance", 0),
-                            "phone": info.get("phone"),
-                            "note": info.get("note"),
-                            "standing": info.get("standing", "G"),
-                            "last_attendance_time": info.get("last_attendance_time"),
-                            "last_visit": info.get("last_attendance_time"),
-                        }
-                    )
-
-            customers.append(base_payload)
-
+        customers = _build_customers_payload(faces, conn, camera_state=state)
         status = "success" if any(item.get("detected") for item in customers) else "no_detection"
-        
-        customers.sort(key=lambda c: c.get("track_id") or 0)
-        
-        return {
-            "status": status,
-            "customers": customers,
-            "frame_size": {"width": shared_frame_mgr.width, "height": shared_frame_mgr.height},
-        }
+        return {"status": status, "customers": customers, "frame_size": {"width": w, "height": h}}
     finally:
         conn.close()
 
@@ -590,8 +626,20 @@ async def api_customer_profile(request: Request, authorization: str | None = Hea
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
 
-        if source_id.startswith("GUEST_") and final_id != source_id and track_manager is not None:
-            track_manager.promote_guest(source_id, final_id)
+        if source_id.startswith("GUEST_") and final_id != source_id:
+            camera_id = "default"
+            parts = source_id.split("_")
+            if len(parts) >= 3:
+                prefix = "_".join(parts[:-2])
+                if prefix.startswith("GUEST_"):
+                    camera_id = prefix[len("GUEST_"):]
+            state = get_camera_state(camera_id)
+            if state.track_manager is not None:
+                state.track_manager.promote_guest(source_id, final_id)
+                with CAMERA_STATES_LOCK:
+                    for other_cid, other_state in CAMERA_STATES.items():
+                        if other_state.track_manager:
+                            other_state.track_manager.load_known_embeddings()
 
         customer_info = get_customer_info(conn, final_id)
         if not customer_info:
@@ -630,19 +678,23 @@ async def api_customer_profile(request: Request, authorization: str | None = Hea
             },
         }
     finally:
+        # Invalidate track-level caches for the updated customer so future
+        # frames pick up fresh data from the database.
+        _invalidate_profile_cache(final_id)
         conn.close()
 
 
 @router.post("/api/check_in")
-def api_check_in():
-    if not current_customer_id:
+def api_check_in(camera_id: str | None = None):
+    state = get_camera_state(camera_id)
+    if not state.current_customer_id:
         return {"success": False, "message": "No face detected"}
 
     conn = get_db_connection()
     ensure_schema(conn)
 
     try:
-        customer_info = get_customer_info(conn, current_customer_id)
+        customer_info = get_customer_info(conn, state.current_customer_id)
 
         if not customer_info:
             return {"success": False, "message": "Customer not found"}
@@ -659,7 +711,7 @@ def api_check_in():
         if seconds_elapsed > CHECKIN_COOLDOWN_SECONDS:
             update_attendance(
                 conn,
-                current_customer_id,
+                state.current_customer_id,
                 customer_info["total_attendance"] + 1,
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             )
@@ -714,12 +766,14 @@ def api_check_in_by_id(customer_id: str):
 async def api_process_frame(request: Request):
     payload = await request.json()
     frame = _decode_frame_payload(payload.get("image"))
+    camera_id = payload.get("camera_id")
 
     if frame is None:
         return {"success": False, "message": "Invalid frame"}
 
-    if shared_frame_mgr is not None:
-        shared_frame_mgr.write_frame(frame)
+    state = get_camera_state(camera_id)
+    if state.shared_frame_mgr is not None:
+        state.shared_frame_mgr.write_frame(frame)
 
     return {"success": True}
 
@@ -738,11 +792,24 @@ async def api_promote_guest(request: Request, authorization: str | None = Header
     if not guest_id or not new_id:
         return {"success": False, "message": "guest_id and new_id required"}
 
-    if not track_manager:
-        return {"success": False, "message": "track manager not initialized"}
+    camera_id = "default"
+    if guest_id.startswith("GUEST_"):
+        parts = guest_id.split("_")
+        if len(parts) >= 3:
+            prefix = "_".join(parts[:-2])
+            if prefix.startswith("GUEST_"):
+                camera_id = prefix[len("GUEST_"):]
 
-    ok = track_manager.promote_guest(guest_id, new_id)
+    state = get_camera_state(camera_id)
+    if not state.track_manager:
+        return {"success": False, "message": f"track manager not initialized for camera {camera_id}"}
+
+    ok = state.track_manager.promote_guest(guest_id, new_id)
     if ok:
+        with CAMERA_STATES_LOCK:
+            for other_cid, other_state in CAMERA_STATES.items():
+                if other_state.track_manager:
+                    other_state.track_manager.load_known_embeddings()
         return {"success": True}
     return {"success": False, "message": "guest not found"}
 
@@ -785,5 +852,61 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
                 "note": customer_info.get("note"),
             }
         }
+    finally:
+        conn.close()
+
+# ── WebSocket endpoint ────────────────────────────────────────────────────────
+@router.websocket("/ws/{session_id}")
+async def websocket_camera(websocket: WebSocket, session_id: str):
+    """Persistent bidirectional channel per browser tab.
+
+    Client sends:  { "image": "<base64 JPEG>" }
+    Server sends:  { "customers": [...], "frame_size": { "width": N, "height": N } }
+    """
+    await websocket.accept()
+    state = get_camera_state(session_id)
+
+    conn = get_db_connection()
+    ensure_schema(conn)
+
+    try:
+        while True:
+            try:
+                data = await websocket.receive_json()
+            except Exception:
+                break
+
+            # Write frame into this camera's state
+            img_b64 = data.get("image", "")
+            if img_b64:
+                try:
+                    if "," in img_b64:
+                        img_b64 = img_b64.split(",", 1)[1]
+                    img_bytes = base64.b64decode(img_b64)
+                    img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+                    frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        state.shared_frame_mgr.write_frame(frame)
+                except Exception:
+                    pass
+
+            # Return current annotations (AI thread updates asynchronously)
+            annotations = state.shared_frame_mgr.get_annotations()
+            faces = annotations.get("faces", [])
+            customers = _build_customers_payload(faces, conn, camera_state=state)
+
+            w = state.shared_frame_mgr.width
+            h = state.shared_frame_mgr.height
+
+            try:
+                await websocket.send_json({
+                    "customers": customers,
+                    "frame_size": {"width": w, "height": h},
+                })
+            except Exception:
+                break
+
+    except WebSocketDisconnect:
+        pass
     finally:
         conn.close()

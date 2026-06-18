@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Sidebar from "../components/Sidebar";
 import PageHeader from "../components/PageHeader";
 import CameraStream from "../components/CameraStream";
-import { useCustomerDetection } from "../hooks/useCustomerDetection";
 import { getTrackBadge } from "../components/trackBadge";
 import { putCustomerProfile } from "../services/api";
+import { useProfilePrefetch } from "../hooks/useProfilePrefetch";
 
 // Phân biệt khách cũ vs khách mới
 function isKnownCustomer(c) {
@@ -248,13 +248,39 @@ function CustomerCard({ c, onClick }) {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
-  const { status, customers, frameSize } = useCustomerDetection();
+
+  // Each browser tab gets a unique session ID so concurrent users have isolated
+  // backend CameraState instances and never share annotations.
+  const sessionIdRef = useRef(null);
+  if (!sessionIdRef.current && typeof window !== "undefined") {
+    let sid = sessionStorage.getItem("session_camera_id");
+    if (!sid) {
+      sid = "session-" + Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem("session_camera_id", sid);
+    }
+    sessionIdRef.current = sid;
+  }
+  const sessionId = sessionIdRef.current || "default";
+
+  // customers / frameSize are pushed up via the onCustomersChange callback from
+  // CameraStream (which now owns the WebSocket connection internally).
+  const [customers, setCustomers] = useState([]);
+  const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
   const [highlightedTrackId, setHighlightedTrackId] = useState(null);
-  const [modalCustomer, setModalCustomer] = useState(null); // guest đang mở popup
+  const [modalCustomer, setModalCustomer] = useState(null);
+
+  // Active prefetch: background-fetches full profiles for recognised faces
+  // so that clicking a customer card navigates instantly.
+  const { getProfile } = useProfilePrefetch(customers);
+
+  const handleCustomersChange = useCallback((newCustomers, newFrameSize) => {
+    setCustomers(newCustomers);
+    setFrameSize(newFrameSize);
+  }, []);
 
   const handleSelectTrack = useCallback((id) => setHighlightedTrackId(id), []);
 
-  const recentCustomers = status === "success" ? customers.slice(0, 4) : [];
+  const recentCustomers = customers.slice(0, 4);
 
   // Click vào card trong right panel
   const handleCardClick = useCallback((c) => {
@@ -265,13 +291,22 @@ export default function DashboardPage() {
     }
     setHighlightedTrackId(c.track_id);
     if (isKnownCustomer(c)) {
-      // Khách cũ → đi thẳng đến trang hồ sơ
+      // Stash prefetched profile so the detail page can render instantly
+      const prefetched = getProfile(c.id);
+      if (prefetched) {
+        try {
+          sessionStorage.setItem(
+            `prefetch_profile_${c.id}`,
+            JSON.stringify(prefetched)
+          );
+        } catch (_) {}
+      }
       router.push(`/customers/${c.id}`);
     } else {
       // Khách mới → mở popup nhập thông tin
       setModalCustomer(c);
     }
-  }, [router]);
+  }, [router, getProfile]);
 
   // Sau khi lưu thành công → navigate đến trang hồ sơ mới
   const handleSaved = useCallback((result) => {
@@ -301,10 +336,10 @@ export default function DashboardPage() {
           <div className="flex-1 p-6">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <CameraStream
-                customers={status === "success" ? customers : []}
-                frameSize={frameSize}
+                sessionId={sessionId}
                 highlightedTrackId={highlightedTrackId}
                 framed={false}
+                onCustomersChange={handleCustomersChange}
               />
             </div>
           </div>
@@ -332,9 +367,7 @@ export default function DashboardPage() {
               ))
             ) : (
               <div className="px-5 py-8 text-center text-xs text-slate-400">
-                {status === "success"
-                  ? "Chưa có khách nào trong khung hình"
-                  : "Đang chờ kết nối camera..."}
+                Chưa có khách nào trong khung hình
               </div>
             )}
           </div>

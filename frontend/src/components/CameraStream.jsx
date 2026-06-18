@@ -1,282 +1,95 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { API_BASE_URL } from "../services/api";
+import { useEffect } from "react";
+import { useCamera } from "../hooks/useCamera";
 import { getTrackBadge } from "./trackBadge";
 
-const CAPTURE_INTERVAL_MS = 350;
-const JPEG_QUALITY = 0.75;
-const MAX_UPLOAD_WIDTH = 640;
-const MAX_UPLOAD_HEIGHT = 360;
-
+/**
+ * CameraStream — live webcam feed with bounding-box overlays.
+ *
+ * Props:
+ *   sessionId         — unique ID for this camera session (backend creates its own CameraState)
+ *   highlightedTrackId — track_id to highlight with a white ring
+ *   framed            — wrap in a card border/shadow
+ *   onCustomersChange — optional callback(customers, frameSize) for parent state lifting
+ */
 export default function CameraStream({
-  customers = [],
-  frameSize = { width: 640, height: 360 },
+  sessionId,
   highlightedTrackId = null,
   framed = true,
+  onCustomersChange = null,
 }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const timerRef = useRef(null);
-  const sendingRef = useRef(false);
-  const mountedRef = useRef(true);
-  const [devices, setDevices] = useState([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState("");
-  const [status, setStatus] = useState("Requesting camera access...");
-  const [error, setError] = useState("");
+  const {
+    videoRef,
+    canvasRef,
+    devices,
+    selectedDeviceId,
+    setSelectedDeviceId,
+    wsStatus,
+    customers,
+    frameSize,
+    cameraError,
+  } = useCamera(sessionId);
 
-  const sendFrame = async () => {
-    if (sendingRef.current) {
-      return;
-    }
-
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-
-    if (!video || !canvas || video.readyState < 2) {
-      return;
-    }
-
-    const context = canvas.getContext("2d", { willReadFrequently: false });
-    if (!context) {
-      return;
-    }
-
-    sendingRef.current = true;
-
-    try {
-      const sourceWidth = video.videoWidth || 640;
-      const sourceHeight = video.videoHeight || 360;
-      const scale = Math.min(
-        1,
-        MAX_UPLOAD_WIDTH / sourceWidth,
-        MAX_UPLOAD_HEIGHT / sourceHeight
-      );
-      const width = Math.max(1, Math.round(sourceWidth * scale));
-      const height = Math.max(1, Math.round(sourceHeight * scale));
-
-      canvas.width = width;
-      canvas.height = height;
-      context.drawImage(video, 0, 0, width, height);
-
-      const image = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-      await fetch(`${API_BASE_URL}/api/process_frame`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ image }),
-      });
-
-      if (mountedRef.current) {
-        setStatus("Camera live");
-        setError("");
-      }
-    } catch (fetchError) {
-      if (mountedRef.current) {
-        setStatus("Camera live, waiting for backend");
-        setError("Unable to send frames to backend");
-      }
-    } finally {
-      sendingRef.current = false;
-    }
-  };
-
+  // Lift customers + frameSize to parent whenever they change
   useEffect(() => {
-    let cancelled = false;
+    onCustomersChange?.(customers, frameSize);
+  }, [customers, frameSize, onCustomersChange]);
 
-    const stopStream = () => {
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+  const statusLabel =
+    wsStatus === "live"
+      ? "Camera live"
+      : wsStatus === "connecting"
+      ? "Connecting…"
+      : wsStatus === "error"
+      ? "Connection error"
+      : "Reconnecting…";
 
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-        streamRef.current = null;
-      }
-    };
-
-    const loadDevices = async () => {
-      const mediaDevices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = mediaDevices.filter((device) => device.kind === "videoinput");
-      if (cancelled) {
-        return [];
-      }
-
-      setDevices(videoDevices);
-      return videoDevices;
-    };
-
-    const startCamera = async (deviceId = "") => {
-      stopStream();
-
-      try {
-        if (
-          !window.isSecureContext &&
-          window.location.hostname !== "localhost" &&
-          window.location.hostname !== "127.0.0.1"
-        ) {
-          throw new Error("Camera requires HTTPS or localhost.");
-        }
-
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("This browser does not support camera access.");
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: deviceId
-            ? {
-              deviceId: { exact: deviceId },
-            }
-            : {
-              facingMode: "user",
-            },
-          audio: false,
-        });
-
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-
-        const video = videoRef.current;
-        if (video) {
-          video.srcObject = stream;
-          await video.play();
-        }
-
-        const discoveredDevices = await loadDevices();
-        if (!deviceId && discoveredDevices.length > 0 && !selectedDeviceId) {
-          setSelectedDeviceId(discoveredDevices[0].deviceId);
-        }
-
-        setStatus("Camera live");
-        setError("");
-        timerRef.current = window.setInterval(sendFrame, CAPTURE_INTERVAL_MS);
-      } catch (cameraError) {
-        if (!cancelled) {
-          setStatus("Camera unavailable");
-          setError(
-            cameraError instanceof Error
-              ? cameraError.message
-              : "Unable to access camera"
-          );
-        }
-      }
-    };
-
-    startCamera();
-
-    return () => {
-      cancelled = true;
-      stopStream();
-      mountedRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!selectedDeviceId) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const restartCamera = async () => {
-      try {
-        if (cancelled) {
-          return;
-        }
-
-        setStatus("Switching camera...");
-        setError("");
-
-        const mediaDevices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = mediaDevices.filter((device) => device.kind === "videoinput");
-        if (!cancelled) {
-          setDevices(videoDevices);
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: { exact: selectedDeviceId },
-          },
-          audio: false,
-        });
-
-        if (cancelled) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop());
-        }
-
-        if (timerRef.current) {
-          window.clearInterval(timerRef.current);
-          timerRef.current = null;
-        }
-
-        streamRef.current = stream;
-
-        const video = videoRef.current;
-        if (video) {
-          video.srcObject = stream;
-          await video.play();
-        }
-
-        setStatus("Camera live");
-        timerRef.current = window.setInterval(sendFrame, CAPTURE_INTERVAL_MS);
-      } catch (cameraError) {
-        if (!cancelled) {
-          setStatus("Camera unavailable");
-          setError(
-            cameraError instanceof Error
-              ? cameraError.message
-              : "Unable to access camera"
-          );
-        }
-      }
-    };
-
-    restartCamera();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDeviceId]);
-
-  const handleCameraChange = (event) => {
-    setSelectedDeviceId(event.target.value);
-  };
+  const statusDot =
+    wsStatus === "live"
+      ? "bg-emerald-500"
+      : wsStatus === "connecting"
+      ? "bg-amber-400 animate-pulse"
+      : "bg-rose-500 animate-pulse";
 
   return (
-    <div className={framed ? "overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]" : "overflow-hidden bg-white"}>
+    <div
+      className={
+        framed
+          ? "overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
+          : "overflow-hidden bg-white"
+      }
+    >
+      {/* ── Header bar ── */}
       <div className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 text-sm text-slate-500 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-slate-600">{status}</span>
+          {/* Status dot + label */}
+          <span className="flex items-center gap-1.5">
+            <span className={`h-2 w-2 rounded-full ${statusDot}`} />
+            <span className="text-sm font-medium text-slate-600">{statusLabel}</span>
+          </span>
+
+          {/* Camera selector */}
           <select
             value={selectedDeviceId}
-            onChange={handleCameraChange}
+            onChange={(e) => setSelectedDeviceId(e.target.value)}
             className="min-w-[240px] rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-300"
           >
             <option value="">Integrated Camera</option>
-            {devices.map((device, index) => (
+            {devices.map((device, i) => (
               <option key={device.deviceId} value={device.deviceId}>
-                {device.label || `Camera ${index + 1}`}
+                {device.label || `Camera ${i + 1}`}
               </option>
             ))}
           </select>
         </div>
+
         <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-600">
           Live feed
         </span>
       </div>
 
+      {/* ── Video + overlays ── */}
       <div className="relative bg-slate-950">
         <video
           ref={videoRef}
@@ -286,35 +99,38 @@ export default function CameraStream({
           className="aspect-[16/10] h-auto min-h-[220px] w-full object-cover sm:min-h-[340px] md:min-h-[420px]"
         />
 
+        {/* Bounding box overlays */}
         <div className="pointer-events-none absolute inset-0">
           {customers
-            .filter((customer) => Array.isArray(customer.bbox) && customer.bbox.length === 4)
-            .map((customer) => {
-              const [x1, y1, x2, y2] = customer.bbox;
-              const left = (x1 / frameSize.width) * 100;
-              const top = (y1 / frameSize.height) * 100;
-              const width = ((x2 - x1) / frameSize.width) * 100;
+            .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
+            .map((c) => {
+              const [x1, y1, x2, y2] = c.bbox;
+              const left   = (x1 / frameSize.width)  * 100;
+              const top    = (y1 / frameSize.height) * 100;
+              const width  = ((x2 - x1) / frameSize.width)  * 100;
               const height = ((y2 - y1) / frameSize.height) * 100;
-              const isHighlighted = highlightedTrackId === customer.track_id;
-              const { symbol, theme } = getTrackBadge(customer.track_id);
+              const isHl   = highlightedTrackId === c.track_id;
+              const { symbol, theme } = getTrackBadge(c.track_id);
 
               return (
                 <div
-                  key={`overlay-${customer.tile_id}`}
-                  className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] ${isHighlighted
+                  key={`overlay-${c.tile_id}`}
+                  className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] ${
+                    isHl
                       ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
                       : "border-white/80"
-                    }`}
+                  }`}
                   style={{
-                    left: `${left}%`,
-                    top: `${top}%`,
-                    width: `${Math.max(width, 6)}%`,
+                    left:   `${left}%`,
+                    top:    `${top}%`,
+                    width:  `${Math.max(width, 6)}%`,
                     height: `${Math.max(height, 8)}%`,
                   }}
                 >
                   <div
-                    className={`-mt-3 ml-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-white/40 ${theme.base} ${theme.ring} ${isHighlighted ? "scale-110" : ""
-                      }`}
+                    className={`-mt-3 ml-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-white/40 ${theme.base} ${theme.ring} ${
+                      isHl ? "scale-110" : ""
+                    }`}
                   >
                     {symbol}
                   </div>
@@ -323,11 +139,13 @@ export default function CameraStream({
             })}
         </div>
 
+        {/* Hidden capture canvas */}
         <canvas ref={canvasRef} className="hidden" />
 
-        {error ? (
+        {/* Camera / WS error banner */}
+        {cameraError ? (
           <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-rose-200 bg-rose-50/95 px-4 py-3 text-sm text-rose-600 shadow-lg">
-            {error}
+            {cameraError}
           </div>
         ) : null}
       </div>

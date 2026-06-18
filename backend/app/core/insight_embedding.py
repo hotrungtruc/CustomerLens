@@ -16,12 +16,15 @@ from config import (
     GUEST_MIN_DETECTION_SCORE,
     GUEST_MIN_FACE_BBOX_SIZE,
 )
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import mediapipe as mp
 except Exception as e:
     import sys
-    print(f"Warning: Failed to import mediapipe: {e}", file=sys.stderr)
+    logger.warning("Failed to import mediapipe: %s", e)
     mp = None
 
 FACE_SIZE = (112, 112)
@@ -69,10 +72,10 @@ class InsightEmbedder:
             exc_info = sys.exc_info()
             error_str = str(exc_info[1])
             error_type = type(exc_info[1]).__name__
-            print(f"Exception caught: {error_type}: {error_str}", file=sys.stderr)
+            logger.error("Exception caught: %s: %s", error_type, error_str)
             if ("NotImplemented" in error_str or "NOT_IMPLEMENTED" in error_str) and "ConvInteger" in error_str:
                 # Int8 model not supported, try float model
-                print(f"Warning: int8 model not supported, falling back to float model", file=sys.stderr)
+                logger.warning("Int8 model not supported, falling back to float model")
                 if RECOGNIZER_FLOAT_PATH.exists():
                     self.recognizer = ort.InferenceSession(
                         str(RECOGNIZER_FLOAT_PATH),
@@ -80,7 +83,7 @@ class InsightEmbedder:
                         providers=providers,
                     )
                     model_used = RECOGNIZER_FLOAT_PATH.name
-                    print(f"Successfully loaded float model: {model_used}", file=sys.stderr)
+                    logger.info("Successfully loaded float model: %s", model_used)
                 else:
                     raise FileNotFoundError(
                         f"Int8 model failed to load and float model not found at {RECOGNIZER_FLOAT_PATH}"
@@ -90,11 +93,11 @@ class InsightEmbedder:
         
         self._model_name = model_used
         self.recognizer_input = self.recognizer.get_inputs()[0].name
-        print(f"Loaded recognizer model: {model_used}")
+        logger.info("Loaded recognizer model: %s", model_used)
         
         # Initialize face detection - try MediaPipe tasks first, then solutions, then fallback to OpenCV
         if mp is None:
-            print("Warning: MediaPipe not available, will use OpenCV for face detection")
+            logger.warning("MediaPipe not available, will use OpenCV for face detection")
             self._use_opencv = True
             self.face_cascade = cv2.CascadeClassifier(
                 cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
@@ -119,7 +122,7 @@ class InsightEmbedder:
             self.face_landmarker = FaceLandmarker.create_from_options(options)
             self._mediapipe_tasks = True
             self._use_opencv = False
-            print("Using MediaPipe Tasks API for face detection")
+            logger.info("Using MediaPipe Tasks API for face detection")
         elif hasattr(mp, "solutions"):
             # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
             self.mp_face_mesh = mp.solutions.face_mesh
@@ -133,10 +136,10 @@ class InsightEmbedder:
             )
             self._mediapipe_tasks = False
             self._use_opencv = False
-            print("Using MediaPipe Solutions API for face detection")
+            logger.info("Using MediaPipe Solutions API for face detection")
         else:
             # Fallback to OpenCV for face detection
-            print("Warning: MediaPipe tasks/solutions not available, using OpenCV for face detection")
+            logger.warning("MediaPipe tasks/solutions not available, using OpenCV for face detection")
             self._use_opencv = True
             self.face_cascade = cv2.CascadeClassifier(
                 cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'

@@ -77,17 +77,36 @@ export default function CustomerDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    setLoading(true);
-    setError("");
+
+    // 1) Try to load prefetched profile from sessionStorage (set by dashboard)
+    let usedPrefetch = false;
+    try {
+      const key = `prefetch_profile_${id}`;
+      const cached = sessionStorage.getItem(key);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.id) {
+          setCustomer(parsed);
+          setLoading(false);
+          usedPrefetch = true;
+        }
+        // Consume it so stale data doesn't persist on reload
+        sessionStorage.removeItem(key);
+      }
+    } catch (_) {}
+
+    // 2) Always fetch from API (either as primary or as background re-validation)
     fetchCustomerProfileById(id)
       .then((data) => {
         if (data.status === "success") {
           setCustomer(data.customer);
-        } else {
+        } else if (!usedPrefetch) {
           setError(data.message || "Không tìm thấy khách hàng.");
         }
       })
-      .catch((err) => setError(err.message || "Không thể kết nối tới backend."))
+      .catch((err) => {
+        if (!usedPrefetch) setError(err.message || "Không thể kết nối tới backend.");
+      })
       .finally(() => setLoading(false));
   }, [id]);
 

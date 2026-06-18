@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
 import CameraStream from "../../components/CameraStream";
-import { useCustomerDetection } from "../../hooks/useCustomerDetection";
 import { Maximize2, RefreshCw } from "lucide-react";
 
 const CAMERAS = [
@@ -21,12 +20,52 @@ const FILTERS = [
   { key: "offline", label: "Offline",    count: 1 },
 ];
 
+// ── Each camera tile is fully independent ─────────────────────────────────────
+function CameraTile({ cam }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* Card header */}
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-slate-800">{cam.name}</span>
+          <span className="text-xs text-slate-400">({cam.id})</span>
+          {cam.status === "live" ? (
+            <span className="flex items-center gap-1 text-xs font-semibold text-red-500">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+              LIVE
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400">Offline</span>
+          )}
+        </div>
+        <button className="rounded-lg border border-slate-200 p-1 text-slate-400 hover:bg-slate-50">
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Feed */}
+      {cam.status === "offline" ? (
+        <div className="relative aspect-[16/10] overflow-hidden bg-slate-800">
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60">
+            <span className="text-sm font-medium text-white">Mất kết nối</span>
+          </div>
+        </div>
+      ) : (
+        <CameraStream
+          sessionId={cam.id}
+          framed={false}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Main Camera Management Page ───────────────────────────────────────────────
 export default function CameraPage() {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
   const [role, setRole] = useState(null);
   const [allowedCameras, setAllowedCameras] = useState([]);
-  const { status, customers, frameSize } = useCustomerDetection();
 
   useEffect(() => {
     const savedRole = localStorage.getItem("role") || "guest";
@@ -58,7 +97,6 @@ export default function CameraPage() {
   const shown = filter === "all"
     ? filteredCameras
     : filteredCameras.filter((c) => c.status === filter);
-
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
@@ -99,58 +137,10 @@ export default function CameraPage() {
             </div>
           </div>
 
-          {/* Grid */}
+          {/* Grid — each tile is a self-contained CameraTile */}
           <div className="grid flex-1 gap-5 overflow-auto p-6 md:grid-cols-2">
-            {shown.map((cam, i) => (
-              <div
-                key={cam.id}
-                className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-              >
-                {/* Card header */}
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-800">{cam.name}</span>
-                    <span className="text-xs text-slate-400">({cam.id})</span>
-                    {cam.status === "live" ? (
-                      <span className="flex items-center gap-1 text-xs font-semibold text-red-500">
-                        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-                        LIVE
-                      </span>
-                    ) : (
-                      <span className="text-xs text-slate-400">Offline</span>
-                    )}
-                  </div>
-                  <button className="rounded-lg border border-slate-200 p-1 text-slate-400 hover:bg-slate-50">
-                    <Maximize2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-
-                {/* Feed */}
-                {i === 0 ? (
-                  <CameraStream
-                    customers={status === "success" ? customers : []}
-                    frameSize={frameSize}
-                  />
-                ) : cam.status === "offline" ? (
-                  <div className="relative aspect-[16/10] overflow-hidden bg-slate-800">
-                    <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60">
-                      <span className="text-sm font-medium text-white">Mất kết nối</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
-                    <div
-                      className="h-full w-full bg-cover bg-center"
-                      style={{ backgroundImage: `url(https://images.unsplash.com/photo-1497366216548-37526070297c?w=800&q=60)` }}
-                    />
-                    {cam.detections > 0 && (
-                      <span className="absolute right-3 top-3 rounded-full bg-blue-600 px-2.5 py-1 text-xs font-semibold text-white">
-                        {cam.detections} phát hiện
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
+            {shown.map((cam) => (
+              <CameraTile key={cam.id} cam={cam} />
             ))}
           </div>
         </div>

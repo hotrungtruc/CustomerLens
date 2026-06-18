@@ -3,21 +3,119 @@ import re
 import sqlite3
 from datetime import datetime
 
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
+
 from config import ENCODE_FILE, PRODUCTION_DB_PATH
+from db_config import USE_SUPABASE, DATABASE_URL, DB_TYPE
 
 DEFAULT_TIME = "1970-01-01 00:00:00"
 DEFAULT_MODEL = "w600k_mbf"
 
+# --- Connection Pool (Supabase/PostgreSQL) ---
+# Lazily initialized on first get_db_connection() call.
+_pg_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+_pg_pool_lock = __import__("threading").Lock()
+
+
+def _get_pg_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    """Return the global connection pool, creating it on first call."""
+    global _pg_pool
+    if _pg_pool is None or _pg_pool.closed:
+        with _pg_pool_lock:
+            if _pg_pool is None or _pg_pool.closed:
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=2,
+                    maxconn=10,
+                    dsn=DATABASE_URL,
+                )
+    return _pg_pool
+
+
+class PostgresConnectionWrapper:
+    def __init__(self, conn, pool=None):
+        self.conn = conn
+        self._pool = pool  # if set, close() returns conn to pool
+
+    def cursor(self):
+        return PostgresCursorWrapper(self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
+
+    def execute(self, sql, parameters=None):
+        cursor = self.cursor()
+        cursor.execute(sql, parameters)
+        return cursor
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        if self._pool is not None:
+            # Return connection to the pool instead of closing it
+            try:
+                self.conn.reset()  # clear any uncommitted state
+            except Exception:
+                pass
+            self._pool.putconn(self.conn)
+        else:
+            self.conn.close()
+
+
+class PostgresCursorWrapper:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def execute(self, sql, parameters=None):
+        # Convert SQLite ? placeholders to PostgreSQL %s
+        sql = sql.replace("?", "%s")
+        if parameters:
+            self.cursor.execute(sql, parameters)
+        else:
+            self.cursor.execute(sql)
+        return self
+
+    def fetchone(self):
+        row = self.cursor.fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def fetchall(self):
+        rows = self.cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    @property
+    def rowcount(self):
+        return self.cursor.rowcount
+
+    def close(self):
+        self.cursor.close()
+
 
 def get_db_connection():
-    conn = sqlite3.connect(str(PRODUCTION_DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+    if USE_SUPABASE:
+        pool = _get_pg_pool()
+        pg_conn = pool.getconn()
+        return PostgresConnectionWrapper(pg_conn, pool=pool)
+    else:
+        conn = sqlite3.connect(str(PRODUCTION_DB_PATH))
+        conn.row_factory = sqlite3.Row
+        return conn
 
 
 def _table_columns(conn, table_name):
-    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-    return {row[1] for row in rows}
+    if DB_TYPE == "postgresql":
+        rows = conn.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
+            (table_name,)
+        ).fetchall()
+        return {row["column_name"] for row in rows}
+    else:
+        rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        return {row[1] for row in rows}
 
 
 def _add_missing_columns(conn, table_name, columns):
@@ -47,6 +145,133 @@ def _generate_next_customer_id(conn):
 
 
 def ensure_schema(conn):
+    if DB_TYPE == "postgresql":
+        # Enable pgvector extension for HNSW-indexed face similarity search
+        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+
+        # Create schema for PostgreSQL / Supabase
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                role VARCHAR(50) NOT NULL,
+                cameras TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customers (
+                customer_id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                phone VARCHAR(50) DEFAULT NULL,
+                email VARCHAR(255) DEFAULT NULL,
+                occupation VARCHAR(255) DEFAULT NULL,
+                registered_at VARCHAR(255) DEFAULT NULL,
+                tenure INTEGER NOT NULL DEFAULT 0,
+                loyalty_tier VARCHAR(50) NOT NULL DEFAULT 'Standard',
+                total_visits INTEGER NOT NULL DEFAULT 0,
+                last_visit VARCHAR(255) NOT NULL DEFAULT '1970-01-01 00:00:00',
+                total_spending REAL NOT NULL DEFAULT 0,
+                note TEXT DEFAULT NULL,
+                customer_type VARCHAR(50) NOT NULL DEFAULT 'registered',
+                status VARCHAR(50) NOT NULL DEFAULT 'active',
+                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS customer_embeddings (
+                id SERIAL PRIMARY KEY,
+                customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+                face_embedding BYTEA NOT NULL,
+                embedding_dim INTEGER NOT NULL DEFAULT 512,
+                model_name VARCHAR(100) NOT NULL DEFAULT 'w600k_mbf',
+                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        # Add pgvector column (idempotent — does nothing if it already exists)
+        try:
+            conn.execute(
+                "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS embedding vector(512)"
+            )
+        except Exception:
+            pass  # Column may already exist
+
+        # Create HNSW index for fast cosine similarity search
+        try:
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_customer_embeddings_hnsw
+                ON customer_embeddings
+                USING hnsw (embedding vector_cosine_ops)
+                WITH (m = 16, ef_construction = 64)
+                """
+            )
+        except Exception:
+            pass  # Index may already exist
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS products (
+                product_id VARCHAR(255) PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT DEFAULT NULL,
+                price REAL NOT NULL DEFAULT 0,
+                category VARCHAR(255) NOT NULL DEFAULT 'General',
+                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS table_bookings (
+                booking_id VARCHAR(255) PRIMARY KEY,
+                customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+                table_number VARCHAR(50) NOT NULL,
+                booking_at VARCHAR(255) NOT NULL,
+                party_size INTEGER NOT NULL DEFAULT 1,
+                status VARCHAR(50) NOT NULL DEFAULT 'Pending',
+                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS orders (
+                order_id VARCHAR(255) PRIMARY KEY,
+                customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+                order_date_time VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                total_amount REAL NOT NULL DEFAULT 0,
+                status VARCHAR(50) NOT NULL DEFAULT 'Preparing',
+                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS order_items (
+                order_item_id VARCHAR(255) PRIMARY KEY,
+                order_id VARCHAR(255) NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
+                product_id VARCHAR(255) NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
+                quantity INTEGER NOT NULL DEFAULT 1,
+                subtotal REAL NOT NULL DEFAULT 0,
+                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        _migrate_embeddings(conn)
+        conn.commit()
+        return
+
     """Create/upgrade local restaurant/customer data schema.
 
     Main entities:
@@ -293,26 +518,36 @@ def _migrate_legacy_customer_data(conn):
 
 
 def _migrate_embeddings(conn):
-    # Previous profile-table embedding BLOBs, if present.
-    profile_exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_profiles'").fetchone()
-    if profile_exists and "face_embedding" in _table_columns(conn, "customer_profiles"):
-        rows = conn.execute(
-            "SELECT customer_id, face_embedding, face_embedding_dim, face_embedding_model FROM customer_profiles WHERE face_embedding IS NOT NULL"
-        ).fetchall()
-        for row in rows:
-            conn.execute(
-                """
-                INSERT INTO customer_embeddings (
-                    customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """,
-                (
-                    row["customer_id"],
-                    row["face_embedding"],
-                    row["face_embedding_dim"] or 512,
-                    row["face_embedding_model"] or DEFAULT_MODEL,
-                ),
-            )
+    # Previous profile-table embedding BLOBs, if present (SQLite legacy only).
+    if DB_TYPE != "postgresql":
+        profile_exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_profiles'").fetchone()
+        if profile_exists and "face_embedding" in _table_columns(conn, "customer_profiles"):
+            rows = conn.execute(
+                "SELECT customer_id, face_embedding, face_embedding_dim, face_embedding_model FROM customer_profiles WHERE face_embedding IS NOT NULL"
+            ).fetchall()
+            for row in rows:
+                # Check if this customer already has this specific embedding vector
+                existing = conn.execute(
+                    "SELECT COUNT(*) FROM customer_embeddings WHERE customer_id = ? AND face_embedding = ?",
+                    (str(row["customer_id"]), row["face_embedding"])
+                ).fetchone()
+                count = existing["count"] if (existing and DB_TYPE == "postgresql") else (existing[0] if existing else 0)
+                if count > 0:
+                    continue
+
+                conn.execute(
+                    """
+                    INSERT INTO customer_embeddings (
+                        customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        row["customer_id"],
+                        row["face_embedding"],
+                        row["face_embedding_dim"] or 512,
+                        row["face_embedding_model"] or DEFAULT_MODEL,
+                    ),
+                )
 
     if not ENCODE_FILE.exists():
         return
@@ -329,14 +564,42 @@ def _migrate_embeddings(conn):
         blob, dim = _embedding_to_blob(embedding)
         if not customer_id or blob is None:
             continue
-        conn.execute(
-            """
-            INSERT INTO customer_embeddings (
-                customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-            """,
-            (str(customer_id), blob, dim, DEFAULT_MODEL),
-        )
+
+        # Check if this customer already has this specific embedding vector
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM customer_embeddings WHERE customer_id = ? AND face_embedding = ?",
+            (str(customer_id), blob)
+        ).fetchone()
+        count = existing["count"] if (existing and DB_TYPE == "postgresql") else (existing[0] if existing else 0)
+        if count > 0:
+            continue
+
+        if DB_TYPE == "postgresql":
+            # Dual-write: BYTEA + pgvector column
+            import numpy as np
+            arr = np.asarray(embedding, dtype=np.float32).reshape(-1)
+            norm = np.linalg.norm(arr)
+            if norm > 0:
+                arr = arr / norm
+            vec_str = "[" + ",".join(f"{float(x):.8f}" for x in arr) + "]"
+            conn.execute(
+                """
+                INSERT INTO customer_embeddings (
+                    customer_id, face_embedding, embedding_dim, model_name,
+                    embedding, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?::vector, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (str(customer_id), blob, dim, DEFAULT_MODEL, vec_str),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO customer_embeddings (
+                    customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                (str(customer_id), blob, dim, DEFAULT_MODEL),
+            )
 
 
 def _row_to_customer(row):

@@ -1,5 +1,9 @@
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load env variables from .env file
+load_dotenv()
 
 # ===== Environment Variables (create a .env file) =====
 # SUPABASE_URL=postgresql://postgres:PASSWORD@project.supabase.co:5432/postgres
@@ -38,6 +42,18 @@ else:
     DATABASE_URL = f"sqlite:///{PRODUCTION_DB_PATH}"
     DB_TYPE = "sqlite"
 
-print(f"🗄️  Using {DB_TYPE.upper()} database")
+import logging
+_logger = logging.getLogger("db_config")
+_logger.setLevel(logging.INFO)
+if not _logger.handlers:
+    import sys
+    _h = logging.StreamHandler(sys.stderr)
+    _h.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"))
+    _logger.addHandler(_h)
+
+_logger.info("Using %s database", DB_TYPE.upper())
 if DB_TYPE == "postgresql":
-    print(f"   Host: {DATABASE_URL.split('@')[1].split('/')[0]}")
+    try:
+        _logger.info("   Host: %s", DATABASE_URL.split('@')[1].split('/')[0])
+    except Exception:
+        pass
