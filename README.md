@@ -1,4 +1,4 @@
-# Face Recognition — Front Door AI (v1.4.0)
+# Face Recognition — Front Door AI 
 
 Hệ thống nhận diện khuôn mặt thời gian thực kết hợp giữa camera phía Client (Next.js) truyền tải qua WebSocket đến Backend (FastAPI) xử lý nhận diện bằng AI và lưu trữ đám mây (Supabase + pgvector).
 
@@ -8,34 +8,33 @@ Hệ thống nhận diện khuôn mặt thời gian thực kết hợp giữa ca
 
 ---
 
-## ⚡ Các Tính Năng Nổi Bật (v1.4.0)
+## Tính Năng chính
 
-- **WebSocket Streaming**: Thay thế HTTP polling bằng kết nối WebSocket thời gian thực (`/ws/{session_id}`), mang lại khung hình mượt mà **~10 FPS**.
+- **WebSocket Streaming**: Thay thế HTTP polling bằng kết nối WebSocket thời gian thực (`/ws/{session_id}`), giảm tải xác minh HTTP.
 - **Cô Lập Phiên (Session Isolation)**: Nhận dạng và hiển thị bounding box riêng biệt cho từng tab trình duyệt/camera khác nhau dựa trên `session_id`.
 - **Supabase Cloud Migration**: 
   - Hỗ trợ lưu trữ thông tin khách hàng và nhật ký ra vào trên đám mây PostgreSQL.
   - Tích hợp **pgvector** và chỉ mục **HNSW** (Approximate Nearest Neighbors) cho phép so khớp vector khuôn mặt siêu tốc (**~2ms**).
-- **Quản Lý Ảnh Đám Mây**: Đồng bộ ảnh chân dung khách hàng lên **Supabase Storage** qua REST API, giảm tải cho ổ đĩa máy chủ.
+
 - **Tối Ưu Hóa Hiệu Năng (Prefetch Strategy)**:
   - **Track Lifecycle Cache**: Lưu thông tin khách hàng theo vòng đời track, chỉ truy vấn Database 1 lần duy nhất khi khuôn mặt xuất hiện.
   - **Active Prefetching**: Frontend tự động tải trước (prefetch) chi tiết hồ sơ khi phát hiện khuôn mặt để hiển thị tức thì (0ms) khi admin nhấn vào.
 - **Hệ Thống Auth & Phân Quyền (RBAC)**:
   - Trang Login kính mờ (glassmorphism) bảo mật.
-  - 3 vai trò: **Guest** (chỉ xem Dashboard tổng quan), **Moderator** (xem camera được phân quyền), và **Admin** (toàn quyền quản lý).
-- **Production Hardening**: Tích hợp Connection Pooling (`ThreadedConnectionPool`) và Module Logging có cấu trúc để quản lý tài nguyên hiệu quả khi deploy.
+  - 3 vai trò: **Guest** (chỉ xem main page), **Moderator** (được cấp quyền thủ công để xem camera), và **Admin** (toàn quyền quản lý).
 
 ---
 
-## 🛠️ Công Nghệ Sử Dụng
+## Công Nghệ Sử Dụng
 
 - **Frontend**: Next.js 14 (App Router) + Tailwind CSS + MediaPipe Face Mesh (vẽ canvas client-side)
 - **Backend**: FastAPI + Uvicorn + ONNX Runtime (CPU)
 - **AI Models**: GhostFaceNet (trích xuất vector đặc trưng 512-D) + MediaPipe Face Detector
-- **Database & Storage**: Supabase (PostgreSQL + pgvector) + Supabase Bucket Storage
+- **Database & Storage**: Supabase (PostgreSQL + pgvector)
 
 ---
 
-## 🚀 Hướng Dẫn Chạy Dưới Local
+## Hướng Dẫn Chạy Dưới Local
 
 Yêu cầu: **Python 3.10+** và **Node.js 18+**.
 
@@ -95,8 +94,7 @@ npm run dev
 Truy cập ứng dụng tại `http://localhost:3000`.
 
 ---
-
-## 🐳 Triển Khai Trên Máy Chủ EC2 (Docker Compose)
+### Triển Khai Trên Máy Chủ EC2 (Docker Compose)
 
 Hệ thống đã được đóng gói sẵn để deploy lên EC2 thông qua Docker Compose và Nginx làm Reverse Proxy.
 
@@ -117,7 +115,7 @@ Dự án tích hợp sẵn `.gitlab-ci.yml`. Khi bạn merge code vào nhánh `m
 
 ---
 
-## 📊 Cấu Trúc Cơ Sở Dữ Liệu Supabase
+## Cấu Trúc Cơ Sở Dữ Liệu Supabase
 
 - **Bảng `customers`**: Lưu thông tin cơ bản (`id`, `name`, `phone`, `note`, `visit_count`, `last_visit`).
 - **Bảng `customer_embeddings`**: Lưu vector đặc trưng (`customer_id`, `embedding vector(512)`).
