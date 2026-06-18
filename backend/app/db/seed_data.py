@@ -1,3 +1,4 @@
+import hashlib
 from app.db.connection import ensure_schema, get_db_connection, upsert_customer
 
 # Demo customer data for the school project.
@@ -106,6 +107,23 @@ def main():
             note=value.get("note"),
             customer_type="registered",
             status="active",
+        )
+
+    # Seed default user accounts
+    default_users = [
+        ("admin", "admin123", "admin", None),
+        ("moderator", "mod123", "moderator", "DSLR-002,DSLR-003")
+    ]
+    for username, password, role, cameras in default_users:
+        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        # Clean existing user if conflict
+        conn.execute("DELETE FROM users WHERE username = ?", (username,))
+        conn.execute(
+            """
+            INSERT INTO users (username, password_hash, role, cameras)
+            VALUES (?, ?, ?, ?)
+            """,
+            (username, pwd_hash, role, cameras)
         )
 
     conn.commit()

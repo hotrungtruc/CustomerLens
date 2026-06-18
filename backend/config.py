@@ -64,3 +64,7 @@ def ensure_data_dirs():
     ENCODINGS_DIR.mkdir(parents=True, exist_ok=True)
     DATABASE_DIR.mkdir(parents=True, exist_ok=True)
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+
+ensure_data_dirs()
+

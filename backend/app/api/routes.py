@@ -1,12 +1,32 @@
 import base64
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
+import secrets
 
 import cv2
 import numpy as np
 import threading
 import time
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException, Header
+
+# Session store mapping hex tokens to user dicts
+ACTIVE_SESSIONS = {}
+
+def get_user_from_token(authorization: str | None = None):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+    token = authorization.split(" ")[1].strip()
+    if token not in ACTIVE_SESSIONS:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+    return ACTIVE_SESSIONS[token]
+
+def require_admin(authorization: str | None = None):
+    user = get_user_from_token(authorization)
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Unauthorized action: Admin role required")
+    return user
+
 
 from app.utils.shared_frame import SharedFrameManager
 
@@ -316,6 +336,53 @@ def test():
     return {"status": "ok", "message": "FastAPI backend is running"}
 
 
+@router.post("/api/login")
+async def api_login(request: Request):
+    payload = await request.json()
+    username = (payload.get("username") or "").strip()
+    password = (payload.get("password") or "").strip()
+
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT username, password_hash, role, cameras FROM users WHERE username = ?",
+            (username,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+
+        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        if row["password_hash"] != pwd_hash:
+            raise HTTPException(status_code=401, detail="Invalid username or password")
+
+        # Create session
+        token = secrets.token_hex(16)
+        cameras_list = []
+        if row["cameras"]:
+            cameras_list = [c.strip() for c in row["cameras"].split(",") if c.strip()]
+
+        user_info = {
+            "username": row["username"],
+            "role": row["role"],
+            "cameras": cameras_list
+        }
+        ACTIVE_SESSIONS[token] = user_info
+
+        return {
+            "success": True,
+            "token": token,
+            "user": user_info
+        }
+    finally:
+        conn.close()
+
+
+
 @router.get("/api/customer_info")
 def api_customer_info():
     if not current_customer_id:
@@ -486,7 +553,8 @@ def api_customers_overview():
 
 
 @router.put("/api/customer_profile")
-async def api_customer_profile(request: Request):
+async def api_customer_profile(request: Request, authorization: str | None = Header(None)):
+    require_admin(authorization)
     payload = await request.json()
     selected_id = (payload.get("id") or "").strip()
     source_id = (payload.get("source_id") or selected_id or "").strip()
@@ -657,7 +725,8 @@ async def api_process_frame(request: Request):
 
 
 @router.post("/api/promote_guest")
-async def api_promote_guest(request: Request):
+async def api_promote_guest(request: Request, authorization: str | None = Header(None)):
+    require_admin(authorization)
     """Promote a GUEST_* id into the known encodings.
 
     Expects JSON: { "guest_id": "GUEST_...", "new_id": "<customer_id>" }
@@ -678,7 +747,8 @@ async def api_promote_guest(request: Request):
     return {"success": False, "message": "guest not found"}
 
 @router.get("/api/customers")
-def api_get_all_customers():
+def api_get_all_customers(authorization: str | None = Header(None)):
+    require_admin(authorization)
     conn = get_db_connection()
     ensure_schema(conn)
     try:
@@ -696,7 +766,8 @@ def api_get_all_customers():
         conn.close()
 
 @router.get("/api/customer_profile_by_id/{customer_id}")
-def api_get_customer_by_id(customer_id: str):
+def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(None)):
+    require_admin(authorization)
     conn = get_db_connection()
     ensure_schema(conn)
     try:

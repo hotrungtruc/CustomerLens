@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
 import { Search, SlidersHorizontal, ChevronDown } from "lucide-react";
@@ -63,6 +64,8 @@ function formatLastVisit(dateStr) {
 }
 
 export default function CustomersPage() {
+  const router = useRouter();
+  const [role, setRole] = useState(null);
   const [tab, setTab] = useState("all");
   const [query, setQuery] = useState("");
   const [dbCustomers, setDbCustomers] = useState([]);
@@ -70,6 +73,16 @@ export default function CustomersPage() {
   const { customers: liveCustomers } = useCustomerDetection();
 
   useEffect(() => {
+    const savedRole = localStorage.getItem("role") || "guest";
+    if (savedRole !== "admin") {
+      router.push("/");
+      return;
+    }
+    setRole(savedRole);
+  }, [router]);
+
+  useEffect(() => {
+    if (role !== "admin") return;
     let active = true;
     async function load() {
       try {
@@ -89,7 +102,15 @@ export default function CustomersPage() {
       active = false;
       clearInterval(interval);
     };
-  }, []);
+  }, [role]);
+
+  if (role !== "admin") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-slate-500 font-medium">Đang chuyển hướng...</p>
+      </div>
+    );
+  }
 
   // Map database customers to UI structures
   const mappedCustomers = dbCustomers.map((c) => {

@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import Sidebar from "../../../components/Sidebar";
 import PageHeader from "../../../components/PageHeader";
 import { ArrowLeft, Calendar, Phone, FileText } from "lucide-react";
-import { API_BASE_URL } from "../../../services/api";
+import { fetchCustomerProfileById } from "../../../services/api";
 
 function rankLabel(visitCount) {
   const n = Number(visitCount || 0);
@@ -79,11 +79,7 @@ export default function CustomerDetailPage() {
     if (!id) return;
     setLoading(true);
     setError("");
-    fetch(`${API_BASE_URL}/api/customer_profile_by_id/${encodeURIComponent(id)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
+    fetchCustomerProfileById(id)
       .then((data) => {
         if (data.status === "success") {
           setCustomer(data.customer);
@@ -91,7 +87,7 @@ export default function CustomerDetailPage() {
           setError(data.message || "Không tìm thấy khách hàng.");
         }
       })
-      .catch(() => setError("Không thể kết nối tới backend."))
+      .catch((err) => setError(err.message || "Không thể kết nối tới backend."))
       .finally(() => setLoading(false));
   }, [id]);
 

@@ -258,6 +258,11 @@ export default function DashboardPage() {
 
   // Click vào card trong right panel
   const handleCardClick = useCallback((c) => {
+    const role = localStorage.getItem("role") || "guest";
+    if (role !== "admin") {
+      alert("Chỉ tài khoản Quản trị viên (Admin) mới có quyền truy cập thông tin chi tiết hoặc đăng ký khách hàng.");
+      return;
+    }
     setHighlightedTrackId(c.track_id);
     if (isKnownCustomer(c)) {
       // Khách cũ → đi thẳng đến trang hồ sơ

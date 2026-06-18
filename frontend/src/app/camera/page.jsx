@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
 import CameraStream from "../../components/CameraStream";
@@ -21,12 +22,43 @@ const FILTERS = [
 ];
 
 export default function CameraPage() {
+  const router = useRouter();
   const [filter, setFilter] = useState("all");
+  const [role, setRole] = useState(null);
+  const [allowedCameras, setAllowedCameras] = useState([]);
   const { status, customers, frameSize } = useCustomerDetection();
 
-  const shown = filter === "all"
+  useEffect(() => {
+    const savedRole = localStorage.getItem("role") || "guest";
+    if (savedRole === "guest") {
+      router.push("/login");
+      return;
+    }
+    setRole(savedRole);
+    try {
+      const cams = JSON.parse(localStorage.getItem("cameras")) || [];
+      setAllowedCameras(cams);
+    } catch {
+      setAllowedCameras([]);
+    }
+  }, [router]);
+
+  if (role === null) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <p className="text-slate-500 font-medium">Đang tải...</p>
+      </div>
+    );
+  }
+
+  const filteredCameras = role === "admin"
     ? CAMERAS
-    : CAMERAS.filter((c) => c.status === filter);
+    : CAMERAS.filter((c) => allowedCameras.includes(c.id));
+
+  const shown = filter === "all"
+    ? filteredCameras
+    : filteredCameras.filter((c) => c.status === filter);
+
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
