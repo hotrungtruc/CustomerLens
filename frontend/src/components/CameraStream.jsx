@@ -17,6 +17,7 @@ export default function CameraStream({
   sessionId,
   highlightedTrackId = null,
   framed = true,
+  compact = false,
   onCustomersChange = null,
 }) {
   const {
@@ -56,11 +57,12 @@ export default function CameraStream({
     <div
       className={
         framed
-          ? "overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
-          : "overflow-hidden bg-white"
+          ? "h-full overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
+          : "h-full overflow-hidden bg-white"
       }
     >
       {/* ── Header bar ── */}
+      {!compact ? (
       <div className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 text-sm text-slate-500 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-3">
           {/* Status dot + label */}
@@ -73,7 +75,7 @@ export default function CameraStream({
           <select
             value={selectedDeviceId}
             onChange={(e) => setSelectedDeviceId(e.target.value)}
-            className="min-w-[240px] rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-300"
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-300 sm:w-auto sm:min-w-[180px] lg:min-w-[220px]"
           >
             <option value="">Integrated Camera</option>
             {devices.map((device, i) => (
@@ -88,15 +90,16 @@ export default function CameraStream({
           Live feed
         </span>
       </div>
+      ) : null}
 
       {/* ── Video + overlays ── */}
-      <div className="relative bg-slate-950">
+      <div className={`relative bg-slate-950 ${compact ? "h-full" : ""}`}>
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
-          className="aspect-[16/10] h-auto min-h-[220px] w-full object-cover sm:min-h-[340px] md:min-h-[420px]"
+          className={compact ? "h-full min-h-0 w-full object-cover" : "aspect-[16/10] h-auto min-h-[180px] w-full object-cover sm:min-h-[260px] md:min-h-[320px] lg:min-h-[360px]"}
         />
 
         {/* Bounding box overlays */}

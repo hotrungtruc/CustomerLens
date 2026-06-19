@@ -25,16 +25,16 @@ export default function PageHeader({ title, subtitle }) {
     : "";
 
   return (
-    <div className="flex items-start justify-between border-b border-slate-100 px-8 py-5">
+    <div className="flex items-start justify-between border-b border-slate-100 px-4 py-3 sm:px-6 lg:px-6 lg:py-4">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">{title}</h1>
+        {subtitle && <p className="mt-1 max-w-2xl text-sm text-slate-500">{subtitle}</p>}
       </div>
-      <div className="flex items-center gap-4 pt-1">
-        <span className="text-sm text-slate-500 min-w-[160px] text-right">
+      <div className="flex items-center gap-3 pt-0.5 sm:gap-4">
+        <span className="hidden text-sm text-slate-500 text-right md:inline">
           {dayLabel}{dayLabel && ", "}{dateLabel}
         </span>
-        <span className="text-sm font-medium text-slate-700 min-w-[70px] text-right">
+        <span className="text-sm font-medium text-slate-700 text-right whitespace-nowrap">
           {timeLabel}
         </span>
         <button

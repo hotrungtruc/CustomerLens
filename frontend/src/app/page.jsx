@@ -320,21 +320,21 @@ export default function DashboardPage() {
   }, [router]);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[220px_minmax(0,1fr)_280px]">
+    <main className="h-dvh overflow-hidden bg-slate-50 p-2 sm:p-3 lg:p-4">
+      <div className="mx-auto grid h-full max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[64px_minmax(0,1fr)_280px]">
 
         {/* Cột 1: Sidebar */}
         <Sidebar active="overview" />
 
         {/* Cột 2: Main */}
-        <div className="flex min-w-0 flex-col border-x border-slate-100">
+        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100">
           <PageHeader
             title="Smart Front-door AI"
             subtitle="Quản lý camera của bạn và các thông tin khách hàng theo thời gian thực."
           />
 
-          <div className="flex-1 p-6">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex-1 min-h-0 overflow-hidden p-3 sm:p-4 lg:p-5">
+            <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <CameraStream
                 sessionId={sessionId}
                 highlightedTrackId={highlightedTrackId}
@@ -346,8 +346,8 @@ export default function DashboardPage() {
         </div>
 
         {/* Cột 3: Right panel */}
-        <div className="hidden flex-col lg:flex">
-          <div className="border-b border-slate-100 px-5 py-5">
+        <div className="hidden min-h-0 flex-col lg:flex">
+          <div className="border-b border-slate-100 px-4 py-4 xl:px-5 xl:py-5">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-800">Khách hàng gần đây</span>
               <Link href="/customers" className="text-xs font-medium text-blue-600 hover:underline">
@@ -356,7 +356,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="flex flex-col divide-y divide-slate-50 overflow-y-auto">
+          <div className="flex min-h-0 flex-col divide-y divide-slate-50 overflow-y-auto">
             {recentCustomers.length > 0 ? (
               recentCustomers.map((c) => (
                 <CustomerCard
@@ -373,7 +373,7 @@ export default function DashboardPage() {
           </div>
 
           {/* CTA bottom */}
-          <div className="mt-auto border-t border-slate-100 p-5">
+          <div className="mt-auto border-t border-slate-100 p-4 xl:p-5">
             <p className="text-sm font-semibold text-slate-800">Thông tin khách hàng</p>
             <p className="mt-1 text-xs text-slate-500">
               Theo dõi lịch sử và thông tin chi tiết từng lần ghé thăm.

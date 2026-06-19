@@ -158,19 +158,19 @@ export default function CustomersPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
+    <main className="h-dvh overflow-hidden bg-slate-50 p-2 sm:p-3 lg:p-4">
+      <div className="mx-auto flex h-full max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid lg:grid-cols-[64px_minmax(0,1fr)]">
         <Sidebar active="customers" />
 
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 min-h-0 flex-col">
           <PageHeader
             title="Quản lý Khách hàng"
             subtitle="Danh sách toàn bộ khách hàng được nhận diện bởi hệ thống."
           />
 
-          <div className="flex-1 p-6">
+          <div className="flex flex-1 min-h-0 flex-col p-4 sm:p-5 lg:p-6">
             {/* Search + filter bar */}
-            <div className="mb-4 flex items-center gap-3">
+            <div className="mb-4 flex shrink-0 items-center gap-3">
               <div className="relative flex-1 max-w-sm">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -193,7 +193,7 @@ export default function CustomersPage() {
             </div>
 
             {/* Tabs */}
-            <div className="mb-5 flex items-center gap-2">
+            <div className="mb-5 flex shrink-0 items-center gap-2">
               {tabs.map((t) => (
                 <button
                   key={t.key}
@@ -210,7 +210,7 @@ export default function CustomersPage() {
             </div>
 
             {/* Table */}
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+            <div className="min-h-0 flex-1 overflow-auto rounded-2xl border border-slate-200 bg-white">
               {isLoading ? (
                 <div className="px-5 py-8 text-center text-sm text-slate-400">
                   Đang tải danh sách khách hàng...

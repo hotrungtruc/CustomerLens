@@ -37,6 +37,7 @@ export function useCamera(sessionId) {
   const mountedRef = useRef(true);
   const sendingRef = useRef(false);
   const reconnectRef = useRef(null);
+  const skipNextDeviceStartRef = useRef(false);
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -150,7 +151,15 @@ export function useCamera(sessionId) {
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          try {
+            await videoRef.current.play();
+          } catch (err) {
+            // Browser may interrupt play() if this tile immediately switches
+            // from the default camera to a concrete deviceId.
+            if (err?.name !== "AbortError") {
+              throw err;
+            }
+          }
         }
 
         // Enumerate all camera devices after permission is granted
@@ -159,6 +168,7 @@ export function useCamera(sessionId) {
         if (mountedRef.current) {
           setDevices(videoDevices);
           if (!deviceId && videoDevices.length > 0) {
+            skipNextDeviceStartRef.current = true;
             setSelectedDeviceId(videoDevices[0].deviceId);
           }
         }
@@ -183,6 +193,10 @@ export function useCamera(sessionId) {
   // Camera switch when user picks a different device
   useEffect(() => {
     if (!selectedDeviceId) return;
+    if (skipNextDeviceStartRef.current) {
+      skipNextDeviceStartRef.current = false;
+      return;
+    }
     startCamera(selectedDeviceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDeviceId]);

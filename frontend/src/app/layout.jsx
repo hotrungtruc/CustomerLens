@@ -21,9 +21,9 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="vi" className={`${displayFont.variable} ${bodyFont.variable}`}>
-      <body className="antialiased">
+      <body className="h-full antialiased">
         <MobileNav />
-        <div className="pt-12 lg:pt-0">{children}</div>
+        <div className="h-dvh overflow-hidden pt-12 lg:pt-0">{children}</div>
       </body>
     </html>
   );
