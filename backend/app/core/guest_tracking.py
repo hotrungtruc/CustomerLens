@@ -129,6 +129,7 @@ class TrackState:
     kf: KalmanFilterCorner = None
     predicted_bbox: tuple = None
     state: str = "tracked"
+    is_extracting: bool = False
 
     # Track-level customer profile cache (populated on first DB lookup,
     # reused for every subsequent frame until the track expires).
@@ -348,14 +349,34 @@ class GuestTrackManager:
         if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
             return existing_customer_id
 
-        # --- LAZY EMBEDDING EXTRACTION ---
-        if record.get("embedding") is None and quality_ok and frame is not None and embedder is not None and "landmark" in record:
-            try:
-                # We only compute embedding if we don't know who this is yet!
-                record["embedding"] = embedder.get_embedding(frame, record["landmark"])
-            except Exception as e:
-                logger.warning("Lazy embedding error: %s", e)
-                record["embedding"] = None
+        # --- LAZY EMBEDDING EXTRACTION (ASYNC) ---
+        if existing_customer_id is None and len(track_state.embeddings) < self.buffer_size:
+            if record.get("embedding") is None and quality_ok and frame is not None and embedder is not None and "landmark" in record:
+                if not getattr(track_state, 'is_extracting', False):
+                    track_state.is_extracting = True
+                def _extract():
+                    try:
+                        emb = embedder.get_embedding(frame, record["landmark"])
+                        norm_emb = normalize_embedding(emb)
+                        track_state.embeddings.append(norm_emb)
+                        # Re-calculate guest_quality_ok here since we use it
+                        bbox = record["bbox"]
+                        w = bbox[2] - bbox[0]
+                        h = bbox[3] - bbox[1]
+                        score = record.get("score", 1.0)
+                        is_g_ok = (
+                            w >= GUEST_MIN_FACE_BBOX_SIZE and
+                            h >= GUEST_MIN_FACE_BBOX_SIZE and
+                            score >= GUEST_MIN_DETECTION_SCORE and
+                            quality_ok
+                        )
+                        if is_g_ok:
+                            track_state.guest_embeddings.append(norm_emb)
+                    except Exception as e:
+                        logger.warning("Lazy embedding async error: %s", e)
+                    finally:
+                        track_state.is_extracting = False
+                threading.Thread(target=_extract, daemon=True).start()
 
         embedding = record.get("embedding")
 
@@ -376,11 +397,16 @@ class GuestTrackManager:
             guest_quality_ok = bool(guest_quality_ok)
 
         if quality_ok and embedding is not None:
+            # (This block handles the case where embedding was passed in directly,
+            # though currently it's always extracted asynchronously above)
             norm_emb = normalize_embedding(embedding)
-            track_state.embeddings.append(norm_emb)
-            if guest_quality_ok:
-                track_state.guest_embeddings.append(norm_emb)
+            if len(track_state.embeddings) == 0 or not np.array_equal(track_state.embeddings[-1], norm_emb):
+                track_state.embeddings.append(norm_emb)
+                if guest_quality_ok:
+                    track_state.guest_embeddings.append(norm_emb)
 
+        # Process matches if we have embeddings ready
+        if len(track_state.embeddings) > 0:
             # Build combined lists for matching
             combined_embeddings = []
             combined_ids = []
@@ -457,7 +483,7 @@ class GuestTrackManager:
                             self.persist_known_embeddings()
 
         resolved_customer_id = existing_customer_id if existing_customer_id else None
-        
+
         # Fallback to mean embedding for resolution or guest creation
         if resolved_customer_id is None and len(track_state.embeddings) >= self.buffer_size:
             avg_embedding = normalize_embedding(np.mean(track_state.embeddings[-self.buffer_size :], axis=0))

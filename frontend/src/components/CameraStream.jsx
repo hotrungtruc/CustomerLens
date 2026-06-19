@@ -118,7 +118,7 @@ export default function CameraStream({
                   className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] ${
                     isHl
                       ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
-                      : "border-white/80"
+                      : c.detected ? "border-white/80" : "border-slate-300"
                   }`}
                   style={{
                     left:   `${left}%`,

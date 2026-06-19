@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const CAPTURE_INTERVAL_MS = 100;   // 10 fps
+const CAPTURE_INTERVAL_MS = 50;   // 20 fps
 const JPEG_QUALITY = 0.75;
 const MAX_UPLOAD_WIDTH = 640;
 const MAX_UPLOAD_HEIGHT = 360;

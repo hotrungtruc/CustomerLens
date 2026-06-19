@@ -358,16 +358,15 @@ class InsightEmbedder:
                 swapRB=swap_rb,
             )
 
-        # Optimize with IO Binding
-        if not hasattr(self, '_io_binding'):
-            self._io_binding = self.recognizer.io_binding()
-            self._output_name = self.recognizer.get_outputs()[0].name
+        # Ensure thread safety for concurrent embedding extraction
+        io_binding = self.recognizer.io_binding()
+        output_name = self.recognizer.get_outputs()[0].name
 
-        self._io_binding.bind_cpu_input(self.recognizer_input, blob)
-        self._io_binding.bind_output(self._output_name)
+        io_binding.bind_cpu_input(self.recognizer_input, blob)
+        io_binding.bind_output(output_name)
         
-        self.recognizer.run_with_iobinding(self._io_binding)
-        embedding = self._io_binding.copy_outputs_to_cpu()[0][0]
+        self.recognizer.run_with_iobinding(io_binding)
+        embedding = io_binding.copy_outputs_to_cpu()[0][0]
         
         return normalize_embedding(embedding)
 

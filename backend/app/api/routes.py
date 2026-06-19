@@ -225,27 +225,6 @@ def __decode_encodings(payload):
     return [], []
 
 
-def load_customer_image_base64(customer_id):
-    # Try Supabase Storage first (returns public URL as-is for cloud-native serving)
-    from app.db.supabase_storage import STORAGE_ENABLED, get_public_url
-    if STORAGE_ENABLED:
-        url = get_public_url(customer_id)
-        if url:
-            return url  # Return cloud URL directly — frontend handles both URLs and base64
-
-    # Fall back to local filesystem
-    for ext in (".png", ".jpg", ".jpeg"):
-        path = IMAGES_DIR / f"{customer_id}{ext}"
-        if path.exists():
-            img = cv2.imread(str(path))
-            if img is None:
-                continue
-            _, buffer = cv2.imencode(
-                ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, IMAGE_JPEG_QUALITY]
-            )
-            return base64.b64encode(buffer).decode()
-    return None
-
 
 def camera_feed():
     global current_customer_id, current_customer_seen_at, track_manager
@@ -408,8 +387,6 @@ def api_customer_info(camera_id: str | None = None):
         if not customer_info:
             return {"status": "not_found"}
 
-        img_base64 = load_customer_image_base64(state.current_customer_id)
-
         return {
             "status": "success",
             "id": customer_info["customer_id"],
@@ -442,7 +419,7 @@ def api_customer_info(camera_id: str | None = None):
             "standing": customer_info["standing"],
             "last_attendance_time": customer_info["last_attendance_time"],
             "last_visit": customer_info["last_attendance_time"],
-            "image": img_base64,
+            "image": None,
         }
     finally:
         conn.close()
