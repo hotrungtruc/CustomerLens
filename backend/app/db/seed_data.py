@@ -1,4 +1,5 @@
 import hashlib
+
 from app.db.connection import ensure_schema, get_db_connection, upsert_customer
 
 # Demo customer data for the school project.
@@ -109,10 +110,14 @@ def main():
             status="active",
         )
 
+    import os
+    admin_password = os.environ.get("ADMIN_PASSWORD", "change_me_immediately")
+    mod_password = os.environ.get("MOD_PASSWORD", "change_me_immediately")
+    
     # Seed default user accounts
     default_users = [
-        ("admin", "admin123", "admin", None),
-        ("moderator", "mod123", "moderator", "DSLR-002,DSLR-003")
+        ("admin", admin_password, "admin", None),
+        ("moderator", mod_password, "moderator", "DSLR-002,DSLR-003"),
     ]
     for username, password, role, cameras in default_users:
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
@@ -123,7 +128,7 @@ def main():
             INSERT INTO users (username, password_hash, role, cameras)
             VALUES (?, ?, ?, ?)
             """,
-            (username, pwd_hash, role, cameras)
+            (username, pwd_hash, role, cameras),
         )
 
     conn.commit()
