@@ -1,77 +1,115 @@
 # Tài liệu API & WebSocket (API Reference)
 
-Backend cung cấp các REST API cho việc quản lý và một kết nối WebSocket tốc độ cao cho luồng xử lý Camera theo thời gian thực.
-
-## 1. Xác thực (Authentication)
-Một số API yêu cầu quyền Quản trị (Admin) cần truyền token vào HTTP Header.
-- **Header format:** `Authorization: <token_được_cấp_khi_login>`
+Hệ thống giao tiếp qua REST API (cho tác vụ quản lý) và WebSocket (cho luồng Video Streaming thời gian thực).
 
 ---
 
-## 2. Các Endpoints REST API chính
+## 1. WebSocket Streaming (Real-time Video)
 
-### 2.1. Đăng nhập
+Endpoint xử lý luồng ảnh từ Camera Client và trả về dữ liệu nhận diện khuôn mặt.
+
+**URL:** `ws://{host}:8000/ws/{session_id}`
+- `{session_id}`: Chuỗi ngẫu nhiên (UUID hoặc Random String) đại diện cho một Tab Browser để cô lập Session (Session Isolation).
+
+**Luồng dữ liệu (Data Flow):**
+1. **Client gửi (Upstream):** 
+   Gửi trực tiếp ảnh dưới dạng **Binary Raw Bytes (ArrayBuffer)** thay vì JSON Base64 để tiết kiệm 33% băng thông và tăng tốc decode.
+2. **Server trả về (Downstream):**
+   Trả về kích thước gốc của frame và mảng các `customers` (được nhận diện hoặc đang theo dõi).
+   ```json
+   {
+       "frame_size": { "width": 640, "height": 360 },
+       "customers": [
+           {
+               "track_id": 1,
+               "bbox": [100, 50, 200, 150],
+               "detected": true,
+               "id": "CUS_001",
+               "name": "Nguyen Van A",
+               "loyalty_tier": "VIP"
+           }
+       ]
+   }
+   ```
+
+---
+
+## 2. RESTful APIs
+
+### 2.1. Authentication
+
 **`POST /api/login`**
-- **Body (JSON):** `{"username": "...", "password": "..."}`
-- **Response:** `{"success": true, "token": "...", "user": {...}}`
-- Dùng để xác thực nhân viên/quản trị viên.
+Xác thực người dùng và trả về Session Token.
 
-### 2.2. Lấy dữ liệu Khách hàng đang xuất hiện
-**`GET /api/customers_overview?camera_id=...`**
-- **Mô tả:** Trả về danh sách TẤT CẢ các khuôn mặt đang được nhận diện trên khung hình, kèm theo bounding box và thông tin (nếu là khách hàng quen).
-- **Response:** `{"status": "success", "customers": [...], "frame_size": {...}}`
+- **Request Body (JSON):**
+  ```json
+  { "username": "admin", "password": "secret_password" }
+  ```
+- **Response (200 OK):**
+  ```json
+  {
+      "success": true,
+      "token": "a1b2c3d4e5f6g7h8",
+      "user": { "username": "admin", "role": "admin", "cameras": ["cam1"] }
+  }
+  ```
 
-**`GET /api/customer_info?camera_id=...`**
-- **Mô tả:** Trả về thông tin chi tiết (kèm ảnh base64/url) của khách hàng được nhận diện chính hiện tại.
+---
 
-### 2.3. Check-in Điểm danh
-**`POST /api/check_in`**
-- Điểm danh cho khách hàng đang được nhận diện trên camera hiện tại. Có cơ chế Cooldown (chờ) giữa 2 lần check-in liên tiếp để tránh spam.
-**`POST /api/check_in/{customer_id}`**
-- Tương tự nhưng ép buộc check-in cho một ID cụ thể.
+### 2.2. Quản lý Khách hàng (Profiles)
 
-### 2.4. Quản lý Hồ sơ (Admin Only)
+> **Yêu cầu Xác thực:** Thêm Header `Authorization: Bearer <token>` (Chỉ `admin` mới được cấp quyền ghi).
+
 **`PUT /api/customer_profile`**
-- **Header:** `Authorization: <token>`
-- **Mô tả:** Cập nhật thông tin khách hàng, hoặc đăng ký mới khách hàng từ một "Khách mới" (`GUEST_...`).
-- **Body (JSON):** Các trường `name`, `phone`, `note`,...
+Tạo mới hoặc Cập nhật thông tin Khách hàng. Nếu truyền `source_id` là Guest (`GUEST_...`), hệ thống sẽ kích hoạt hàm Promote (Chuyển đổi).
+
+- **Request Body (JSON):**
+  ```json
+  {
+      "id": "CUS_102",
+      "source_id": "GUEST_default_01_0001",
+      "name": "Tran B",
+      "phone": "0987654321",
+      "loyalty_tier": "Standard"
+  }
+  ```
 
 **`GET /api/customers`**
-- Lấy danh sách toàn bộ khách hàng trong CSDL.
+Lấy danh sách toàn bộ khách hàng.
 
-**`GET /api/customer_profile_by_id/{customer_id}`**
-- Lấy hồ sơ của một khách hàng dựa trên ID.
+**`DELETE /api/customers/{customer_id}`**
+Xóa hồ sơ khách hàng, kèm theo xóa ảnh trên Supabase Storage và xóa Vector Embedding.
 
 ---
 
-## 3. WebSocket luồng Camera (Camera Stream)
+### 2.3. Chấm công / Check-in (Attendance)
 
-Thay vì gửi ảnh liên tục qua HTTP (rất chậm), frontend mở một kết nối WebSocket để gửi nhận liên tục.
+**`POST /api/check_in/{customer_id}`**
+Thực hiện ghi nhận lượt tới thăm (Check-in) thủ công (Manual Override) hoặc gọi qua màn hình Detail.
+Có cơ chế **Cooldown** (VD: 30 giây) để tránh spam.
 
-**`WS /ws/{session_id}`** (Ví dụ session_id có thể là ID của tab trình duyệt hoặc ID của camera)
+- **Response (200 OK):**
+  ```json
+  {
+      "success": true,
+      "message": "Check-in successful"
+  }
+  ```
+- **Response (400/429 Cooldown):**
+  ```json
+  {
+      "success": false,
+      "message": "Please wait 25s"
+  }
+  ```
 
-- **Client gửi (Upstream):**
-```json
-{
-  "image": "base64_encoded_jpeg_string_from_webcam"
-}
-```
+---
 
-- **Server phản hồi (Downstream):**
-```json
-{
-  "customers": [
-    {
-      "track_id": 1,
-      "bbox": [x1, y1, x2, y2],
-      "detected": true,
-      "id": "CUST_001",
-      "name": "Nguyen Van A"
-    }
-  ],
-  "frame_size": {"width": 640, "height": 360}
-}
-```
+### 2.4. Promote Guest (Nâng cấp Vãng lai thành Khách hàng)
+**`POST /api/promote_guest`**
+Dùng nội bộ để đồng bộ việc đổi `GUEST_ID` sang `CUSTOMER_ID` trong cấu trúc Vector In-memory và Database.
 
-> [!NOTE]
-> AI Thread của backend chạy độc lập với luồng WebSocket này. Khi có WebSocket đẩy frame lên, frame được lưu vào `SharedFrameManager`. Quá trình trả về tọa độ `bbox` ngay lập tức dựa trên tọa độ mới nhất mà luồng AI tính toán được, không bị giật lag khung hình.
+- **Request Body (JSON):**
+  ```json
+  { "guest_id": "GUEST_123", "new_id": "CUS_005" }
+  ```

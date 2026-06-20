@@ -118,7 +118,7 @@ export default function CameraStream({
               return (
                 <div
                   key={`overlay-${c.tile_id}`}
-                  className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] ${
+                  className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] transition-all duration-100 ease-linear ${
                     isHl
                       ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
                       : c.detected ? "border-white/80" : "border-slate-300"

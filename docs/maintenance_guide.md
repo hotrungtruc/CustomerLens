@@ -1,64 +1,66 @@
 # Hướng dẫn Vận hành & Bảo trì (Maintenance Guide)
 
-Tài liệu này hướng dẫn cách thiết lập, bảo trì, và xử lý các sự cố thường gặp của hệ thống Face Recognition.
+Tài liệu này cung cấp các bước cần thiết để vận hành dự án Front Door AI, từ khâu triển khai lên Server cho đến xử lý sự cố.
+
+## 1. Triển khai Lên Server (Deployment)
+
+Dự án sử dụng **Docker Compose** và **GitLab CI/CD** để thực thi Automation Deployment lên Máy chủ EC2 (AWS) hoặc các nhà cung cấp VPS khác.
+
+### 1.1. Luồng CI/CD (GitLab)
+Khi code được merge vào nhánh `main`:
+1. **GitLab Runner** sẽ kích hoạt.
+2. Thiết lập SSH bằng khóa riêng tư (`SSH_PRIVATE_KEY`) để truy cập thẳng vào Server EC2.
+3. Kéo mã nguồn mới nhất (`git pull`).
+4. Ghi đè tệp biến môi trường `.env` an toàn (Không commit thông tin này lên Git).
+5. Chạy lệnh `docker compose up --build -d` để Rebuild container Backend mà **không gây Down-time**.
+
+### 1.2. Môi trường Docker
+File `docker-compose.yml` quy định giới hạn bộ nhớ (Resource Limits):
+```yaml
+mem_limit: 600m
+mem_reservation: 300m
+```
+Điều này đảm bảo Backend (chạy Model AI nặng) không làm treo (OOM - Out Of Memory) hệ điều hành nếu chạy trên Server T3.Micro (1GB RAM).
 
 ---
 
-## 1. Cấu hình Môi trường (.env)
+## 2. Quản trị Vector & Database
 
-Mọi cấu hình quan trọng của Backend nằm trong file `backend/.env`. Bạn cần tạo file này nếu chưa có.
-
-```env
-# Đặt thành true để dùng PostgreSQL (Supabase) + pgvector, false để dùng SQLite
-USE_SUPABASE=true
-
-# Thông tin Database (PostgreSQL)
-SUPABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres
-
-```
-
-## 2. Các Script Bảo trì (Maintenance Scripts)
-
-Các file chạy bảo trì nằm trong thư mục `backend/scripts/` và `backend/`. Bạn có thể chạy chúng từ thư mục gốc `backend/`.
-
-### 2.1. Khởi tạo Database
-**Khi nào cần:** Khi mới setup server lần đầu, hoặc sau khi đổi từ SQLite sang Supabase.
+### 2.1. Backfill Vector (Chuyển đổi Vector Cũ)
+Nếu bạn nâng cấp hệ thống từ SQLite (sử dụng BLOB bytes) lên PostgreSQL (sử dụng `pgvector`), bạn cần chạy script sau một lần duy nhất:
 ```bash
-python -m app.db.connection
+# Đứng ở thư mục backend
+python scripts/backfill_vectors.py
 ```
-Lệnh này sẽ tạo các bảng (tables) còn thiếu và tự động cài extension `vector` trên PostgreSQL.
+Script sẽ đọc tất cả các vector trong cột BYTEA và chèn lại vào cột `vector(512)` để lập chỉ mục tìm kiếm HNSW.
 
-### 2.2. Chuyển đổi dữ liệu cũ (Migration)
-Nếu bạn có dữ liệu cũ ở bản cập nhật trước, hãy chạy các lệnh sau:
-
-
-- **Tạo Vector (pgvector) từ dữ liệu kiểu cũ (BYTEA):**
-  ```bash
-  python scripts/backfill_vectors.py
-  ```
-  *(Rất quan trọng nếu hệ thống nhận diện khuôn mặt tìm kiếm bị sai lệch, lệnh này sẽ format lại các vector cho chuẩn).*
-
-- **Dọn dẹp và đồng bộ:**
-  ```bash
-  python deduplicate_and_sync.py
-  ```
-  *(Dùng để làm sạch các khách hàng trùng lặp hoặc guest rác sinh ra trong quá trình nhận diện lỗi).*
+### 2.2. Migrate Ảnh Khách Hàng (Tùy chọn)
+Nếu bạn muốn đưa ảnh local lên Supabase Storage CDN:
+```bash
+python scripts/migrate_images.py
+```
+Nó sẽ upload mọi file trong `data/images/` lên Supabase Storage bucket `customer-images`.
 
 ---
 
-## 3. Xử lý Lỗi thường gặp (Troubleshooting)
+## 3. Xử lý Sự cố Thường gặp (Troubleshooting)
 
-### 3.1. Lỗi `ModuleNotFoundError: No module named 'psycopg2'`
-- **Nguyên nhân:** Chưa cài đặt thư viện kết nối PostgreSQL cho Python sau khi pull code mới (có tính năng Supabase).
-- **Cách sửa:** Chạy lệnh `pip install -r requirements.txt` trong thư mục `backend/`.
+### 3.1. Lỗi Cạn kiệt Connection (Connection Pool Exhaustion)
+- **Dấu hiệu:** Request báo `Timeout` hoặc Database Supabase báo số lượng Client connections chạm ngưỡng (VD: > 60).
+- **Khắc phục:** 
+  - Đảm bảo trong mã nguồn luôn sử dụng context manager `finally: conn.close()`. Backend đã dùng `ThreadedConnectionPool(min=2, max=10)`, kết nối sẽ được trả lại Pool khi `.close()` được gọi.
 
-### 3.2. Không lên hình Camera
-- **Nguyên nhân:** Backend đọc sai ID camera mặc định (ví dụ laptop có 2 camera).
-- **Cách sửa:** Mở `backend/config.py`, tìm dòng `CAMERA_INDEX = 1` và đổi thành `0` hoặc `2` rồi khởi động lại backend.
+### 3.2. Không Nhận Diện Được Khách Cũ (Low Recall)
+- **Dấu hiệu:** Một khách đã có tên nhưng hệ thống liên tục hiện hộp thoại `GUEST_...` màu cam.
+- **Nguyên nhân:** Khách có thể đổi kính râm, hoặc vector mẫu trong Database chưa có góc mặt nghiêng đó.
+- **Khắc phục:** Quản lý bấm vào GUEST đó trên giao diện và chọn `Promote` (Cập nhật hồ sơ) vào đúng khách cũ. Backend sẽ dùng thuật toán **Auto Merge** tự động cộng gộp (Average) vector mới vào hồ sơ để hệ thống khôn lên ở các lần sau.
 
-### 3.3. Tốc độ nhận diện bị chậm
-- **Nguyên nhân:** Khung hình camera đẩy vào AI xử lý quá nhanh làm CPU bị nghẽn. Hoặc do DB chứa quá nhiều khuôn mặt chưa được index.
-- **Cách sửa:** 
-  1. Kiểm tra lại index HNSW trong Supabase (`docs/database_schema.md`).
-  2. Tăng tham số `PROCESS_EVERY_N_FRAMES` trong `config.py` từ `3` lên `5` để giảm tải cho CPU (bỏ qua bớt khung hình).
-
+### 3.3. Camera Bị Lag / Khung hình trễ (Latency)
+- **Dấu hiệu:** Người đi qua cửa rồi mà 2 giây sau khung xanh mới hiện lên.
+- **Nguyên nhân:** Có thể luồng AI bị kẹt (Bị blocking IO).
+- **Khắc phục:** Đảm bảo `PROCESS_EVERY_N_FRAMES` (trong `backend/config.py`) được set phù hợp (VD: bằng 1 hoặc 2) và biến môi trường MKL (Intel Math Kernel Library) threads được config chuẩn ở Docker:
+```env
+OMP_NUM_THREADS=2
+OPENBLAS_NUM_THREADS=2
+MKL_NUM_THREADS=2
+```

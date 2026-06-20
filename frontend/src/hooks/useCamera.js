@@ -111,10 +111,18 @@ export function useCamera(sessionId) {
       canvas.width = w;
       canvas.height = h;
       ctx.drawImage(video, 0, 0, w, h);
-      const image = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-      ws.send(JSON.stringify({ image }));
+      
+      canvas.toBlob(
+        (blob) => {
+          if (wsRef.current?.readyState === WebSocket.OPEN && blob) {
+            wsRef.current.send(blob);
+          }
+          sendingRef.current = false;
+        },
+        "image/jpeg",
+        JPEG_QUALITY
+      );
     } catch (_) {
-    } finally {
       sendingRef.current = false;
     }
   }, []);

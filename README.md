@@ -121,3 +121,19 @@ Dự án tích hợp sẵn `.gitlab-ci.yml`. Khi bạn merge code vào nhánh `m
 - **Bảng `customer_embeddings`**: Lưu vector đặc trưng (`customer_id`, `embedding vector(512)`).
 - **Bảng `attendance`**: Lưu nhật ký ra vào (`id`, `customer_id`, `timestamp`, `visit_date`).
 - **Bảng `users`**: Quản lý tài khoản đăng nhập và phân quyền (`username`, `password_hash`, `role`).
+
+
+## Mục lục Tài liệu (Table of Contents)
+
+1. [Kiến trúc Hệ thống (System Architecture)](system_architecture.md)
+   - Kiến trúc High-level, Luồng dữ liệu qua WebSocket.
+2. [Luồng Xử lý AI & Tracking (AI Pipeline)](ai_pipeline.md)
+   - Chi tiết về MediaPipe, Kalman Filter, Lazy Embedding, Multi-frame Voting và Vector Search.
+3. [Cấu trúc Cơ sở Dữ liệu (Database Schema)](database_schema.md)
+   - PostgreSQL, pgvector HNSW Index và SQLite fallback.
+4. [Kiến trúc Frontend (Frontend Architecture)](frontend_architecture.md)
+   - Next.js App Router, Active Prefetching, RBAC (Role-Based Access Control).
+5. [Tài liệu API & WebSocket (API Reference)](api_reference.md)
+   - RESTful APIs và Giao thức truyền phát WebSocket.
+6. [Hướng dẫn Vận hành & Bảo trì (Maintenance Guide)](maintenance_guide.md)
+   - Xử lý sự cố, CI/CD, Docker deployment.

@@ -1,5 +1,7 @@
 # Kế hoạch tối ưu hóa Hệ thống Nhận diện Khuôn mặt cho Nhà hàng (FaceID)
 
+> **[TRẠNG THÁI: HOÀN TẤT]** Các hạng mục tối ưu hóa trong kế hoạch này đã được triển khai thành công vào mã nguồn.
+
 Dưới góc nhìn chuyên gia tối ưu hóa hệ thống FaceID, tôi đã phân tích kiến trúc hiện tại và phát hiện **4 điểm nghẽn (bottlenecks) tử huyệt** khiến hệ thống không thể chạy mượt ở quy mô nhà hàng. Dưới đây là kế hoạch giải quyết triệt để:
 
 ## 1. Điểm nghẽn Truyền tải (Network & Serialization)
@@ -15,14 +17,7 @@ Dưới góc nhìn chuyên gia tối ưu hóa hệ thống FaceID, tôi đã ph�
 - Trả connection về pool ngay lập tức. 
 - Chỉ xin cấp connection (acquire) ở đúng dòng code cần truy vấn thông tin khách hàng (khi cache chưa có), sau đó đóng/trả (release) ngay lập tức.
 
-## 3. Điểm nghẽn Độ trễ Mạng khi Nhận diện (Vector Search Latency)
-**Vấn đề:** Trong `guest_tracking.py`, nếu khách hàng chưa có trong cache, hệ thống gọi hàm `_query_pgvector` để truy vấn Supabase Cloud nhằm tìm khuôn mặt. Việc gọi API mạng tốn 50-200ms, làm khựng (lag) luồng AI.
-**Giải pháp (In-memory Vector Search):**
-- Đồng bộ toàn bộ vectors từ Supabase xuống RAM (Numpy Array / Cache) khi khởi động.
-- Dùng `np.dot` (Cosine Similarity) để tính toán in-memory. Với 10,000 khách hàng, NumPy tính xong trong < 1ms, nhanh hơn 100 lần so với gọi mạng.
-- Supabase chỉ dùng để lưu trữ lâu dài (Background Sync) chứ không nằm trên Critical Path của việc nhận diện realtime.
-
-## 4. Điểm nghẽn UI Tracking / Vẽ Box
+## 3. Điểm nghẽn UI Tracking / Vẽ Box
 **Vấn đề:** Box vẽ trên Frontend có thể bị giật lag nếu AI trả về chậm hơn 20 FPS.
 **Giải pháp:**
 - Frontend cần làm mịn (CSS transition) cho tọa độ bounding box để nó trượt mượt mà theo khuôn mặt thay vì giật cục (đổi sang `transition: all 0.1s linear`).

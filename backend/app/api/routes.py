@@ -469,7 +469,7 @@ def _invalidate_profile_cache(customer_id: str):
                         track.cached_profile = None
 
 
-def _build_customers_payload(faces: list, conn, camera_state=None) -> list:
+def _build_customers_payload(faces: list, conn=None, camera_state=None) -> list:
     """Build the customers list from raw face annotations + DB lookups.
 
     Uses track-level caching: on the first frame where a face is recognized,
@@ -524,7 +524,12 @@ def _build_customers_payload(faces: list, conn, camera_state=None) -> list:
 
             # 2) Cache miss → query DB and store in track
             if not info:
-                info = get_customer_info(conn, customer_id)
+                local_conn = conn or get_db_connection()
+                try:
+                    info = get_customer_info(local_conn, customer_id)
+                finally:
+                    if conn is None:
+                        local_conn.close()
                 if info and track:
                     track.cached_profile = info
 
@@ -837,30 +842,23 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
 async def websocket_camera(websocket: WebSocket, session_id: str):
     """Persistent bidirectional channel per browser tab.
 
-    Client sends:  { "image": "<base64 JPEG>" }
+    Client sends:  Raw binary bytes of JPEG image
     Server sends:  { "customers": [...], "frame_size": { "width": N, "height": N } }
     """
     await websocket.accept()
     state = get_camera_state(session_id)
 
-    conn = get_db_connection()
-    ensure_schema(conn)
-
     try:
         while True:
             try:
-                data = await websocket.receive_json()
+                data = await websocket.receive_bytes()
             except Exception:
                 break
 
             # Write frame into this camera's state
-            img_b64 = data.get("image", "")
-            if img_b64:
+            if data:
                 try:
-                    if "," in img_b64:
-                        img_b64 = img_b64.split(",", 1)[1]
-                    img_bytes = base64.b64decode(img_b64)
-                    img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+                    img_array = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
                     if frame is not None:
                         state.shared_frame_mgr.write_frame(frame)
@@ -870,7 +868,7 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
             # Return current annotations (AI thread updates asynchronously)
             annotations = state.shared_frame_mgr.get_annotations()
             faces = annotations.get("faces", [])
-            customers = _build_customers_payload(faces, conn, camera_state=state)
+            customers = _build_customers_payload(faces, conn=None, camera_state=state)
 
             w = state.shared_frame_mgr.width
             h = state.shared_frame_mgr.height
@@ -885,5 +883,3 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
 
     except WebSocketDisconnect:
         pass
-    finally:
-        conn.close()
