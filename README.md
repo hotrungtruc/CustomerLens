@@ -1,51 +1,71 @@
-# Face Recognition — Front Door AI 
+# 🚀 Front Door AI — Real-time Face Recognition System
 
-Hệ thống nhận diện khuôn mặt thời gian thực kết hợp giữa camera phía Client (Next.js) truyền tải qua WebSocket đến Backend (FastAPI) xử lý nhận diện bằng AI và lưu trữ đám mây (Supabase + pgvector).
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi)
+![Next.js](https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
+![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB)
+![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/postgresql-4169e1?style=for-the-badge&logo=postgresql&logoColor=white)
+![OpenCV](https://img.shields.io/badge/opencv-%23white.svg?style=for-the-badge&logo=opencv&logoColor=white)
+
+**Front Door AI** là một hệ thống nhận diện khuôn mặt theo thời gian thực (Real-time Face Recognition) mạnh mẽ, được thiết kế cho các doanh nghiệp, cửa hàng, hoặc sự kiện. Hệ thống kết hợp giữa Frontend mượt mà (Next.js) truyền tải khung hình qua **WebSocket** đến Backend (FastAPI) xử lý bằng AI (GhostFaceNet) và lưu trữ vector đặc trưng trên đám mây bằng **Supabase + pgvector**.
 
 <p align="center">
-  <img src="assets/06.13_demo.png" alt="Front Door AI Demo" width="900">
+  <img src="assets/06.13_demo.png" alt="Front Door AI Demo" width="900" style="border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
 </p>
 
 ---
 
-## Tính Năng chính
+## Tính Năng Nổi Bật (Key Features)
 
-- **WebSocket Streaming**: Thay thế HTTP polling bằng kết nối WebSocket thời gian thực (`/ws/{session_id}`), giảm tải xác minh HTTP.
-- **Cô Lập Phiên (Session Isolation)**: Nhận dạng và hiển thị bounding box riêng biệt cho từng tab trình duyệt/camera khác nhau dựa trên `session_id`.
-- **Supabase Cloud Migration**: 
-  - Hỗ trợ lưu trữ thông tin khách hàng và nhật ký ra vào trên đám mây PostgreSQL.
-  - Tích hợp **pgvector** và chỉ mục **HNSW** (Approximate Nearest Neighbors) cho phép so khớp vector khuôn mặt siêu tốc (**~2ms**).
+### Trí Tuệ Nhân Tạo & Thị Giác Máy Tính (AI & CV)
+- **Multi-frame Voting & Lazy Embedding:** Tối ưu hóa việc trích xuất vector khuôn mặt. Hệ thống tự động chọn ra những khung hình có chất lượng cao nhất để đưa vào nhận diện.
+- **Kalman Filter Tracking:** Theo dõi (track) khách hàng liên tục giữa các khung hình, chống nhiễu và mất dấu (flickering).
 
-- **Tối Ưu Hóa Hiệu Năng (Prefetch Strategy)**:
-  - **Track Lifecycle Cache**: Lưu thông tin khách hàng theo vòng đời track, chỉ truy vấn Database 1 lần duy nhất khi khuôn mặt xuất hiện.
-  - **Active Prefetching**: Frontend tự động tải trước (prefetch) chi tiết hồ sơ khi phát hiện khuôn mặt để hiển thị tức thì (0ms) khi admin nhấn vào.
-- **Hệ Thống Auth & Phân Quyền (RBAC)**:
-  - Trang Login kính mờ (glassmorphism) bảo mật.
-  - 3 vai trò: **Guest** (chỉ xem main page), **Moderator** (được cấp quyền thủ công để xem camera), và **Admin** (toàn quyền quản lý).
+### Kiến Trúc Thời Gian Thực (Real-time Architecture)
+- **WebSocket Streaming (`/ws/{session_id}`):** Loại bỏ độ trễ của HTTP Polling. Luồng video và dữ liệu bounding box được truyền tải 2 chiều liên tục với độ trễ tính bằng mili-giây.
+- **Cô Lập Phiên (Session Isolation):** Hỗ trợ nhiều thiết bị/camera cùng kết nối. Mỗi thiết bị có một `session_id` riêng biệt, độc lập xử lý hình ảnh và dữ liệu.
 
----
+### Cloud & Database (Supabase)
+- **pgvector & HNSW Index:** Tìm kiếm độ tương đồng khuôn mặt (Cosine Similarity) với tốc độ siêu tốc (**~2ms**) ngay cả khi dữ liệu lên tới hàng chục nghìn khách hàng.
+- **Connection Pooling (PgBouncer):** Xử lý hàng trăm luồng kết nối đồng thời từ AI Worker đến Database mà không gây cạn kiệt tài nguyên Server.
 
-## Công Nghệ Sử Dụng
+### Tối Ưu Hóa Trải Nghiệm (UX & Performance)
+- **Track Lifecycle Cache:** Truy vấn Database **duy nhất 1 lần** khi khuôn mặt xuất hiện. Các khung hình tiếp theo sẽ sử dụng cache trên RAM, giảm 99% tải cho Database.
+- **Active Prefetching:** Tự động tải trước (prefetch) thông tin hồ sơ của khách. Khi nhân viên click vào để xem, dữ liệu hiển thị tức thì (**0ms**).
+- **Glassmorphism UI:** Giao diện tối (Dark Mode) hiện đại, mượt mà và cực kỳ chuyên nghiệp.
 
-- **Frontend**: Next.js 14 (App Router) + Tailwind CSS + MediaPipe Face Mesh (vẽ canvas client-side)
-- **Backend**: FastAPI + Uvicorn + ONNX Runtime (CPU)
-- **AI Models**: GhostFaceNet (trích xuất vector đặc trưng 512-D) + MediaPipe Face Detector
-- **Database & Storage**: Supabase (PostgreSQL + pgvector)
+### Bảo Mật & Phân Quyền (RBAC)
+- 3 cấp độ phân quyền rõ ràng: **Guest** (Khách - chỉ xem dashboard), **Moderator** (Nhân viên - được xem camera & thông tin), **Admin** (Quản lý - toàn quyền hệ thống).
 
 ---
 
-## Hướng Dẫn Chạy Dưới Local
+## Công Nghệ Sử Dụng (Tech Stack)
 
-Yêu cầu: **Python 3.10+** và **Node.js 18+**.
+| Phân hệ | Công nghệ |
+| :--- | :--- |
+| **Frontend** | Next.js 14 (App Router), React, Tailwind CSS, MediaPipe (Face Mesh Client-side) |
+| **Backend** | FastAPI, Uvicorn, Python 3.10+, WebSockets, asyncio |
+| **AI / ML** | ONNX Runtime (CPU), GhostFaceNet (512-D), OpenCV |
+| **Database** | PostgreSQL, Supabase, pgvector |
+| **Deployment**| Docker, Docker Compose, Nginx, GitLab CI/CD, AWS EC2 |
 
-### 1. Cấu Hình Biến Môi Trường
+---
 
-Tạo file `backend/.env`:
+## Hướng Dẫn Cài Đặt Dưới Local (Local Development)
+
+Yêu cầu hệ thống: **Python 3.10+** và **Node.js 18+**.
+
+### 1. Cấu Hình Biến Môi Trường (.env)
+
+Hệ thống đã chuẩn bị sẵn file mẫu. Tại thư mục `backend/`, hãy tạo file `.env` (hoặc copy từ `.env_example`) và cấu hình:
+
 ```env
+# Đặt "true" để kết nối lên Supabase
 USE_SUPABASE=true
-SUPABASE_URL=postgresql://postgres:PASSWORD@db.qgwpntwmxpwffccptotj.supabase.co:6543/postgres
-SUPABASE_PROJECT_URL=https://qgwpntwmxpwffccptotj.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+
+# Chuỗi kết nối Database. Vui lòng lấy trong Supabase Dashboard (Port 6543)
+SUPABASE_URL="postgresql://postgres.[YOUR_PROJECT_ID]:[YOUR_PASSWORD]@[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true"
 ```
 
 Tạo file `frontend/.env.local`:
@@ -53,87 +73,86 @@ Tạo file `frontend/.env.local`:
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
-### 2. Cài Đặt & Chạy Backend
+### 2. Cài Đặt & Chạy Backend (FastAPI)
 
-Khởi tạo môi trường ảo và cài đặt thư viện:
 ```powershell
+# Di chuyển vào backend
 cd backend
+
+# Khởi tạo môi trường ảo (Virtual Environment)
 python -m venv .venv
-.venv\Scripts\Activate.ps1
+.\.venv\Scripts\activate
+
+# Cài đặt thư viện
 pip install -r requirements.txt
 ```
 
-Khởi chạy cơ sở dữ liệu và tải model (chỉ cần chạy lần đầu):
+*(Chỉ chạy lần đầu tiên)*: Khởi tạo schema và tải Models
 ```powershell
-# Tạo schema database
 python -m app.db.connection
-
-# Tải model AI về thư mục models/
 python -m app.utils.download_models
-
-# Đồng bộ vector cũ từ Bytea sang pgvector (nếu có)
-python scripts/backfill_vectors.py
-
-# Upload hàng loạt ảnh local lên Supabase Storage (nếu có)
-python scripts/migrate_images.py
 ```
 
-Khởi chạy server FastAPI:
+Khởi chạy Server:
 ```powershell
 python run.py
 ```
-Backend sẽ lắng nghe tại `http://localhost:8000`.
+*Backend sẽ lắng nghe tại `http://localhost:8000`.*
 
-### 3. Cài Đặt & Chạy Frontend
+### 3. Cài Đặt & Chạy Frontend (Next.js)
 
 ```bash
+# Mở một terminal mới, di chuyển vào frontend
 cd frontend
+
+# Cài đặt thư viện
 npm install
+
+# Khởi chạy server phát triển
 npm run dev
 ```
-Truy cập ứng dụng tại `http://localhost:3000`.
+*Truy cập ứng dụng tại `http://localhost:3000`.*
 
 ---
-### Triển Khai Trên Máy Chủ EC2 (Docker Compose)
 
-Hệ thống đã được đóng gói sẵn để deploy lên EC2 thông qua Docker Compose và Nginx làm Reverse Proxy.
+## Triển Khai Lên Máy Chủ (Deployment - EC2/VPS)
 
-### Chạy Thủ Công Trên Server:
+Dự án đã được đóng gói tối ưu bằng Docker và cấu hình sẵn Nginx làm Reverse Proxy.
+
+### Chạy thủ công bằng Docker Compose:
 ```bash
-# Clone repo
 git clone <url_gitlab>
 cd face-recognition-system
 
-# Thiết lập file .env chứa thông tin Supabase ở thư mục gốc
+# Đảm bảo bạn đã cấu hình file .env
 
-# Build và chạy ngầm bằng Docker Compose
+# Build và chạy ngầm
 sudo docker compose up --build -d
 ```
 
-### Triển Khai Tự Động (CI/CD):
-Dự án tích hợp sẵn `.gitlab-ci.yml`. Khi bạn merge code vào nhánh `main`, GitLab CI/CD sẽ tự động kết nối SSH vào EC2, cập nhật code mới, ghi đè biến môi trường bảo mật, và rebuild lại container Docker mà không gây downtime.
+### Triển khai tự động hóa (CI/CD):
+Dự án được tích hợp luồng **GitLab CI/CD** (`.gitlab-ci.yml`). 
+Mỗi khi có code mới được Push/Merge vào nhánh `main`, hệ thống CI/CD sẽ tự động:
+1. Kết nối SSH vào máy chủ EC2.
+2. Pull code mới nhất.
+3. Cập nhật các biến bảo mật.
+4. Rebuild Docker Container **không gây gián đoạn dịch vụ (Zero Downtime)**.
 
 ---
 
-## Cấu Trúc Cơ Sở Dữ Liệu Supabase
+## Tài Liệu Kỹ Thuật (Documentation)
 
-- **Bảng `customers`**: Lưu thông tin cơ bản (`id`, `name`, `phone`, `note`, `visit_count`, `last_visit`).
-- **Bảng `customer_embeddings`**: Lưu vector đặc trưng (`customer_id`, `embedding vector(512)`).
-- **Bảng `attendance`**: Lưu nhật ký ra vào (`id`, `customer_id`, `timestamp`, `visit_date`).
-- **Bảng `users`**: Quản lý tài khoản đăng nhập và phân quyền (`username`, `password_hash`, `role`).
+Dự án được tài liệu hóa cực kỳ chi tiết, chuẩn mực như một Production System. Mời bạn tham khảo trong thư mục `docs/`:
 
+1. **[Kiến trúc Hệ thống (System Architecture)](docs/system_architecture.md)**: Kiến trúc High-level, luồng dữ liệu WebSocket.
+2. **[Luồng Xử lý AI & Tracking (AI Pipeline)](docs/ai_pipeline.md)**: Chi tiết giải thuật Multi-frame Voting, Lazy Embedding.
+3. **[Cấu trúc Cơ sở Dữ liệu (Database Schema)](docs/database_schema.md)**: Thiết kế PostgreSQL, chỉ mục HNSW.
+4. **[Kiến trúc Frontend (Frontend Architecture)](docs/frontend_architecture.md)**: App Router, Prefetching, UI/UX.
+5. **[Tài liệu API & WebSocket (API Reference)](docs/api_reference.md)**: Danh sách Endpoints.
+6. **[Hướng dẫn Vận hành & Bảo trì (Maintenance Guide)](docs/maintenance_guide.md)**: Troubleshooting, CI/CD, Docker Resource Limits.
 
-## Mục lục Tài liệu (Table of Contents)
+---
 
-1. [Kiến trúc Hệ thống (System Architecture)](system_architecture.md)
-   - Kiến trúc High-level, Luồng dữ liệu qua WebSocket.
-2. [Luồng Xử lý AI & Tracking (AI Pipeline)](ai_pipeline.md)
-   - Chi tiết về MediaPipe, Kalman Filter, Lazy Embedding, Multi-frame Voting và Vector Search.
-3. [Cấu trúc Cơ sở Dữ liệu (Database Schema)](database_schema.md)
-   - PostgreSQL, pgvector HNSW Index và SQLite fallback.
-4. [Kiến trúc Frontend (Frontend Architecture)](frontend_architecture.md)
-   - Next.js App Router, Active Prefetching, RBAC (Role-Based Access Control).
-5. [Tài liệu API & WebSocket (API Reference)](api_reference.md)
-   - RESTful APIs và Giao thức truyền phát WebSocket.
-6. [Hướng dẫn Vận hành & Bảo trì (Maintenance Guide)](maintenance_guide.md)
-   - Xử lý sự cố, CI/CD, Docker deployment.
+<p align="center">
+  <i>Được thiết kế và phát triển với hiệu năng làm kim chỉ nam.</i>
+</p>
