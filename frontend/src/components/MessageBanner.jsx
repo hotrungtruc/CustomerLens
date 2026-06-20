@@ -1,4 +1,8 @@
-export default function MessageBanner({ message, variant = "info", className = "" }) {
+export default function MessageBanner({
+  message,
+  variant = "info",
+  className = "",
+}) {
   const styles = {
     success: "bg-emerald-100 text-emerald-800",
     warning: "bg-amber-100 text-amber-800",
@@ -7,7 +11,9 @@ export default function MessageBanner({ message, variant = "info", className = "
   };
 
   return (
-    <div className={`rounded-xl px-4 py-3 text-sm font-medium ${styles[variant]} ${className}`}>
+    <div
+      className={`rounded-xl px-4 py-3 text-sm font-medium ${styles[variant]} ${className}`}
+    >
       {message}
     </div>
   );

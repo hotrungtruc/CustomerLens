@@ -2,7 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { LayoutDashboard, Camera, Users, History, Bell, BarChart2, Settings, X, Menu } from "lucide-react";
+import {
+  LayoutDashboard,
+  Camera,
+  Users,
+  History,
+  Bell,
+  BarChart2,
+  Settings,
+  X,
+  Menu,
+} from "lucide-react";
 
 const ITEMS = [
   { href: "/", label: "Tổng quan", Icon: LayoutDashboard },
@@ -21,10 +31,17 @@ export default function MobileNav() {
     <div className="lg:hidden">
       <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">FD</div>
-          <span className="text-sm font-semibold text-slate-800">Front Desk AI</span>
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white">
+            FD
+          </div>
+          <span className="text-sm font-semibold text-slate-800">
+            Front Desk AI
+          </span>
         </div>
-        <button onClick={() => setOpen(true)} className="rounded-lg border border-slate-200 p-2 text-slate-500">
+        <button
+          onClick={() => setOpen(true)}
+          className="rounded-lg border border-slate-200 p-2 text-slate-500"
+        >
           <Menu className="h-4 w-4" />
         </button>
       </div>
@@ -34,7 +51,10 @@ export default function MobileNav() {
           <div className="w-60 border-r border-slate-100 bg-white px-3 py-5">
             <div className="mb-5 flex items-center justify-between px-2">
               <span className="text-sm font-semibold text-slate-800">Menu</span>
-              <button onClick={() => setOpen(false)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-50">
+              <button
+                onClick={() => setOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-50"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>

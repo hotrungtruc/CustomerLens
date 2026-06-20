@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const CAPTURE_INTERVAL_MS = 50;   // 20 fps
+const CAPTURE_INTERVAL_MS = 50; // 20 fps
 const JPEG_QUALITY = 0.75;
 const MAX_UPLOAD_WIDTH = 640;
 const MAX_UPLOAD_HEIGHT = 360;
@@ -111,7 +111,7 @@ export function useCamera(sessionId) {
       canvas.width = w;
       canvas.height = h;
       ctx.drawImage(video, 0, 0, w, h);
-      
+
       canvas.toBlob(
         (blob) => {
           if (wsRef.current?.readyState === WebSocket.OPEN && blob) {
@@ -120,7 +120,7 @@ export function useCamera(sessionId) {
           sendingRef.current = false;
         },
         "image/jpeg",
-        JPEG_QUALITY
+        JPEG_QUALITY,
       );
     } catch (_) {
       sendingRef.current = false;
@@ -146,7 +146,9 @@ export function useCamera(sessionId) {
         }
 
         const constraints = {
-          video: deviceId ? { deviceId: { exact: deviceId } } : { facingMode: "user" },
+          video: deviceId
+            ? { deviceId: { exact: deviceId } }
+            : { facingMode: "user" },
           audio: false,
         };
 
@@ -184,11 +186,13 @@ export function useCamera(sessionId) {
         timerRef.current = setInterval(sendFrame, CAPTURE_INTERVAL_MS);
       } catch (err) {
         if (mountedRef.current) {
-          setCameraError(err instanceof Error ? err.message : "Unable to access camera");
+          setCameraError(
+            err instanceof Error ? err.message : "Unable to access camera",
+          );
         }
       }
     },
-    [stopStream, sendFrame]
+    [stopStream, sendFrame],
   );
 
   // Initial camera start on mount

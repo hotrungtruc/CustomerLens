@@ -92,7 +92,7 @@ export async function fetchAllCustomers() {
   const response = await fetch(`${API_BASE_URL}/api/customers`, {
     headers: {
       ...getAuthHeaders(),
-    }
+    },
   });
   if (!response.ok) {
     throw new Error("Network error");
@@ -101,13 +101,16 @@ export async function fetchAllCustomers() {
 }
 
 export async function fetchCustomerProfileById(customerId) {
-  const response = await fetch(`${API_BASE_URL}/api/customer_profile_by_id/${encodeURIComponent(customerId)}`, {
-    headers: {
-      ...getAuthHeaders(),
-    }
-  });
+  const response = await fetch(
+    `${API_BASE_URL}/api/customer_profile_by_id/${encodeURIComponent(customerId)}`,
+    {
+      headers: {
+        ...getAuthHeaders(),
+      },
+    },
+  );
   if (!response.ok) {
     throw new Error("Network error");
   }
   return response.json();
-}
+}

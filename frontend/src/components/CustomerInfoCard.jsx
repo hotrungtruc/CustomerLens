@@ -70,7 +70,8 @@ export default function CustomerInfoCard({
   }, [customers, frozenCustomer, liveSelectedCustomer]);
 
   const openDetail = (tileId) => {
-    const nextCustomer = customers.find((item) => item.tile_id === tileId) || null;
+    const nextCustomer =
+      customers.find((item) => item.tile_id === tileId) || null;
     setSelectedTileId(tileId);
     setFrozenCustomer(nextCustomer);
     setIsExpanded(true);
@@ -240,13 +241,19 @@ export default function CustomerInfoCard({
                   <div className="mb-4 flex items-start justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white ${tone}`}>
+                        <span
+                          className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold text-white ${tone}`}
+                        >
                           {symbol}
                         </span>
-                        <p className="text-lg font-semibold text-ink">{item.name || "Khach moi"}</p>
+                        <p className="text-lg font-semibold text-ink">
+                          {item.name || "Khach moi"}
+                        </p>
                       </div>
                     </div>
-                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${detectedClass}`}>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${detectedClass}`}
+                    >
                       {detectedLabel}
                     </span>
                   </div>
@@ -271,7 +278,9 @@ export default function CustomerInfoCard({
         </div>
       )}
 
-      <div className={`absolute inset-x-0 bottom-0 z-20 rounded-t-3xl border border-copper/20 bg-white/95 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] backdrop-blur transition-all duration-300 ${isExpanded ? "h-[72%]" : "h-16"}`}>
+      <div
+        className={`absolute inset-x-0 bottom-0 z-20 rounded-t-3xl border border-copper/20 bg-white/95 shadow-[0_-10px_30px_rgba(15,23,42,0.12)] backdrop-blur transition-all duration-300 ${isExpanded ? "h-[72%]" : "h-16"}`}
+      >
         <button
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
@@ -289,12 +298,18 @@ export default function CustomerInfoCard({
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white ${getTrackBadge(selectedCustomer.track_id).tone}`}>
+                  <span
+                    className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold text-white ${getTrackBadge(selectedCustomer.track_id).tone}`}
+                  >
                     {getTrackBadge(selectedCustomer.track_id).symbol}
                   </span>
-                  <h3 className="text-xl font-semibold text-ink">{selectedCustomer.name || "Khach moi"}</h3>
+                  <h3 className="text-xl font-semibold text-ink">
+                    {selectedCustomer.name || "Khach moi"}
+                  </h3>
                 </div>
-                <p className="text-xs uppercase tracking-[0.2em] text-ink/45">Chi tiet khach duoc chon</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-ink/45">
+                  Chi tiet khach duoc chon
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -323,13 +338,17 @@ export default function CustomerInfoCard({
                   <EditField
                     label="Ten"
                     value={form.name}
-                    onChange={(value) => setForm((prev) => ({ ...prev, name: value }))}
+                    onChange={(value) =>
+                      setForm((prev) => ({ ...prev, name: value }))
+                    }
                     placeholder="Nhap ten khach hang"
                   />
                   <EditField
                     label="SDT"
                     value={form.phone}
-                    onChange={(value) => setForm((prev) => ({ ...prev, phone: value }))}
+                    onChange={(value) =>
+                      setForm((prev) => ({ ...prev, phone: value }))
+                    }
                     placeholder="Nhap so dien thoai"
                   />
                 </div>
@@ -337,7 +356,9 @@ export default function CustomerInfoCard({
                 <EditField
                   label="Note"
                   value={form.note}
-                  onChange={(value) => setForm((prev) => ({ ...prev, note: value }))}
+                  onChange={(value) =>
+                    setForm((prev) => ({ ...prev, note: value }))
+                  }
                   placeholder="Thong tin ghi chu ve khach"
                   multiline
                 />
@@ -368,11 +389,20 @@ export default function CustomerInfoCard({
                 <StatBox label="SDT" value={selectedCustomer.phone} />
                 <StatBox label="Note" value={selectedCustomer.note} />
                 <StatBox label="Lan den" value={selectedCustomer.visit_count} />
-                <StatBox label="Hang" value={rankLabel(selectedCustomer.visit_count)} />
+                <StatBox
+                  label="Hang"
+                  value={rankLabel(selectedCustomer.visit_count)}
+                />
               </div>
             )}
 
-            {saveMessage ? <MessageBanner variant={saveVariant} message={saveMessage} className="mt-4" /> : null}
+            {saveMessage ? (
+              <MessageBanner
+                variant={saveVariant}
+                message={saveMessage}
+                className="mt-4"
+              />
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -396,7 +426,9 @@ function StatBox({ label, value }) {
 function TileRow({ label, value }) {
   return (
     <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-      <span className="text-xs uppercase tracking-[0.18em] text-ink/50">{label}</span>
+      <span className="text-xs uppercase tracking-[0.18em] text-ink/50">
+        {label}
+      </span>
       <span className="font-semibold text-ink">{value ?? "-"}</span>
     </div>
   );
@@ -405,7 +437,9 @@ function TileRow({ label, value }) {
 function EditField({ label, value, onChange, placeholder, multiline = false }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-xs uppercase tracking-[0.2em] text-ink/45">{label}</span>
+      <span className="mb-2 block text-xs uppercase tracking-[0.2em] text-ink/45">
+        {label}
+      </span>
       {multiline ? (
         <textarea
           value={value}

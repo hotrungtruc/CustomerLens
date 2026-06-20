@@ -4,19 +4,12 @@ import shutil
 import cv2
 import numpy as np
 import onnxruntime as ort
-
-from config import (
-    FACE_LANDMARKER_TASK,
-    MIN_DETECTION_SCORE,
-    MIN_FACE_BBOX_SIZE,
-    MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
-    RECOGNIZER_PATH,
-    RECOGNIZER_FLOAT_PATH,
-    SIMILARITY_THRESHOLD,
-    GUEST_MIN_DETECTION_SCORE,
-    GUEST_MIN_FACE_BBOX_SIZE,
-)
 from app.utils.logger import get_logger
+from config import (FACE_LANDMARKER_TASK, GUEST_MIN_DETECTION_SCORE,
+                    GUEST_MIN_FACE_BBOX_SIZE,
+                    MEDIAPIPE_FACE_MESH_MODEL_SELECTION, MIN_DETECTION_SCORE,
+                    MIN_FACE_BBOX_SIZE, RECOGNIZER_FLOAT_PATH, RECOGNIZER_PATH,
+                    SIMILARITY_THRESHOLD)
 
 logger = get_logger(__name__)
 
@@ -24,6 +17,7 @@ try:
     import mediapipe as mp
 except Exception as e:
     import sys
+
     logger.warning("Failed to import mediapipe: %s", e)
     mp = None
 
@@ -56,9 +50,11 @@ class InsightEmbedder:
         providers = get_onnx_providers()
         session_options = ort.SessionOptions()
         session_options.log_severity_level = 3
-        session_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        session_options.graph_optimization_level = (
+            ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        )
         self.det_size = det_size
-        
+
         # Try to load the recognizer model, with fallback to float model if int8 fails
         try:
             self.recognizer = ort.InferenceSession(
@@ -69,11 +65,14 @@ class InsightEmbedder:
             model_used = recognizer_path.name
         except:
             import sys
+
             exc_info = sys.exc_info()
             error_str = str(exc_info[1])
             error_type = type(exc_info[1]).__name__
             logger.error("Exception caught: %s: %s", error_type, error_str)
-            if ("NotImplemented" in error_str or "NOT_IMPLEMENTED" in error_str) and "ConvInteger" in error_str:
+            if (
+                "NotImplemented" in error_str or "NOT_IMPLEMENTED" in error_str
+            ) and "ConvInteger" in error_str:
                 # Int8 model not supported, try float model
                 logger.warning("Int8 model not supported, falling back to float model")
                 if RECOGNIZER_FLOAT_PATH.exists():
@@ -90,17 +89,19 @@ class InsightEmbedder:
                     )
             else:
                 raise
-        
+
         self._model_name = model_used
         self.recognizer_input = self.recognizer.get_inputs()[0].name
         logger.info("Loaded recognizer model: %s", model_used)
-        
+
         # Initialize face detection - try MediaPipe tasks first, then solutions, then fallback to OpenCV
         if mp is None:
-            logger.warning("MediaPipe not available, will use OpenCV for face detection")
+            logger.warning(
+                "MediaPipe not available, will use OpenCV for face detection"
+            )
             self._use_opencv = True
             self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
             )
             self._mediapipe_tasks = False
         elif hasattr(mp, "tasks") and FACE_LANDMARKER_TASK.exists():
@@ -139,10 +140,12 @@ class InsightEmbedder:
             logger.info("Using MediaPipe Solutions API for face detection")
         else:
             # Fallback to OpenCV for face detection
-            logger.warning("MediaPipe tasks/solutions not available, using OpenCV for face detection")
+            logger.warning(
+                "MediaPipe tasks/solutions not available, using OpenCV for face detection"
+            )
             self._use_opencv = True
             self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
             )
             self._mediapipe_tasks = False
         # store recognizer provider info only
@@ -158,7 +161,7 @@ class InsightEmbedder:
             quality_ok = self.is_quality_ok(box, score)
             if not quality_ok:
                 continue
-                
+
             guest_quality_ok = self.is_guest_quality_ok(box, score, landmark)
 
             embedding = self.get_embedding(image_bgr, landmark)
@@ -190,17 +193,17 @@ class InsightEmbedder:
     def is_guest_quality_ok(self, bbox, score, landmarks):
         if not self.is_quality_ok(bbox, score):
             return False
-            
+
         left, top, right, bottom = map(int, bbox)
         width = max(0, right - left)
         height = max(0, bottom - top)
-        
+
         if width < GUEST_MIN_FACE_BBOX_SIZE or height < GUEST_MIN_FACE_BBOX_SIZE:
             return False
-            
+
         if float(score) < GUEST_MIN_DETECTION_SCORE:
             return False
-            
+
         # Check if frontal face based on eye distance
         if landmarks is not None and len(landmarks) >= 2:
             left_eye = landmarks[0]
@@ -208,7 +211,7 @@ class InsightEmbedder:
             eye_dist = np.linalg.norm(left_eye - right_eye)
             if eye_dist / width < 0.35:
                 return False
-                
+
         return True
 
     def detect(self, image_bgr, scale=1.0):
@@ -228,28 +231,33 @@ class InsightEmbedder:
 
         # We compute pupil centers by averaging eye contours for better ArcFace alignment
         # lm5 mapping: [Left Pupil, Right Pupil, Nose, Left Mouth, Right Mouth]
-        
+
         # Common 5-point indices that map well onto face landmarker outputs
         lm5_idx = [33, 263, 1, 61, 291]
 
         if getattr(self, "_use_opencv", False):
             # Use OpenCV Haar Cascade for face detection
             gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-            faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.05, minNeighbors=3, minSize=(50, 50))
-            
-            for (x, y, fw, fh) in faces:
+            faces = self.face_cascade.detectMultiScale(
+                gray, scaleFactor=1.05, minNeighbors=3, minSize=(50, 50)
+            )
+
+            for x, y, fw, fh in faces:
                 boxes.append([x, y, x + fw, y + fh])
                 # Generate simple 5-point landmarks based on face bounding box
                 # These are rough estimates of key face points
                 x_center = x + fw / 2
                 y_center = y + fh / 2
-                lm5 = np.array([
-                    [x + fw * 0.25, y_center],  # left eye
-                    [x + fw * 0.75, y_center],  # right eye
-                    [x_center, y + fh * 0.5],   # nose
-                    [x + fw * 0.2, y + fh * 0.8],   # left mouth
-                    [x + fw * 0.8, y + fh * 0.8],   # right mouth
-                ], dtype=np.float32)
+                lm5 = np.array(
+                    [
+                        [x + fw * 0.25, y_center],  # left eye
+                        [x + fw * 0.75, y_center],  # right eye
+                        [x_center, y + fh * 0.5],  # nose
+                        [x + fw * 0.2, y + fh * 0.8],  # left mouth
+                        [x + fw * 0.8, y + fh * 0.8],  # right mouth
+                    ],
+                    dtype=np.float32,
+                )
                 landmarks_all.append(lm5)
                 scores.append(0.8)  # Arbitrary confidence score
         elif getattr(self, "_mediapipe_tasks", False):
@@ -336,10 +344,10 @@ class InsightEmbedder:
             return None
 
         aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
-        
+
         # Check input shape of the model to support NCHW vs NHWC dynamically
         input_shape = self.recognizer.get_inputs()[0].shape
-        if input_shape[-1] == 3 or input_shape[-1] == '3':
+        if input_shape[-1] == 3 or input_shape[-1] == "3":
             # NHWC format (e.g. GhostFaceNet)
             aligned_rgb = cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)
             aligned_norm = (aligned_rgb.astype(np.float32) - 127.5) / 127.5
@@ -347,9 +355,9 @@ class InsightEmbedder:
         else:
             # NCHW format (e.g. MobileFaceNet, AdaFace)
             # AdaFace models typically require BGR input, while InsightFace models require RGB
-            is_adaface = 'adaface' in getattr(self, '_model_name', '').lower()
+            is_adaface = "adaface" in getattr(self, "_model_name", "").lower()
             swap_rb = not is_adaface
-            
+
             blob = cv2.dnn.blobFromImage(
                 aligned,
                 1.0 / 127.5,
@@ -364,10 +372,10 @@ class InsightEmbedder:
 
         io_binding.bind_cpu_input(self.recognizer_input, blob)
         io_binding.bind_output(output_name)
-        
+
         self.recognizer.run_with_iobinding(io_binding)
         embedding = io_binding.copy_outputs_to_cpu()[0][0]
-        
+
         return normalize_embedding(embedding)
 
 

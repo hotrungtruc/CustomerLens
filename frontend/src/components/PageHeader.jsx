@@ -14,25 +14,50 @@ export default function PageHeader({ title, subtitle }) {
     return () => clearInterval(id);
   }, []);
 
-  const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+  const days = [
+    "Chủ nhật",
+    "Thứ 2",
+    "Thứ 3",
+    "Thứ 4",
+    "Thứ 5",
+    "Thứ 6",
+    "Thứ 7",
+  ];
 
   const dayLabel = mounted && now ? days[now.getDay()] : "";
-  const dateLabel = mounted && now
-    ? now.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" })
-    : "";
-  const timeLabel = mounted && now
-    ? now.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })
-    : "";
+  const dateLabel =
+    mounted && now
+      ? now.toLocaleDateString("vi-VN", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : "";
+  const timeLabel =
+    mounted && now
+      ? now.toLocaleTimeString("vi-VN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        })
+      : "";
 
   return (
     <div className="flex items-start justify-between border-b border-slate-100 px-4 py-3 sm:px-6 lg:px-6 lg:py-4">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">{title}</h1>
-        {subtitle && <p className="mt-1 max-w-2xl text-sm text-slate-500">{subtitle}</p>}
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">
+          {title}
+        </h1>
+        {subtitle && (
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">{subtitle}</p>
+        )}
       </div>
       <div className="flex items-center gap-3 pt-0.5 sm:gap-4">
         <span className="hidden text-sm text-slate-500 text-right md:inline">
-          {dayLabel}{dayLabel && ", "}{dateLabel}
+          {dayLabel}
+          {dayLabel && ", "}
+          {dateLabel}
         </span>
         <span className="text-sm font-medium text-slate-700 text-right whitespace-nowrap">
           {timeLabel}

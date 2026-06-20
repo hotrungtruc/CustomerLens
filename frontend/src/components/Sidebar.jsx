@@ -18,13 +18,55 @@ import {
 } from "lucide-react";
 
 const ALL_NAV_ITEMS = [
-  { key: "overview", label: "Tổng quan", href: "/", Icon: LayoutDashboard, roles: ["guest", "moderator", "admin"] },
-  { key: "camera", label: "Camera", href: "/camera", Icon: Camera, roles: ["moderator", "admin"] },
-  { key: "customers", label: "Khách hàng", href: "/customers", Icon: Users, roles: ["admin"] },
-  { key: "history", label: "Lịch sử", href: "/history", Icon: History, roles: ["admin"] },
-  { key: "notifications", label: "Thông báo", href: "/notifications", Icon: Bell, roles: ["admin"] },
-  { key: "reports", label: "Báo cáo", href: "/reports", Icon: BarChart2, roles: ["admin"] },
-  { key: "settings", label: "Cài đặt", href: "/settings", Icon: Settings, roles: ["admin"] },
+  {
+    key: "overview",
+    label: "Tổng quan",
+    href: "/",
+    Icon: LayoutDashboard,
+    roles: ["guest", "moderator", "admin"],
+  },
+  {
+    key: "camera",
+    label: "Camera",
+    href: "/camera",
+    Icon: Camera,
+    roles: ["moderator", "admin"],
+  },
+  {
+    key: "customers",
+    label: "Khách hàng",
+    href: "/customers",
+    Icon: Users,
+    roles: ["admin"],
+  },
+  {
+    key: "history",
+    label: "Lịch sử",
+    href: "/history",
+    Icon: History,
+    roles: ["admin"],
+  },
+  {
+    key: "notifications",
+    label: "Thông báo",
+    href: "/notifications",
+    Icon: Bell,
+    roles: ["admin"],
+  },
+  {
+    key: "reports",
+    label: "Báo cáo",
+    href: "/reports",
+    Icon: BarChart2,
+    roles: ["admin"],
+  },
+  {
+    key: "settings",
+    label: "Cài đặt",
+    href: "/settings",
+    Icon: Settings,
+    roles: ["admin"],
+  },
 ];
 
 export default function Sidebar({ active = "overview" }) {
@@ -41,7 +83,8 @@ export default function Sidebar({ active = "overview" }) {
   }, []);
 
   const allowedNav = ALL_NAV_ITEMS.filter((item) => item.roles.includes(role));
-  const activeItem = allowedNav.find((item) => item.key === active) || allowedNav[0];
+  const activeItem =
+    allowedNav.find((item) => item.key === active) || allowedNav[0];
   const ActiveIcon = activeItem?.Icon || LayoutDashboard;
 
   const handleLogout = () => {
@@ -102,7 +145,9 @@ export default function Sidebar({ active = "overview" }) {
                   FD
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-slate-800">Front Desk AI</p>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Front Desk AI
+                  </p>
                   <p className="text-xs text-slate-400">{getRoleBadge(role)}</p>
                 </div>
               </div>
@@ -144,8 +189,12 @@ export default function Sidebar({ active = "overview" }) {
                     {getAvatarLetter(username)}
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-slate-800">{username}</p>
-                    <p className="text-[10px] font-medium text-slate-400">{getRoleBadge(role)}</p>
+                    <p className="truncate text-xs font-semibold text-slate-800">
+                      {username}
+                    </p>
+                    <p className="text-[10px] font-medium text-slate-400">
+                      {getRoleBadge(role)}
+                    </p>
                   </div>
                 </div>
 

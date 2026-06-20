@@ -15,7 +15,8 @@ const bodyFont = Inter({
 
 export const metadata = {
   title: "Front Desk AI",
-  description: "Smart front-door AI dashboard for camera monitoring and guest tracking.",
+  description:
+    "Smart front-door AI dashboard for camera monitoring and guest tracking.",
 };
 
 export default function RootLayout({ children }) {

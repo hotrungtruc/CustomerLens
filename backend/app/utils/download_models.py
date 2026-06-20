@@ -9,9 +9,6 @@ MODELS = {
 }
 
 
-
-
-
 def build_ghostface_int8():
     src_path = MODELS_DIR / "ghostface_fp32.onnx"
     dst_path = MODELS_DIR / "ghostface_int8.onnx"

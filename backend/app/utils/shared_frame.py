@@ -1,4 +1,5 @@
 import threading
+
 import numpy as np
 
 
@@ -37,7 +38,9 @@ class SharedFrameManager:
                 self._version += 1
             except Exception:
                 # fallback: attempt best-effort copy
-                self._buffer[:, :, :] = frame[: self.height, : self.width, : self.channels]
+                self._buffer[:, :, :] = frame[
+                    : self.height, : self.width, : self.channels
+                ]
                 self._version += 1
 
     def read_frame(self):
@@ -62,4 +65,5 @@ class SharedFrameManager:
 
 
 import time
+
 import cv2

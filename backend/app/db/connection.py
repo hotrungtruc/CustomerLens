@@ -6,9 +6,8 @@ from datetime import datetime
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
-
 from config import ENCODE_FILE, PRODUCTION_DB_PATH
-from db_config import USE_SUPABASE, DATABASE_URL, DB_TYPE
+from db_config import DATABASE_URL, DB_TYPE, USE_SUPABASE
 
 DEFAULT_TIME = "1970-01-01 00:00:00"
 DEFAULT_MODEL = "w600k_mbf"
@@ -39,7 +38,9 @@ class PostgresConnectionWrapper:
         self._pool = pool  # if set, close() returns conn to pool
 
     def cursor(self):
-        return PostgresCursorWrapper(self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
+        return PostgresCursorWrapper(
+            self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        )
 
     def execute(self, sql, parameters=None):
         cursor = self.cursor()
@@ -110,7 +111,7 @@ def _table_columns(conn, table_name):
     if DB_TYPE == "postgresql":
         rows = conn.execute(
             "SELECT column_name FROM information_schema.columns WHERE table_name = ?",
-            (table_name,)
+            (table_name,),
         ).fetchall()
         return {row["column_name"] for row in rows}
     else:
@@ -122,12 +123,15 @@ def _add_missing_columns(conn, table_name, columns):
     existing = _table_columns(conn, table_name)
     for column_name, definition in columns.items():
         if column_name not in existing:
-            conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+            conn.execute(
+                f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+            )
 
 
 def _embedding_to_blob(embedding):
     try:
         import numpy as np
+
         arr = np.asarray(embedding, dtype=np.float32).reshape(-1)
         return arr.tobytes(), int(arr.size)
     except Exception:
@@ -150,8 +154,7 @@ def ensure_schema(conn):
         conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
         # Create schema for PostgreSQL / Supabase
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 username VARCHAR(255) UNIQUE NOT NULL,
@@ -159,10 +162,8 @@ def ensure_schema(conn):
                 role VARCHAR(50) NOT NULL,
                 cameras TEXT
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS customers (
                 customer_id VARCHAR(255) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -181,10 +182,8 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS customer_embeddings (
                 id SERIAL PRIMARY KEY,
                 customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
@@ -194,8 +193,7 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
+            """)
         # Add pgvector column (idempotent — does nothing if it already exists)
         try:
             conn.execute(
@@ -206,18 +204,15 @@ def ensure_schema(conn):
 
         # Create HNSW index for fast cosine similarity search
         try:
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_customer_embeddings_hnsw
                 ON customer_embeddings
                 USING hnsw (embedding vector_cosine_ops)
                 WITH (m = 16, ef_construction = 64)
-                """
-            )
+                """)
         except Exception:
             pass  # Index may already exist
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS products (
                 product_id VARCHAR(255) PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -227,10 +222,8 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS table_bookings (
                 booking_id VARCHAR(255) PRIMARY KEY,
                 customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
@@ -241,10 +234,8 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS orders (
                 order_id VARCHAR(255) PRIMARY KEY,
                 customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
@@ -254,10 +245,8 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS order_items (
                 order_item_id VARCHAR(255) PRIMARY KEY,
                 order_id VARCHAR(255) NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
@@ -266,10 +255,14 @@ def ensure_schema(conn):
                 subtotal REAL NOT NULL DEFAULT 0,
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
-            """
-        )
-        _migrate_embeddings(conn)
+            """)
         conn.commit()
+        try:
+            _migrate_embeddings(conn)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"Embedding migration skipped: {e}")
         return
 
     """Create/upgrade local restaurant/customer data schema.
@@ -286,8 +279,7 @@ def ensure_schema(conn):
     should use occupation/registered_at/tenure/loyalty_tier/total_visits/last_visit.
     """
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
@@ -295,11 +287,9 @@ def ensure_schema(conn):
             role TEXT NOT NULL,
             cameras TEXT
         )
-        """
-    )
+        """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS customers (
             customer_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -318,8 +308,7 @@ def ensure_schema(conn):
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
+        """)
     _add_missing_columns(
         conn,
         "customers",
@@ -342,8 +331,7 @@ def ensure_schema(conn):
     )
 
     # Create new schema or keep existing if correct
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS customer_embeddings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             customer_id TEXT NOT NULL,
@@ -354,15 +342,15 @@ def ensure_schema(conn):
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
         )
-        """
-    )
-    
+        """)
+
     # Migration: check if customer_embeddings has 'id' column, if not, migrate it
     columns = _table_columns(conn, "customer_embeddings")
     if "id" not in columns:
-        conn.execute("ALTER TABLE customer_embeddings RENAME TO customer_embeddings_old")
         conn.execute(
-            """
+            "ALTER TABLE customer_embeddings RENAME TO customer_embeddings_old"
+        )
+        conn.execute("""
             CREATE TABLE customer_embeddings (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 customer_id TEXT NOT NULL,
@@ -373,18 +361,14 @@ def ensure_schema(conn):
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             INSERT INTO customer_embeddings (customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at)
             SELECT customer_id, face_embedding, embedding_dim, model_name, created_at, updated_at FROM customer_embeddings_old
-            """
-        )
+            """)
         conn.execute("DROP TABLE customer_embeddings_old")
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS products (
             product_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -394,11 +378,9 @@ def ensure_schema(conn):
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
-        """
-    )
+        """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS table_bookings (
             booking_id TEXT PRIMARY KEY,
             customer_id TEXT NOT NULL,
@@ -410,11 +392,9 @@ def ensure_schema(conn):
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
         )
-        """
-    )
+        """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS orders (
             order_id TEXT PRIMARY KEY,
             customer_id TEXT NOT NULL,
@@ -425,11 +405,9 @@ def ensure_schema(conn):
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
         )
-        """
-    )
+        """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS order_items (
             order_item_id TEXT PRIMARY KEY,
             order_id TEXT NOT NULL,
@@ -440,8 +418,7 @@ def ensure_schema(conn):
             FOREIGN KEY (order_id) REFERENCES orders(order_id),
             FOREIGN KEY (product_id) REFERENCES products(product_id)
         )
-        """
-    )
+        """)
 
     _migrate_legacy_customer_data(conn)
     _migrate_embeddings(conn)
@@ -454,29 +431,50 @@ def _migrate_legacy_customer_data(conn):
     conn.execute("UPDATE customers SET created_at = COALESCE(created_at, ?)", (now,))
     conn.execute("UPDATE customers SET updated_at = COALESCE(updated_at, ?)", (now,))
     conn.execute("UPDATE customers SET name = COALESCE(NULLIF(name, ''), 'Guest')")
-    conn.execute("UPDATE customers SET loyalty_tier = COALESCE(NULLIF(loyalty_tier, ''), 'Standard')")
+    conn.execute(
+        "UPDATE customers SET loyalty_tier = COALESCE(NULLIF(loyalty_tier, ''), 'Standard')"
+    )
     conn.execute("UPDATE customers SET total_visits = COALESCE(total_visits, 0)")
-    conn.execute("UPDATE customers SET last_visit = COALESCE(last_visit, ?)", (DEFAULT_TIME,))
+    conn.execute(
+        "UPDATE customers SET last_visit = COALESCE(last_visit, ?)", (DEFAULT_TIME,)
+    )
     conn.execute("UPDATE customers SET total_spending = COALESCE(total_spending, 0)")
-    conn.execute("UPDATE customers SET customer_type = CASE WHEN customer_id LIKE 'GUEST_%' THEN 'guest' ELSE COALESCE(NULLIF(customer_type, ''), 'registered') END")
-    conn.execute("UPDATE customers SET status = CASE WHEN customer_id LIKE 'GUEST_%' THEN 'temporary' ELSE COALESCE(NULLIF(status, ''), 'active') END")
+    conn.execute(
+        "UPDATE customers SET customer_type = CASE WHEN customer_id LIKE 'GUEST_%' THEN 'guest' ELSE COALESCE(NULLIF(customer_type, ''), 'registered') END"
+    )
+    conn.execute(
+        "UPDATE customers SET status = CASE WHEN customer_id LIKE 'GUEST_%' THEN 'temporary' ELSE COALESCE(NULLIF(status, ''), 'active') END"
+    )
 
     # Legacy one-table fields from earlier student/customer experiments.
     if "major" in cols:
-        conn.execute("UPDATE customers SET occupation = COALESCE(NULLIF(occupation, ''), NULLIF(major, ''))")
+        conn.execute(
+            "UPDATE customers SET occupation = COALESCE(NULLIF(occupation, ''), NULLIF(major, ''))"
+        )
     if "starting_year" in cols:
-        conn.execute("UPDATE customers SET registered_at = COALESCE(NULLIF(registered_at, ''), CAST(starting_year AS TEXT)) WHERE starting_year IS NOT NULL AND starting_year != 0")
+        conn.execute(
+            "UPDATE customers SET registered_at = COALESCE(NULLIF(registered_at, ''), CAST(starting_year AS TEXT)) WHERE starting_year IS NOT NULL AND starting_year != 0"
+        )
     if "year" in cols:
         conn.execute("UPDATE customers SET tenure = COALESCE(tenure, year)")
     if "standing" in cols:
-        conn.execute("UPDATE customers SET loyalty_tier = CASE WHEN loyalty_tier IS NULL OR loyalty_tier = '' OR loyalty_tier = 'Standard' THEN CASE WHEN standing = 'G' THEN 'Standard' ELSE standing END ELSE loyalty_tier END")
+        conn.execute(
+            "UPDATE customers SET loyalty_tier = CASE WHEN loyalty_tier IS NULL OR loyalty_tier = '' OR loyalty_tier = 'Standard' THEN CASE WHEN standing = 'G' THEN 'Standard' ELSE standing END ELSE loyalty_tier END"
+        )
     if "total_attendance" in cols:
-        conn.execute("UPDATE customers SET total_visits = CASE WHEN total_visits = 0 THEN COALESCE(total_attendance, 0) ELSE total_visits END")
+        conn.execute(
+            "UPDATE customers SET total_visits = CASE WHEN total_visits = 0 THEN COALESCE(total_attendance, 0) ELSE total_visits END"
+        )
     if "last_attendance_time" in cols:
-        conn.execute("UPDATE customers SET last_visit = CASE WHEN last_visit = ? THEN COALESCE(last_attendance_time, ?) ELSE last_visit END", (DEFAULT_TIME, DEFAULT_TIME))
+        conn.execute(
+            "UPDATE customers SET last_visit = CASE WHEN last_visit = ? THEN COALESCE(last_attendance_time, ?) ELSE last_visit END",
+            (DEFAULT_TIME, DEFAULT_TIME),
+        )
 
     # Migrate previous normalized profile table into Customers.
-    profile_exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_profiles'").fetchone()
+    profile_exists = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='customer_profiles'"
+    ).fetchone()
     if profile_exists:
         profile_cols = _table_columns(conn, "customer_profiles")
         rows = conn.execute("SELECT * FROM customer_profiles").fetchall()
@@ -506,7 +504,11 @@ def _migrate_legacy_customer_data(conn):
                     data.get("phone"),
                     data.get("note"),
                     data.get("service_category"),
-                    str(data.get("service_start_year")) if data.get("service_start_year") else None,
+                    (
+                        str(data.get("service_start_year"))
+                        if data.get("service_start_year")
+                        else None
+                    ),
                     data.get("customer_tenure_years"),
                     data.get("customer_tenure_years"),
                     data.get("loyalty_tier"),
@@ -520,8 +522,12 @@ def _migrate_legacy_customer_data(conn):
 def _migrate_embeddings(conn):
     # Previous profile-table embedding BLOBs, if present (SQLite legacy only).
     if DB_TYPE != "postgresql":
-        profile_exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='customer_profiles'").fetchone()
-        if profile_exists and "face_embedding" in _table_columns(conn, "customer_profiles"):
+        profile_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='customer_profiles'"
+        ).fetchone()
+        if profile_exists and "face_embedding" in _table_columns(
+            conn, "customer_profiles"
+        ):
             rows = conn.execute(
                 "SELECT customer_id, face_embedding, face_embedding_dim, face_embedding_model FROM customer_profiles WHERE face_embedding IS NOT NULL"
             ).fetchall()
@@ -529,9 +535,13 @@ def _migrate_embeddings(conn):
                 # Check if this customer already has this specific embedding vector
                 existing = conn.execute(
                     "SELECT COUNT(*) FROM customer_embeddings WHERE customer_id = ? AND face_embedding = ?",
-                    (str(row["customer_id"]), row["face_embedding"])
+                    (str(row["customer_id"]), row["face_embedding"]),
                 ).fetchone()
-                count = existing["count"] if (existing and DB_TYPE == "postgresql") else (existing[0] if existing else 0)
+                count = (
+                    existing["count"]
+                    if (existing and DB_TYPE == "postgresql")
+                    else (existing[0] if existing else 0)
+                )
                 if count > 0:
                     continue
 
@@ -568,15 +578,20 @@ def _migrate_embeddings(conn):
         # Check if this customer already has this specific embedding vector
         existing = conn.execute(
             "SELECT COUNT(*) FROM customer_embeddings WHERE customer_id = ? AND face_embedding = ?",
-            (str(customer_id), blob)
+            (str(customer_id), blob),
         ).fetchone()
-        count = existing["count"] if (existing and DB_TYPE == "postgresql") else (existing[0] if existing else 0)
+        count = (
+            existing["count"]
+            if (existing and DB_TYPE == "postgresql")
+            else (existing[0] if existing else 0)
+        )
         if count > 0:
             continue
 
         if DB_TYPE == "postgresql":
             # Dual-write: BYTEA + pgvector column
             import numpy as np
+
             arr = np.asarray(embedding, dtype=np.float32).reshape(-1)
             norm = np.linalg.norm(arr)
             if norm > 0:
@@ -721,7 +736,9 @@ def create_or_update_customer_profile(
     return final_id, created
 
 
-def update_attendance(conn, customer_id, total_attendance=None, last_attendance_time=None):
+def update_attendance(
+    conn, customer_id, total_attendance=None, last_attendance_time=None
+):
     event_time = last_attendance_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     next_total = total_attendance
     if next_total is None:

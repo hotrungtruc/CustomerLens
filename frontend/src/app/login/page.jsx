@@ -29,7 +29,10 @@ export default function LoginPage() {
         localStorage.setItem("token", data.token);
         localStorage.setItem("username", data.user.username);
         localStorage.setItem("role", data.user.role);
-        localStorage.setItem("cameras", JSON.stringify(data.user.cameras || []));
+        localStorage.setItem(
+          "cameras",
+          JSON.stringify(data.user.cameras || []),
+        );
 
         // Redirection based on role
         if (data.user.role === "moderator") {
@@ -110,7 +113,11 @@ export default function LoginPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-white transition-colors"
                 >
-                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
                 </button>
               </div>
             </div>

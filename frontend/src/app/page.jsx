@@ -6,7 +6,7 @@ import Link from "next/link";
 import Sidebar from "../components/Sidebar";
 import PageHeader from "../components/PageHeader";
 import CameraStream from "../components/CameraStream";
-import { getTrackBadge } from "../components/trackBadge";
+import { getTrackBadge } from "../lib/trackBadge";
 import { putCustomerProfile } from "../services/api";
 import { useProfilePrefetch } from "../hooks/useProfilePrefetch";
 
@@ -32,8 +32,11 @@ function Stars({ count }) {
   return (
     <div className="flex items-center gap-0.5">
       {Array.from({ length: 5 }).map((_, i) => (
-        <svg key={i} viewBox="0 0 12 12"
-          className={`h-3 w-3 ${i < count ? "fill-amber-400" : "fill-slate-200"}`}>
+        <svg
+          key={i}
+          viewBox="0 0 12 12"
+          className={`h-3 w-3 ${i < count ? "fill-amber-400" : "fill-slate-200"}`}
+        >
           <path d="M6 1l1.4 2.9 3.2.5-2.3 2.2.5 3.2L6 8.2l-2.8 1.6.5-3.2L1.4 4.4l3.2-.5z" />
         </svg>
       ))}
@@ -43,7 +46,12 @@ function Stars({ count }) {
 
 // ── Popup thêm khách mới ──────────────────────────────────────────────────────
 function AddCustomerModal({ customer, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: "", phone: "", email: "", rank: "Guest" });
+  const [form, setForm] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    rank: "Guest",
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -82,17 +90,23 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
     // Backdrop
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
       <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}>
+            <div
+              className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}
+            >
               {symbol}
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-800">Thêm khách hàng mới</p>
+              <p className="text-sm font-semibold text-slate-800">
+                Thêm khách hàng mới
+              </p>
               <p className="text-xs text-slate-400">{customer.id}</p>
             </div>
           </div>
@@ -100,7 +114,11 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
             onClick={onClose}
             className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
           >
-            <svg viewBox="0 0 16 16" className="h-4 w-4 fill-none stroke-current" strokeWidth="2">
+            <svg
+              viewBox="0 0 16 16"
+              className="h-4 w-4 fill-none stroke-current"
+              strokeWidth="2"
+            >
               <path d="M3 3l10 10M13 3L3 13" />
             </svg>
           </button>
@@ -124,7 +142,9 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 
           {/* SĐT */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">Số điện thoại</label>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">
+              Số điện thoại
+            </label>
             <input
               name="phone"
               value={form.phone}
@@ -136,7 +156,9 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 
           {/* Email */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">Email</label>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">
+              Email
+            </label>
             <input
               name="email"
               value={form.email}
@@ -148,17 +170,20 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 
           {/* Hạng */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">Hạng khách hàng</label>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600">
+              Hạng khách hàng
+            </label>
             <div className="flex gap-2">
               {["Guest", "Member", "VIP"].map((r) => (
                 <button
                   key={r}
                   type="button"
                   onClick={() => setForm((prev) => ({ ...prev, rank: r }))}
-                  className={`flex-1 rounded-xl border py-2 text-sm font-medium transition ${form.rank === r
-                    ? "border-blue-500 bg-blue-50 text-blue-700"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                    }`}
+                  className={`flex-1 rounded-xl border py-2 text-sm font-medium transition ${
+                    form.rank === r
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
                 >
                   {r}
                 </button>
@@ -167,7 +192,9 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
           </div>
 
           {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>
+            <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
+              {error}
+            </p>
           )}
         </div>
 
@@ -200,8 +227,10 @@ function CustomerCard({ c, onClick }) {
   const { symbol, theme } = getTrackBadge(c.track_id);
   const detectedAt = c.detected_at
     ? new Date(c.detected_at).toLocaleTimeString("vi-VN", {
-      hour: "2-digit", minute: "2-digit", hour12: false,
-    })
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      })
     : "";
 
   return (
@@ -210,7 +239,9 @@ function CustomerCard({ c, onClick }) {
       className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 transition-colors"
     >
       {/* Badge khớp bounding box */}
-      <div className={`h-10 w-10 shrink-0 flex items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}>
+      <div
+        className={`h-10 w-10 shrink-0 flex items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}
+      >
         {symbol}
       </div>
 
@@ -218,25 +249,31 @@ function CustomerCard({ c, onClick }) {
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="truncate text-sm font-medium text-slate-800">
-              {known ? (c.name || `Khách #${c.id}`) : "Khách Mới"}
+              {known ? c.name || `Khách #${c.id}` : "Khách Mới"}
             </span>
-            <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${RANK_COLORS[rank]}`}>
+            <span
+              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${RANK_COLORS[rank]}`}
+            >
               {rank}
             </span>
           </div>
           {detectedAt && (
-            <span className="shrink-0 text-[10px] text-slate-400">{detectedAt}</span>
+            <span className="shrink-0 text-[10px] text-slate-400">
+              {detectedAt}
+            </span>
           )}
         </div>
 
         <span className="text-xs text-slate-400">
-          {known ? `CLIENT_${c.id}` : (c.id || "—")}
+          {known ? `CLIENT_${c.id}` : c.id || "—"}
         </span>
 
         <div className="mt-0.5 flex items-center justify-between">
           <Stars count={starCount} />
           {/* Gợi ý hành động */}
-          <span className={`text-[10px] font-medium ${known ? "text-blue-500" : "text-amber-500"}`}>
+          <span
+            className={`text-[10px] font-medium ${known ? "text-blue-500" : "text-amber-500"}`}
+          >
             {known ? "Xem hồ sơ →" : "Thêm thông tin +"}
           </span>
         </div>
@@ -283,46 +320,53 @@ export default function DashboardPage() {
   const recentCustomers = customers.slice(0, 4);
 
   // Click vào card trong right panel
-  const handleCardClick = useCallback((c) => {
-    const role = localStorage.getItem("role") || "guest";
-    if (role !== "admin") {
-      alert("Chỉ tài khoản Quản trị viên (Admin) mới có quyền truy cập thông tin chi tiết hoặc đăng ký khách hàng.");
-      return;
-    }
-    setHighlightedTrackId(c.track_id);
-    if (isKnownCustomer(c)) {
-      // Stash prefetched profile so the detail page can render instantly
-      const prefetched = getProfile(c.id);
-      if (prefetched) {
-        try {
-          sessionStorage.setItem(
-            `prefetch_profile_${c.id}`,
-            JSON.stringify(prefetched)
-          );
-        } catch (_) {}
+  const handleCardClick = useCallback(
+    (c) => {
+      const role = localStorage.getItem("role") || "guest";
+      if (role !== "admin") {
+        alert(
+          "Chỉ tài khoản Quản trị viên (Admin) mới có quyền truy cập thông tin chi tiết hoặc đăng ký khách hàng.",
+        );
+        return;
       }
-      router.push(`/customers/${c.id}`);
-    } else {
-      // Khách mới → mở popup nhập thông tin
-      setModalCustomer(c);
-    }
-  }, [router, getProfile]);
+      setHighlightedTrackId(c.track_id);
+      if (isKnownCustomer(c)) {
+        // Stash prefetched profile so the detail page can render instantly
+        const prefetched = getProfile(c.id);
+        if (prefetched) {
+          try {
+            sessionStorage.setItem(
+              `prefetch_profile_${c.id}`,
+              JSON.stringify(prefetched),
+            );
+          } catch (_) {}
+        }
+        router.push(`/customers/${c.id}`);
+      } else {
+        // Khách mới → mở popup nhập thông tin
+        setModalCustomer(c);
+      }
+    },
+    [router, getProfile],
+  );
 
   // Sau khi lưu thành công → navigate đến trang hồ sơ mới
-  const handleSaved = useCallback((result) => {
-    setModalCustomer(null);
-    const newId = result?.customer_id || result?.id;
-    if (newId) {
-      router.push(`/customers/${newId}`);
-    } else {
-      router.push("/customers");
-    }
-  }, [router]);
+  const handleSaved = useCallback(
+    (result) => {
+      setModalCustomer(null);
+      const newId = result?.customer_id || result?.id;
+      if (newId) {
+        router.push(`/customers/${newId}`);
+      } else {
+        router.push("/customers");
+      }
+    },
+    [router],
+  );
 
   return (
     <main className="h-dvh overflow-hidden bg-slate-50 p-2 sm:p-3 lg:p-4">
       <div className="mx-auto grid h-full max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[64px_minmax(0,1fr)_280px]">
-
         {/* Cột 1: Sidebar */}
         <Sidebar active="overview" />
 
@@ -349,8 +393,13 @@ export default function DashboardPage() {
         <div className="hidden min-h-0 flex-col lg:flex">
           <div className="border-b border-slate-100 px-4 py-4 xl:px-5 xl:py-5">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-800">Khách hàng gần đây</span>
-              <Link href="/customers" className="text-xs font-medium text-blue-600 hover:underline">
+              <span className="text-sm font-semibold text-slate-800">
+                Khách hàng gần đây
+              </span>
+              <Link
+                href="/customers"
+                className="text-xs font-medium text-blue-600 hover:underline"
+              >
                 Xem tất cả
               </Link>
             </div>
@@ -374,7 +423,9 @@ export default function DashboardPage() {
 
           {/* CTA bottom */}
           <div className="mt-auto border-t border-slate-100 p-4 xl:p-5">
-            <p className="text-sm font-semibold text-slate-800">Thông tin khách hàng</p>
+            <p className="text-sm font-semibold text-slate-800">
+              Thông tin khách hàng
+            </p>
             <p className="mt-1 text-xs text-slate-500">
               Theo dõi lịch sử và thông tin chi tiết từng lần ghé thăm.
             </p>
@@ -382,7 +433,11 @@ export default function DashboardPage() {
               href="/customers"
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="2">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4 fill-none stroke-current"
+                strokeWidth="2"
+              >
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
                 <circle cx="9" cy="7" r="4" />
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
@@ -391,7 +446,6 @@ export default function DashboardPage() {
             </Link>
           </div>
         </div>
-
       </div>
 
       {/* Popup thêm khách mới */}
@@ -405,4 +459,3 @@ export default function DashboardPage() {
     </main>
   );
 }
-

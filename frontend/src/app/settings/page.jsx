@@ -10,12 +10,14 @@ function Toggle({ checked, onChange }) {
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${checked ? "bg-blue-600" : "bg-slate-200"
-        }`}
+      className={`relative inline-flex h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${
+        checked ? "bg-blue-600" : "bg-slate-200"
+      }`}
     >
       <span
-        className={`inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform duration-200 ${checked ? "translate-x-4.5" : "translate-x-0.5"
-          }`}
+        className={`inline-block h-5 w-5 translate-y-0.5 rounded-full bg-white shadow transition-transform duration-200 ${
+          checked ? "translate-x-4.5" : "translate-x-0.5"
+        }`}
         style={{ transform: `translateX(${checked ? "18px" : "2px"})` }}
       />
     </button>
@@ -82,13 +84,19 @@ export default function SettingsPage() {
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50">
                     <Camera className="h-4 w-4 text-blue-600" />
                   </div>
-                  <h3 className="text-sm font-semibold text-slate-800">Cài đặt Camera</h3>
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Cài đặt Camera
+                  </h3>
                 </div>
                 <div className="mt-2 divide-y divide-slate-50">
                   <SelectRow label="Độ phân giải mặc định" value="1080p" />
                   <SelectRow label="Tần số quét khuôn mặt" value="500ms" />
                   <SelectRow label="Lưu trữ video" value="30 ngày" />
-                  <ToggleRow label="Bật phát hiện chuyển động" checked={motion} onChange={setMotion} />
+                  <ToggleRow
+                    label="Bật phát hiện chuyển động"
+                    checked={motion}
+                    onChange={setMotion}
+                  />
                 </div>
               </div>
 
@@ -98,13 +106,23 @@ export default function SettingsPage() {
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50">
                     <Shield className="h-4 w-4 text-blue-600" />
                   </div>
-                  <h3 className="text-sm font-semibold text-slate-800">Nhận diện khuôn mặt</h3>
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Nhận diện khuôn mặt
+                  </h3>
                 </div>
                 <div className="mt-2 divide-y divide-slate-50">
                   <SelectRow label="Ngưỡng độ chính xác" value="85%" />
                   <SelectRow label="Chế độ phát hiện" value="Nhanh" />
-                  <ToggleRow label="Tự động cập nhật mẫu" checked={autoUpdate} onChange={setAutoUpdate} />
-                  <ToggleRow label="Cảnh báo khuôn mặt lạ" checked={unknownAlert} onChange={setUnknownAlert} />
+                  <ToggleRow
+                    label="Tự động cập nhật mẫu"
+                    checked={autoUpdate}
+                    onChange={setAutoUpdate}
+                  />
+                  <ToggleRow
+                    label="Cảnh báo khuôn mặt lạ"
+                    checked={unknownAlert}
+                    onChange={setUnknownAlert}
+                  />
                 </div>
               </div>
 
@@ -114,12 +132,26 @@ export default function SettingsPage() {
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50">
                     <Bell className="h-4 w-4 text-blue-600" />
                   </div>
-                  <h3 className="text-sm font-semibold text-slate-800">Thông báo</h3>
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Thông báo
+                  </h3>
                 </div>
                 <div className="mt-2 divide-y divide-slate-50">
-                  <ToggleRow label="Thông báo khách VIP" checked={vipNotif} onChange={setVipNotif} />
-                  <ToggleRow label="Cảnh báo qua email" checked={emailAlert} onChange={setEmailAlert} />
-                  <ToggleRow label="Âm thanh cảnh báo" checked={soundAlert} onChange={setSoundAlert} />
+                  <ToggleRow
+                    label="Thông báo khách VIP"
+                    checked={vipNotif}
+                    onChange={setVipNotif}
+                  />
+                  <ToggleRow
+                    label="Cảnh báo qua email"
+                    checked={emailAlert}
+                    onChange={setEmailAlert}
+                  />
+                  <ToggleRow
+                    label="Âm thanh cảnh báo"
+                    checked={soundAlert}
+                    onChange={setSoundAlert}
+                  />
                 </div>
               </div>
 
@@ -129,7 +161,9 @@ export default function SettingsPage() {
                   <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50">
                     <UserCog className="h-4 w-4 text-blue-600" />
                   </div>
-                  <h3 className="text-sm font-semibold text-slate-800">Tài khoản & Phân quyền</h3>
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Tài khoản & Phân quyền
+                  </h3>
                 </div>
                 <div className="mt-2 divide-y divide-slate-50">
                   <InputRow label="Tên quản trị viên" value="Admin" />

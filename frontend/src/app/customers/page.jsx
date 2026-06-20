@@ -25,7 +25,11 @@ function Stars({ count }) {
   return (
     <div className="flex items-center gap-0.5">
       {Array.from({ length: 5 }).map((_, i) => (
-        <svg key={i} viewBox="0 0 12 12" className={`h-3.5 w-3.5 ${ i < count ? "fill-amber-400" : "fill-slate-200" } `}>
+        <svg
+          key={i}
+          viewBox="0 0 12 12"
+          className={`h-3.5 w-3.5 ${i < count ? "fill-amber-400" : "fill-slate-200"} `}
+        >
           <path d="M6 1l1.4 2.9 3.2.5-2.3 2.2.5 3.2L6 8.2l-2.8 1.6.5-3.2L1.4 4.4l3.2-.5z" />
         </svg>
       ))}
@@ -53,11 +57,21 @@ function formatLastVisit(dateStr) {
     yesterday.setDate(now.getDate() - 1);
     const isYesterday = dt.toDateString() === yesterday.toDateString();
 
-    const timeStr = dt.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
-    if (isToday) return `Hôm nay, ${ timeStr } `;
-    if (isYesterday) return `Hôm qua, ${ timeStr } `;
+    const timeStr = dt.toLocaleTimeString("vi-VN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    if (isToday) return `Hôm nay, ${timeStr} `;
+    if (isYesterday) return `Hôm qua, ${timeStr} `;
 
-    return dt.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric" }) + `, ${ timeStr } `;
+    return (
+      dt.toLocaleDateString("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }) + `, ${timeStr} `
+    );
   } catch {
     return dateStr;
   }
@@ -123,7 +137,7 @@ export default function CustomersPage() {
     }
 
     const rank = rankLabel(c.visit_count);
-    const displayId = c.id.startsWith("GUEST_") ? c.id : `CLIENT_${ c.id } `;
+    const displayId = c.id.startsWith("GUEST_") ? c.id : `CLIENT_${c.id} `;
 
     return {
       id: c.id,
@@ -138,7 +152,12 @@ export default function CustomersPage() {
   });
 
   const filtered = mappedCustomers.filter((c) => {
-    if (query && !c.name.toLowerCase().includes(query.toLowerCase()) && !c.id.toLowerCase().includes(query.toLowerCase())) return false;
+    if (
+      query &&
+      !c.name.toLowerCase().includes(query.toLowerCase()) &&
+      !c.id.toLowerCase().includes(query.toLowerCase())
+    )
+      return false;
     if (tab === "present") return c.status === "Đang ở";
     if (tab === "pending") return c.status === "Chờ xác nhận";
     if (tab === "vip") return c.rank === "VIP";
@@ -146,9 +165,13 @@ export default function CustomersPage() {
   });
 
   const allCount = mappedCustomers.length;
-  const presentCount = mappedCustomers.filter(c => c.status === "Đang ở").length;
-  const pendingCount = mappedCustomers.filter(c => c.status === "Chờ xác nhận").length;
-  const vipCount = mappedCustomers.filter(c => c.rank === "VIP").length;
+  const presentCount = mappedCustomers.filter(
+    (c) => c.status === "Đang ở",
+  ).length;
+  const pendingCount = mappedCustomers.filter(
+    (c) => c.status === "Chờ xác nhận",
+  ).length;
+  const vipCount = mappedCustomers.filter((c) => c.rank === "VIP").length;
 
   const tabs = [
     { key: "all", label: "Tất cả", count: allCount },
@@ -199,10 +222,10 @@ export default function CustomersPage() {
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className={`rounded - lg px - 3 py - 1.5 text - sm font - medium transition ${
-  tab === t.key
-  ? "bg-blue-600 text-white"
-  : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-} `}
+                    tab === t.key
+                      ? "bg-blue-600 text-white"
+                      : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  } `}
                 >
                   {t.label} {t.count}
                 </button>
@@ -223,8 +246,19 @@ export default function CustomersPage() {
                 <table className="w-full min-w-[700px] table-auto text-left">
                   <thead>
                     <tr className="border-b border-slate-100">
-                      {["Khách hàng", "Mã ID", "Hạng", "Lượt ghé", "Lần cuối", "Đánh giá", "Trạng thái"].map((col) => (
-                        <th key={col} className="px-5 py-3.5 text-xs font-medium text-slate-400">
+                      {[
+                        "Khách hàng",
+                        "Mã ID",
+                        "Hạng",
+                        "Lượt ghé",
+                        "Lần cuối",
+                        "Đánh giá",
+                        "Trạng thái",
+                      ].map((col) => (
+                        <th
+                          key={col}
+                          className="px-5 py-3.5 text-xs font-medium text-slate-400"
+                        >
                           {col}
                         </th>
                       ))}
@@ -236,24 +270,37 @@ export default function CustomersPage() {
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
                             <div className="h-9 w-9 shrink-0 rounded-full bg-gradient-to-br from-blue-100 to-slate-200" />
-                            <Link href={`/ customers / ${ c.id } `} className="text-sm font-semibold text-slate-900 hover:text-blue-600">
+                            <Link
+                              href={`/ customers / ${c.id} `}
+                              className="text-sm font-semibold text-slate-900 hover:text-blue-600"
+                            >
                               {c.name}
                             </Link>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-500">{c.displayId}</td>
+                        <td className="px-5 py-4 text-sm text-slate-500">
+                          {c.displayId}
+                        </td>
                         <td className="px-5 py-4">
-                          <span className={`rounded - full border px - 2.5 py - 0.5 text - xs font - medium ${ RANK_PILL[c.rank] } `}>
+                          <span
+                            className={`rounded - full border px - 2.5 py - 0.5 text - xs font - medium ${RANK_PILL[c.rank]} `}
+                          >
                             {c.rank}
                           </span>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-700">{c.visits}</td>
-                        <td className="px-5 py-4 text-sm text-slate-500">{c.lastVisit}</td>
+                        <td className="px-5 py-4 text-sm text-slate-700">
+                          {c.visits}
+                        </td>
+                        <td className="px-5 py-4 text-sm text-slate-500">
+                          {c.lastVisit}
+                        </td>
                         <td className="px-5 py-4">
                           <Stars count={c.stars} />
                         </td>
                         <td className="px-5 py-4">
-                          <span className={`rounded - full px - 2.5 py - 1 text - xs font - medium ${ STATUS_PILL[c.status] } `}>
+                          <span
+                            className={`rounded - full px - 2.5 py - 1 text - xs font - medium ${STATUS_PILL[c.status]} `}
+                          >
                             {c.status}
                           </span>
                         </td>
@@ -269,4 +316,3 @@ export default function CustomersPage() {
     </main>
   );
 }
-

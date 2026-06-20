@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useCamera } from "../hooks/useCamera";
-import { getTrackBadge } from "./trackBadge";
+import { getTrackBadge } from "../lib/trackBadge";
 
 /**
  * CameraStream — live webcam feed with bounding-box overlays.
@@ -41,17 +41,17 @@ export default function CameraStream({
     wsStatus === "live"
       ? "Camera live"
       : wsStatus === "connecting"
-      ? "Connecting…"
-      : wsStatus === "error"
-      ? "Connection error"
-      : "Reconnecting…";
+        ? "Connecting…"
+        : wsStatus === "error"
+          ? "Connection error"
+          : "Reconnecting…";
 
   const statusDot =
     wsStatus === "live"
       ? "bg-emerald-500"
       : wsStatus === "connecting"
-      ? "bg-amber-400 animate-pulse"
-      : "bg-rose-500 animate-pulse";
+        ? "bg-amber-400 animate-pulse"
+        : "bg-rose-500 animate-pulse";
 
   return (
     <div
@@ -63,33 +63,35 @@ export default function CameraStream({
     >
       {/* ── Header bar ── */}
       {!compact ? (
-      <div className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 text-sm text-slate-500 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Status dot + label */}
-          <span className="flex items-center gap-1.5">
-            <span className={`h-2 w-2 rounded-full ${statusDot}`} />
-            <span className="text-sm font-medium text-slate-600">{statusLabel}</span>
+        <div className="flex flex-col gap-3 border-b border-slate-200/80 px-4 py-4 text-sm text-slate-500 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Status dot + label */}
+            <span className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${statusDot}`} />
+              <span className="text-sm font-medium text-slate-600">
+                {statusLabel}
+              </span>
+            </span>
+
+            {/* Camera selector */}
+            <select
+              value={selectedDeviceId}
+              onChange={(e) => setSelectedDeviceId(e.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-300 sm:w-auto sm:min-w-[180px] lg:min-w-[220px]"
+            >
+              <option value="">Integrated Camera</option>
+              {devices.map((device, i) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Camera ${i + 1}`}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-600">
+            Live feed
           </span>
-
-          {/* Camera selector */}
-          <select
-            value={selectedDeviceId}
-            onChange={(e) => setSelectedDeviceId(e.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-300 sm:w-auto sm:min-w-[180px] lg:min-w-[220px]"
-          >
-            <option value="">Integrated Camera</option>
-            {devices.map((device, i) => (
-              <option key={device.deviceId} value={device.deviceId}>
-                {device.label || `Camera ${i + 1}`}
-              </option>
-            ))}
-          </select>
         </div>
-
-        <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-600">
-          Live feed
-        </span>
-      </div>
       ) : null}
 
       {/* ── Video + overlays ── */}
@@ -99,7 +101,11 @@ export default function CameraStream({
           autoPlay
           playsInline
           muted
-          className={compact ? "h-full min-h-0 w-full object-cover" : "aspect-[16/10] h-auto min-h-[180px] w-full object-cover sm:min-h-[260px] md:min-h-[320px] lg:min-h-[360px]"}
+          className={
+            compact
+              ? "h-full min-h-0 w-full object-cover"
+              : "aspect-[16/10] h-auto min-h-[180px] w-full object-cover sm:min-h-[260px] md:min-h-[320px] lg:min-h-[360px]"
+          }
         />
 
         {/* Bounding box overlays */}
@@ -108,11 +114,11 @@ export default function CameraStream({
             .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
             .map((c) => {
               const [x1, y1, x2, y2] = c.bbox;
-              const left   = (x1 / frameSize.width)  * 100;
-              const top    = (y1 / frameSize.height) * 100;
-              const width  = ((x2 - x1) / frameSize.width)  * 100;
+              const left = (x1 / frameSize.width) * 100;
+              const top = (y1 / frameSize.height) * 100;
+              const width = ((x2 - x1) / frameSize.width) * 100;
               const height = ((y2 - y1) / frameSize.height) * 100;
-              const isHl   = highlightedTrackId === c.track_id;
+              const isHl = highlightedTrackId === c.track_id;
               const { symbol, theme } = getTrackBadge(c.track_id);
 
               return (
@@ -121,12 +127,14 @@ export default function CameraStream({
                   className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] transition-all duration-100 ease-linear ${
                     isHl
                       ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
-                      : c.detected ? "border-white/80" : "border-slate-300"
+                      : c.detected
+                        ? "border-white/80"
+                        : "border-slate-300"
                   }`}
                   style={{
-                    left:   `${left}%`,
-                    top:    `${top}%`,
-                    width:  `${Math.max(width, 6)}%`,
+                    left: `${left}%`,
+                    top: `${top}%`,
+                    width: `${Math.max(width, 6)}%`,
                     height: `${Math.max(height, 8)}%`,
                   }}
                 >

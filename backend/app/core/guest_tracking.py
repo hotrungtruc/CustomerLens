@@ -5,17 +5,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from scipy.optimize import linear_sum_assignment
-
-from app.db.connection import get_db_connection, ensure_schema, insert_guest_record
-from db_config import USE_SUPABASE
+from app.db.connection import (ensure_schema, get_db_connection,
+                               insert_guest_record)
 from app.utils.logger import get_logger
-from config import (
-    NEW_GUEST_DEBOUNCE_SECONDS,
-    NEW_GUEST_DEBOUNCE_SIMILARITY,
-    GUEST_MIN_FACE_BBOX_SIZE,
-    GUEST_MIN_DETECTION_SCORE,
-)
+from config import (GUEST_MIN_DETECTION_SCORE, GUEST_MIN_FACE_BBOX_SIZE,
+                    NEW_GUEST_DEBOUNCE_SECONDS, NEW_GUEST_DEBOUNCE_SIMILARITY)
+from db_config import USE_SUPABASE
+from scipy.optimize import linear_sum_assignment
 
 logger = get_logger(__name__)
 
@@ -67,41 +63,42 @@ def bbox_iou(box_a, box_b):
 
 class KalmanFilterCorner:
     """A simple constant velocity Kalman Filter for bounding box corners (x1, y1, x2, y2)."""
+
     def __init__(self, bbox):
         # State vector: [x1, y1, x2, y2, vx1, vy1, vx2, vy2]^T
         x1, y1, x2, y2 = bbox
         self.x = np.array([x1, y1, x2, y2, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
-        
+
         # State covariance P
         self.P = np.eye(8, dtype=np.float32) * 10.0
         self.P[4:, 4:] *= 10.0
-        
+
         # Transition matrix F
         self.F = np.eye(8, dtype=np.float32)
         self.F[0, 4] = 1.0
         self.F[1, 5] = 1.0
         self.F[2, 6] = 1.0
         self.F[3, 7] = 1.0
-        
+
         # Measurement matrix H
         self.H = np.zeros((4, 8), dtype=np.float32)
         self.H[0, 0] = 1.0
         self.H[1, 1] = 1.0
         self.H[2, 2] = 1.0
         self.H[3, 3] = 1.0
-        
+
         # Process noise covariance Q
         self.Q = np.eye(8, dtype=np.float32) * 0.1
         self.Q[4:, 4:] *= 0.5
-        
+
         # Measurement noise covariance R
         self.R = np.eye(4, dtype=np.float32) * 1.0
-        
+
     def predict(self):
         self.x = np.dot(self.F, self.x)
         self.P = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
         return self.x[:4]
-        
+
     def update(self, bbox):
         z = np.array(bbox, dtype=np.float32)
         y = z - np.dot(self.H, self.x)
@@ -124,7 +121,7 @@ class TrackState:
     first_seen_at: float = 0.0
     last_seen_at: float = 0.0
     recent_votes: list = field(default_factory=list)
-    
+
     # Kalman Filter variables
     kf: KalmanFilterCorner = None
     predicted_bbox: tuple = None
@@ -263,13 +260,19 @@ class GuestTrackManager:
                 # Also write promoted embedding to pgvector
                 if self.use_pgvector:
                     try:
-                        from app.db.vector_search import insert_embedding_with_vector
+                        from app.db.vector_search import \
+                            insert_embedding_with_vector
+
                         conn = get_db_connection()
                         try:
                             blob = np.asarray(emb, dtype=np.float32).tobytes()
                             insert_embedding_with_vector(
-                                conn, new_id, blob, emb,
-                                dim=len(emb), model_name="w600k_mbf",
+                                conn,
+                                new_id,
+                                blob,
+                                emb,
+                                dim=len(emb),
+                                model_name="w600k_mbf",
                             )
                             conn.commit()
                         finally:
@@ -304,11 +307,17 @@ class GuestTrackManager:
                 # Also store the embedding in customer_embeddings with pgvector
                 if embedding is not None and self.use_pgvector:
                     try:
-                        from app.db.vector_search import insert_embedding_with_vector
+                        from app.db.vector_search import \
+                            insert_embedding_with_vector
+
                         blob = np.asarray(embedding, dtype=np.float32).tobytes()
                         insert_embedding_with_vector(
-                            conn, guest_id, blob, embedding,
-                            dim=len(embedding), model_name="w600k_mbf",
+                            conn,
+                            guest_id,
+                            blob,
+                            embedding,
+                            dim=len(embedding),
+                            model_name="w600k_mbf",
                         )
                         conn.commit()
                     except Exception:
@@ -330,6 +339,7 @@ class GuestTrackManager:
         """
         try:
             from app.db.vector_search import search_similar_faces
+
             conn = get_db_connection()
             try:
                 results = search_similar_faces(
@@ -343,17 +353,27 @@ class GuestTrackManager:
 
     def _recognize_face(self, track_state, record, now, frame=None, embedder=None):
         quality_ok = bool(record.get("quality_ok", True))
-        
+
         existing_customer_id = track_state.resolved_customer_id
 
         if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
             return existing_customer_id
 
         # --- LAZY EMBEDDING EXTRACTION (ASYNC) ---
-        if existing_customer_id is None and len(track_state.embeddings) < self.buffer_size:
-            if record.get("embedding") is None and quality_ok and frame is not None and embedder is not None and "landmark" in record:
-                if not getattr(track_state, 'is_extracting', False):
+        if (
+            existing_customer_id is None
+            and len(track_state.embeddings) < self.buffer_size
+        ):
+            if (
+                record.get("embedding") is None
+                and quality_ok
+                and frame is not None
+                and embedder is not None
+                and "landmark" in record
+            ):
+                if not getattr(track_state, "is_extracting", False):
                     track_state.is_extracting = True
+
                 def _extract():
                     try:
                         emb = embedder.get_embedding(frame, record["landmark"])
@@ -365,10 +385,10 @@ class GuestTrackManager:
                         h = bbox[3] - bbox[1]
                         score = record.get("score", 1.0)
                         is_g_ok = (
-                            w >= GUEST_MIN_FACE_BBOX_SIZE and
-                            h >= GUEST_MIN_FACE_BBOX_SIZE and
-                            score >= GUEST_MIN_DETECTION_SCORE and
-                            quality_ok
+                            w >= GUEST_MIN_FACE_BBOX_SIZE
+                            and h >= GUEST_MIN_FACE_BBOX_SIZE
+                            and score >= GUEST_MIN_DETECTION_SCORE
+                            and quality_ok
                         )
                         if is_g_ok:
                             track_state.guest_embeddings.append(norm_emb)
@@ -376,6 +396,7 @@ class GuestTrackManager:
                         logger.warning("Lazy embedding async error: %s", e)
                     finally:
                         track_state.is_extracting = False
+
                 threading.Thread(target=_extract, daemon=True).start()
 
         embedding = record.get("embedding")
@@ -388,10 +409,10 @@ class GuestTrackManager:
             h = bbox[3] - bbox[1]
             score = record.get("score", 1.0)
             guest_quality_ok = (
-                w >= GUEST_MIN_FACE_BBOX_SIZE and
-                h >= GUEST_MIN_FACE_BBOX_SIZE and
-                score >= GUEST_MIN_DETECTION_SCORE and
-                quality_ok
+                w >= GUEST_MIN_FACE_BBOX_SIZE
+                and h >= GUEST_MIN_FACE_BBOX_SIZE
+                and score >= GUEST_MIN_DETECTION_SCORE
+                and quality_ok
             )
         else:
             guest_quality_ok = bool(guest_quality_ok)
@@ -400,7 +421,9 @@ class GuestTrackManager:
             # (This block handles the case where embedding was passed in directly,
             # though currently it's always extracted asynchronously above)
             norm_emb = normalize_embedding(embedding)
-            if len(track_state.embeddings) == 0 or not np.array_equal(track_state.embeddings[-1], norm_emb):
+            if len(track_state.embeddings) == 0 or not np.array_equal(
+                track_state.embeddings[-1], norm_emb
+            ):
                 track_state.embeddings.append(norm_emb)
                 if guest_quality_ok:
                     track_state.guest_embeddings.append(norm_emb)
@@ -427,11 +450,15 @@ class GuestTrackManager:
                 else:
                     # Also check in-memory guest embeddings (not yet in DB)
                     if self.guest_embeddings:
-                        guest_sims = cosine_similarities(self.guest_embeddings, norm_emb)
+                        guest_sims = cosine_similarities(
+                            self.guest_embeddings, norm_emb
+                        )
                         if guest_sims.size > 0:
                             best_g_idx = int(np.argmax(guest_sims))
                             if float(guest_sims[best_g_idx]) >= 0.45:
-                                track_state.recent_votes.append(self.guest_ids[best_g_idx])
+                                track_state.recent_votes.append(
+                                    self.guest_ids[best_g_idx]
+                                )
                             else:
                                 track_state.recent_votes.append(None)
                         else:
@@ -451,19 +478,20 @@ class GuestTrackManager:
                         else:
                             guest_idx = best_index - len(self.known_embeddings)
                             voted_id = self.guest_ids[guest_idx]
-                        
+
                         track_state.recent_votes.append(voted_id)
                     else:
                         # Append None to represent no confident vote for this frame
                         track_state.recent_votes.append(None)
-                        
+
             # Keep only the last 5 votes
             if len(track_state.recent_votes) > 5:
                 track_state.recent_votes = track_state.recent_votes[-5:]
-                
+
             # Tally votes: if 3 out of 5 frames match the same ID, resolve it
             if len(track_state.recent_votes) >= 3:
                 from collections import Counter
+
                 valid_votes = [v for v in track_state.recent_votes if v is not None]
                 if valid_votes:
                     vote_counts = Counter(valid_votes)
@@ -471,12 +499,16 @@ class GuestTrackManager:
                     if top_count >= 3:
                         existing_customer_id = top_id
                         track_state.resolved_customer_id = top_id
-                        
+
                         # --- AUTO MERGE LOGIC ---
                         # If we have low-quality/glasses frames in the buffer and we successfully identified the person,
                         # we merge an averaged "glasses" template into the face bank to improve future recognition.
-                        if len(track_state.guest_embeddings) > 0 and not str(top_id).startswith("GUEST_"):
-                            avg_g_emb = normalize_embedding(np.mean(track_state.guest_embeddings, axis=0))
+                        if len(track_state.guest_embeddings) > 0 and not str(
+                            top_id
+                        ).startswith("GUEST_"):
+                            avg_g_emb = normalize_embedding(
+                                np.mean(track_state.guest_embeddings, axis=0)
+                            )
                             self.known_embeddings.append(avg_g_emb)
                             self.known_ids.append(top_id)
                             track_state.guest_embeddings.clear()
@@ -485,8 +517,13 @@ class GuestTrackManager:
         resolved_customer_id = existing_customer_id if existing_customer_id else None
 
         # Fallback to mean embedding for resolution or guest creation
-        if resolved_customer_id is None and len(track_state.embeddings) >= self.buffer_size:
-            avg_embedding = normalize_embedding(np.mean(track_state.embeddings[-self.buffer_size :], axis=0))
+        if (
+            resolved_customer_id is None
+            and len(track_state.embeddings) >= self.buffer_size
+        ):
+            avg_embedding = normalize_embedding(
+                np.mean(track_state.embeddings[-self.buffer_size :], axis=0)
+            )
 
             # Try pgvector first for the fallback mean-embedding match
             if self.use_pgvector:
@@ -495,7 +532,9 @@ class GuestTrackManager:
                     resolved_customer_id = pgvec_results[0][0]
                 # Also check in-memory guests
                 if not resolved_customer_id and self.guest_embeddings:
-                    guest_sims = cosine_similarities(self.guest_embeddings, avg_embedding)
+                    guest_sims = cosine_similarities(
+                        self.guest_embeddings, avg_embedding
+                    )
                     if guest_sims.size > 0:
                         best_g_idx = int(np.argmax(guest_sims))
                         if float(guest_sims[best_g_idx]) >= self.similarity_threshold:
@@ -511,10 +550,15 @@ class GuestTrackManager:
                             guest_idx = best_index - len(self.known_embeddings)
                             resolved_customer_id = self.guest_ids[guest_idx]
 
-            if resolved_customer_id is None and len(track_state.guest_embeddings) >= self.guest_creation_buffer_size:
+            if (
+                resolved_customer_id is None
+                and len(track_state.guest_embeddings) >= self.guest_creation_buffer_size
+            ):
                 known_similarity = 0.0
                 if self.known_embeddings:
-                    known_scores = cosine_similarities(self.known_embeddings, avg_embedding)
+                    known_scores = cosine_similarities(
+                        self.known_embeddings, avg_embedding
+                    )
                     if known_scores.size > 0:
                         known_similarity = float(np.max(known_scores))
 
@@ -524,9 +568,13 @@ class GuestTrackManager:
                 elif known_similarity >= NEW_GUEST_DEBOUNCE_SIMILARITY:
                     resolved_customer_id = None
                 else:
-                    resolved_customer_id = self._register_guest(avg_embedding, track_state)
+                    resolved_customer_id = self._register_guest(
+                        avg_embedding, track_state
+                    )
 
-            if resolved_customer_id is None and not str(existing_customer_id).startswith("GUEST_"):
+            if resolved_customer_id is None and not str(
+                existing_customer_id
+            ).startswith("GUEST_"):
                 resolved_customer_id = None
             else:
                 track_state.resolved_customer_id = resolved_customer_id
@@ -561,7 +609,9 @@ class GuestTrackManager:
                     low_records.append(record)
 
             # 3. Get currently active tracks pool (tracked + recently lost)
-            tracks_pool = [t for t in self.tracks.values() if t.state in ("tracked", "lost")]
+            tracks_pool = [
+                t for t in self.tracks.values() if t.state in ("tracked", "lost")
+            ]
 
             matched_1 = []
             unmatched_tracks = []
@@ -569,10 +619,14 @@ class GuestTrackManager:
 
             # --- First Association: Pool Tracks vs High-Score Detections ---
             if len(tracks_pool) > 0 and len(high_records) > 0:
-                cost_matrix = np.zeros((len(tracks_pool), len(high_records)), dtype=np.float32)
+                cost_matrix = np.zeros(
+                    (len(tracks_pool), len(high_records)), dtype=np.float32
+                )
                 for i, track in enumerate(tracks_pool):
                     for j, det in enumerate(high_records):
-                        cost_matrix[i, j] = 1.0 - bbox_iou(track.predicted_bbox, det["bbox"])
+                        cost_matrix[i, j] = 1.0 - bbox_iou(
+                            track.predicted_bbox, det["bbox"]
+                        )
 
                 row_ind, col_ind = linear_sum_assignment(cost_matrix)
 
@@ -602,10 +656,14 @@ class GuestTrackManager:
             unmatched_tracks_final = []
 
             if len(unmatched_tracks) > 0 and len(low_records) > 0:
-                cost_matrix_2 = np.zeros((len(unmatched_tracks), len(low_records)), dtype=np.float32)
+                cost_matrix_2 = np.zeros(
+                    (len(unmatched_tracks), len(low_records)), dtype=np.float32
+                )
                 for i, track in enumerate(unmatched_tracks):
                     for j, det in enumerate(low_records):
-                        cost_matrix_2[i, j] = 1.0 - bbox_iou(track.predicted_bbox, det["bbox"])
+                        cost_matrix_2[i, j] = 1.0 - bbox_iou(
+                            track.predicted_bbox, det["bbox"]
+                        )
 
                 row_ind2, col_ind2 = linear_sum_assignment(cost_matrix_2)
 
@@ -668,7 +726,8 @@ class GuestTrackManager:
             # 8. Clean up stale tracks (lost for > 30 frames)
             stale_cutoff = self.frame_index - 30
             self.tracks = {
-                tid: t for tid, t in self.tracks.items()
+                tid: t
+                for tid, t in self.tracks.items()
                 if t.last_seen_frame >= stale_cutoff
             }
 
@@ -681,8 +740,18 @@ class GuestTrackManager:
                 if id(record) in matched_detections:
                     track_id, resolved_id = matched_detections[id(record)]
                     track_state = self.tracks.get(track_id)
-                    embedding_ready = len(track_state.embeddings) >= self.buffer_size if track_state else False
-                    pending_guest = resolved_id is None and len(track_state.guest_embeddings) < self.guest_creation_buffer_size if track_state else False
+                    embedding_ready = (
+                        len(track_state.embeddings) >= self.buffer_size
+                        if track_state
+                        else False
+                    )
+                    pending_guest = (
+                        resolved_id is None
+                        and len(track_state.guest_embeddings)
+                        < self.guest_creation_buffer_size
+                        if track_state
+                        else False
+                    )
 
                     outputs.append(
                         {

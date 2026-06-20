@@ -7,7 +7,6 @@ vector column has not been populated yet.
 """
 
 import numpy as np
-
 from db_config import DB_TYPE
 
 

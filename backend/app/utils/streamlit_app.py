@@ -4,11 +4,14 @@ from datetime import datetime
 import cv2
 import numpy as np
 import streamlit as st
-
-from app.core.insight_embedding import InsightEmbedder
 from app.core.guest_tracking import GuestTrackManager
-from app.db.connection import get_customer_info, get_db_connection, update_visit_record
-from config import ENCODE_FILE, GUEST_CACHE_FILE, GUEST_CREATION_BUFFER_SIZE, IMAGES_DIR, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD
+from app.core.insight_embedding import InsightEmbedder
+from app.db.connection import (get_customer_info, get_db_connection,
+                               update_visit_record)
+from config import (ENCODE_FILE, GUEST_CACHE_FILE, GUEST_CREATION_BUFFER_SIZE,
+                    IMAGES_DIR, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE,
+                    SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE,
+                    TRACK_IOU_THRESHOLD)
 
 st.set_page_config(
     page_title="Face Recognition System",
@@ -53,9 +56,7 @@ def update_attendance_record(conn, customer_id):
         return False, "Customer record not found"
 
     try:
-        last_time = datetime.strptime(
-            customer_info["last_visit"], "%Y-%m-%d %H:%M:%S"
-        )
+        last_time = datetime.strptime(customer_info["last_visit"], "%Y-%m-%d %H:%M:%S")
     except (TypeError, ValueError):
         last_time = datetime.min
 

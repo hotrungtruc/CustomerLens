@@ -26,7 +26,8 @@ export function useProfilePrefetch(customers) {
     if (!customers || customers.length === 0) return;
 
     // Only prefetch for admin users (the endpoint requires admin auth)
-    const role = typeof window !== "undefined" ? localStorage.getItem("role") : null;
+    const role =
+      typeof window !== "undefined" ? localStorage.getItem("role") : null;
     if (role !== "admin") return;
 
     for (const c of customers) {
@@ -70,7 +71,7 @@ export function useProfilePrefetch(customers) {
    */
   const getProfile = useCallback(
     (id) => cacheRef.current.get(String(id))?.data ?? null,
-    []
+    [],
   );
 
   return { getProfile };

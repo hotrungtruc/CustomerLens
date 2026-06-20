@@ -2,7 +2,6 @@ import os
 import pickle
 
 import cv2
-
 from app.core.insight_embedding import InsightEmbedder
 from config import ENCODE_FILE, IMAGES_DIR
 

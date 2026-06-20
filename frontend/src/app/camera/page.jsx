@@ -41,7 +41,9 @@ function CameraBadge({ cam }) {
   return (
     <div className="min-w-0 text-white">
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className="truncate text-xs font-semibold sm:text-sm">{cam.name}</span>
+        <span className="truncate text-xs font-semibold sm:text-sm">
+          {cam.name}
+        </span>
         <span className="shrink-0 text-[10px] text-white/65">({cam.id})</span>
       </div>
       {cam.status === "live" ? (
@@ -76,7 +78,9 @@ function CameraTile({ cam, onExpand }) {
       {cam.status === "offline" ? (
         <div className="relative h-full overflow-hidden bg-slate-900">
           <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 pt-8">
-            <span className="text-xs font-medium text-white/80">Mất kết nối</span>
+            <span className="text-xs font-medium text-white/80">
+              Mất kết nối
+            </span>
           </div>
         </div>
       ) : (
@@ -105,7 +109,9 @@ function ExpandedCameraModal({ cam, onClose }) {
       <div className="relative flex max-h-[82dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-white shadow-2xl">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-800">{cam.name}</span>
+            <span className="text-sm font-semibold text-slate-800">
+              {cam.name}
+            </span>
             <span className="text-xs text-slate-400">({cam.id})</span>
             <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600">
               Expanded
@@ -123,7 +129,9 @@ function ExpandedCameraModal({ cam, onClose }) {
 
         {cam.status === "offline" ? (
           <div className="flex h-[calc(82dvh-49px)] min-h-[320px] items-center justify-center bg-slate-900">
-            <span className="text-base font-medium text-white">Mất kết nối</span>
+            <span className="text-base font-medium text-white">
+              Mất kết nối
+            </span>
           </div>
         ) : (
           <div className="h-[calc(82dvh-49px)] min-h-[320px] bg-slate-950">
@@ -166,11 +174,14 @@ export default function CameraPage() {
     };
   }, []);
 
-  const filters = useMemo(() => ([
-    { key: "all", label: "Tất cả", count: counts.all },
-    { key: "live", label: "Đang live", count: counts.live },
-    { key: "offline", label: "Offline", count: counts.offline },
-  ]), [counts]);
+  const filters = useMemo(
+    () => [
+      { key: "all", label: "Tất cả", count: counts.all },
+      { key: "live", label: "Đang live", count: counts.live },
+      { key: "offline", label: "Offline", count: counts.offline },
+    ],
+    [counts],
+  );
 
   if (role === null) {
     return (
@@ -190,7 +201,8 @@ export default function CameraPage() {
       ? filteredCameras
       : filteredCameras.filter((cam) => cam.status === filter);
 
-  const expandedCamera = shown.find((cam) => cam.id === expandedCameraId) || null;
+  const expandedCamera =
+    shown.find((cam) => cam.id === expandedCameraId) || null;
 
   return (
     <main className="h-dvh overflow-hidden bg-slate-50 p-2 sm:p-3 lg:p-4">

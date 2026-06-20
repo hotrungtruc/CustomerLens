@@ -1,1 +1,0 @@
-Trang trong thu muc nay duoc du tru cho cac trang UI khac (Admin Panel, Dashboard mo rong).
