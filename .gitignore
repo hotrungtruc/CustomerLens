@@ -62,6 +62,7 @@ frontend/.next/
 frontend/.env.local
 backend/.env
 .env
+deploy_env.bat
 
 # Local manual backups
 local_backups/

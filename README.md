@@ -119,12 +119,20 @@ npm run dev
 
 Dự án đã được đóng gói tối ưu bằng Docker và cấu hình sẵn Nginx làm Reverse Proxy.
 
+### Quản lý Biến Môi Trường (.env) Bảo Mật
+Dự án cung cấp sẵn script `deploy_env.bat` (đã được cấu hình ẩn khỏi Git) để tự động hóa việc đưa file `.env` lên EC2 bằng phương thức SSH/SCP an toàn mà không làm rò rỉ mã bảo mật trên GitLab:
+```bash
+# Trên máy Local (Windows), click đúp vào file deploy_env.bat
+# Hoặc chạy lệnh:
+.\deploy_env.bat
+```
+
 ### Chạy thủ công bằng Docker Compose:
 ```bash
 git clone <url_gitlab>
 cd face-recognition-system
 
-# Đảm bảo bạn đã cấu hình file .env
+# Chạy script deploy_env.bat từ máy Local để copy .env lên EC2 trước khi chạy lệnh bên dưới.
 
 # Build và chạy ngầm
 sudo docker compose up --build -d
