@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useCamera } from "../hooks/useCamera";
 import { useLocalFaceDetector } from "../hooks/useLocalFaceDetector";
 import { getTrackBadge } from "../lib/trackBadge";
@@ -44,10 +44,9 @@ export default function CameraStream({
     customers,
     frameSize,
     cameraError,
-    handleFacesDetected,
   } = useCamera(sessionId);
 
-  const localFaces = useLocalFaceDetector(videoRef, handleFacesDetected);
+  const localFaces = useLocalFaceDetector(videoRef);
 
   // Lift customers + frameSize to parent whenever they change
   useEffect(() => {
@@ -68,42 +67,41 @@ export default function CameraStream({
       };
     });
 
-  // Hybrid Tracking: Merge local faces with backend labels.
-  // We check both normal and horizontally mirrored IoU because front-facing 
-  // webcams often produce mirrored local coordinates compared to the canvas output.
-  const matchedBackendIds = new Set();
-  let isStreamMirrored = false;
+  const prevLocalFacesRef = useRef([]);
 
+  // Hybrid Tracking: Merge local faces with backend labels
+  const matchedBackendIds = new Set();
   const mergedFaces = localFaces.map((localFace, i) => {
     let bestMatch = null;
     let bestIoU = 0;
-    let matchedFlipped = false;
     
+    // 1. Try to match with CURRENT backend faces
     backendFaces.forEach((backendFace) => {
-      const iouNormal = calculateIoU(localFace, backendFace);
-      
-      const flippedBackendFace = {
-        ...backendFace,
-        left: 100 - backendFace.left - backendFace.width
-      };
-      const iouFlipped = calculateIoU(localFace, flippedBackendFace);
-      
-      if (iouNormal > 0.2 && iouNormal > bestIoU) {
-        bestIoU = iouNormal;
+      const iou = calculateIoU(localFace, backendFace);
+      if (iou > 0.2 && iou > bestIoU) {
+        bestIoU = iou;
         bestMatch = backendFace;
-        matchedFlipped = false;
-      }
-      
-      if (iouFlipped > 0.2 && iouFlipped > bestIoU) {
-        bestIoU = iouFlipped;
-        bestMatch = flippedBackendFace;
-        matchedFlipped = true;
       }
     });
+
+    // 2. If no current match, try to inherit from PREVIOUS local face
+    if (!bestMatch) {
+      let bestPrevLocalMatch = null;
+      let bestPrevIoU = 0;
+      prevLocalFacesRef.current.forEach((prevLocalFace) => {
+        const iou = calculateIoU(localFace, prevLocalFace);
+        if (iou > 0.3 && iou > bestPrevIoU) {
+          bestPrevIoU = iou;
+          bestPrevLocalMatch = prevLocalFace;
+        }
+      });
+      if (bestPrevLocalMatch && bestPrevLocalMatch.backendMatch) {
+         bestMatch = bestPrevLocalMatch.backendMatch;
+      }
+    }
     
     if (bestMatch) {
       matchedBackendIds.add(bestMatch.track_id);
-      if (matchedFlipped) isStreamMirrored = true;
     }
     
     return {
@@ -113,13 +111,14 @@ export default function CameraStream({
     };
   });
 
-  const unmatchedBackendFaces = backendFaces
-    .filter((bf) => !matchedBackendIds.has(bf.track_id))
-    .map((bf) => 
-      isStreamMirrored 
-        ? { ...bf, left: 100 - bf.left - bf.width } 
-        : bf
-    );
+  // Update prevLocalFacesRef for next frame
+  useEffect(() => {
+    prevLocalFacesRef.current = mergedFaces;
+  }, [mergedFaces]);
+
+  const unmatchedBackendFaces = backendFaces.filter(
+    (bf) => !matchedBackendIds.has(bf.track_id)
+  );
 
   const statusLabel =
     wsStatus === "live"

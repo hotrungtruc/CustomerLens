@@ -48,7 +48,6 @@ export function useCamera(sessionId) {
   const sendingRef = useRef(false);
   const reconnectRef = useRef(null);
   const skipNextDeviceStartRef = useRef(false);
-  const lastSendTimeRef = useRef(0);
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -99,17 +98,13 @@ export function useCamera(sessionId) {
     };
   }, [connectWs]);
 
-  // ── Smart Cropping & Payload Generation ──────────────────────────────────
-  const handleFacesDetected = useCallback((faces, video) => {
+  // ── Frame capture ─────────────────────────────────────────────────────────
+  const sendFrame = useCallback(() => {
     if (sendingRef.current) return;
-    
-    // Rate limit to roughly CAPTURE_INTERVAL_MS
-    const now = Date.now();
-    if (now - lastSendTimeRef.current < CAPTURE_INTERVAL_MS) return;
-    
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
+    const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.readyState < 2) return;
 
@@ -120,86 +115,23 @@ export function useCamera(sessionId) {
     try {
       const sw = video.videoWidth || 640;
       const sh = video.videoHeight || 360;
-      
-      const payloadFaces = [];
-      
-      if (!faces || faces.length === 0) {
-        // Send an empty frame payload so the backend knows faces disappeared (to clear trackers)
-        const payload = JSON.stringify({ faces: [], frame_size: { width: sw, height: sh } });
-        ws.send(payload);
-        lastSendTimeRef.current = now;
-        sendingRef.current = false;
-        return;
-      }
-      
-      // Crop each face
-      for (const face of faces) {
-         if (!face.rawBox) continue;
-         
-         const rawBox = face.rawBox;
-         // Add 30% padding around the face for ArcFace alignment to work perfectly
-         const padX = rawBox.w * 0.3;
-         const padY = rawBox.h * 0.3;
-         
-         const cx = Math.max(0, rawBox.x - padX);
-         const cy = Math.max(0, rawBox.y - padY);
-         const cw = Math.min(sw - cx, rawBox.w + padX * 2);
-         const ch = Math.min(sh - cy, rawBox.h + padY * 2);
-         
-         // Downscale to max 150x150 to keep payload microscopic
-         const maxCropSize = 150;
-         const scale = Math.min(1, maxCropSize / cw, maxCropSize / ch);
-         const dw = Math.max(1, Math.round(cw * scale));
-         const dh = Math.max(1, Math.round(ch * scale));
-         
-         canvas.width = dw;
-         canvas.height = dh;
-         // Draw just the face region onto the canvas
-         ctx.drawImage(video, cx, cy, cw, ch, 0, 0, dw, dh);
-         
-         const base64Data = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
-         const base64Image = base64Data.split(",")[1];
-         
-         // Convert normalized keypoints to crop-relative pixels and build lm5
-         let lm5 = [];
-         if (face.keypoints && face.keypoints.length >= 4) {
-             const kp = face.keypoints;
-             const toCropX = (nx) => (nx * sw - cx) * (dw / cw);
-             const toCropY = (ny) => (ny * sh - cy) * (dh / ch);
-             
-             let ex1 = toCropX(kp[0].x), ey1 = toCropY(kp[0].y);
-             let ex2 = toCropX(kp[1].x), ey2 = toCropY(kp[1].y);
-             
-             let left_eye = ex1 < ex2 ? {x: ex1, y: ey1} : {x: ex2, y: ey2};
-             let right_eye = ex1 < ex2 ? {x: ex2, y: ey2} : {x: ex1, y: ey1};
-             let nose = {x: toCropX(kp[2].x), y: toCropY(kp[2].y)};
-             let mouth_c = {x: toCropX(kp[3].x), y: toCropY(kp[3].y)};
-             
-             let eye_dx = right_eye.x - left_eye.x;
-             let left_mouth = {x: mouth_c.x - eye_dx * 0.4, y: mouth_c.y};
-             let right_mouth = {x: mouth_c.x + eye_dx * 0.4, y: mouth_c.y};
-             
-             lm5 = [
-                 [left_eye.x, left_eye.y],
-                 [right_eye.x, right_eye.y],
-                 [nose.x, nose.y],
-                 [left_mouth.x, left_mouth.y],
-                 [right_mouth.x, right_mouth.y]
-             ];
-         }
-         
-         payloadFaces.push({
-            bbox: [rawBox.x, rawBox.y, rawBox.x + rawBox.w, rawBox.y + rawBox.h],
-            landmark: lm5,
-            image_base64: base64Image
-         });
-      }
-      
-      const payload = JSON.stringify({ faces: payloadFaces, frame_size: { width: sw, height: sh } });
-      ws.send(payload);
-      
-      lastSendTimeRef.current = now;
-      sendingRef.current = false;
+      const scale = Math.min(1, MAX_UPLOAD_WIDTH / sw, MAX_UPLOAD_HEIGHT / sh);
+      const w = Math.max(1, Math.round(sw * scale));
+      const h = Math.max(1, Math.round(sh * scale));
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+
+      canvas.toBlob(
+        (blob) => {
+          if (wsRef.current?.readyState === WebSocket.OPEN && blob) {
+            wsRef.current.send(blob);
+          }
+          sendingRef.current = false;
+        },
+        "image/jpeg",
+        JPEG_QUALITY,
+      );
     } catch (_) {
       sendingRef.current = false;
     }
@@ -207,10 +139,8 @@ export function useCamera(sessionId) {
 
   // ── Camera device management ──────────────────────────────────────────────
   const stopStream = useCallback(() => {
-    if (timerRef.current) {
-       clearInterval(timerRef.current);
-       timerRef.current = null;
-    }
+    clearInterval(timerRef.current);
+    timerRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
   }, []);
@@ -262,6 +192,8 @@ export function useCamera(sessionId) {
             setSelectedDeviceId(videoDevices[0].deviceId);
           }
         }
+
+        timerRef.current = setInterval(sendFrame, CAPTURE_INTERVAL_MS);
       } catch (err) {
         if (mountedRef.current) {
           setCameraError(
@@ -270,7 +202,7 @@ export function useCamera(sessionId) {
         }
       }
     },
-    [stopStream],
+    [stopStream, sendFrame],
   );
 
   // Initial camera start on mount
@@ -301,6 +233,5 @@ export function useCamera(sessionId) {
     customers,
     frameSize,
     cameraError,
-    handleFacesDetected,
   };
 }

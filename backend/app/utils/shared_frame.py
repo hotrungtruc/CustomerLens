@@ -15,25 +15,38 @@ class SharedFrameManager:
         self.width = width
         self.height = height
         self.channels = channels
+        # pre-allocated shared buffer
+        self._buffer = np.zeros((height, width, channels), dtype=np.uint8)
         self._lock = threading.Lock()
         self._version = 0
-        self._payload = None
         # annotations small structure written by AI thread and read by streamer
         self._annotations = {"faces": [], "current_customer_id": None, "ts": 0}
 
-    def write_payload(self, payload: dict):
-        """Thread-safe write for the JSON payload (cropped faces)."""
+    def write_frame(self, frame: np.ndarray):
+        """Copy latest frame into shared buffer (thread-safe)."""
+        if frame is None:
+            return
+        # ensure shape matches; if not, resize into buffer
         with self._lock:
-            self._payload = payload
-            if payload and "frame_size" in payload:
-                self.width = payload["frame_size"].get("width", self.width)
-                self.height = payload["frame_size"].get("height", self.height)
-            self._version += 1
+            try:
+                if frame.shape != self._buffer.shape:
+                    # resize source to buffer shape before copy
+                    resized = cv2.resize(frame, (self.width, self.height))
+                    np.copyto(self._buffer, resized)
+                else:
+                    np.copyto(self._buffer, frame)
+                self._version += 1
+            except Exception:
+                # fallback: attempt best-effort copy
+                self._buffer[:, :, :] = frame[
+                    : self.height, : self.width, : self.channels
+                ]
+                self._version += 1
 
-    def read_payload(self):
-        """Return the latest payload dict."""
+    def read_frame(self):
+        """Return a view of the shared buffer (no copy)."""
         with self._lock:
-            return self._payload
+            return self._buffer
 
     def get_version(self):
         with self._lock:

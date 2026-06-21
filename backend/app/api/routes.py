@@ -1,6 +1,4 @@
 import base64
-import json
-import logging
 import hashlib
 import secrets
 import threading
@@ -95,76 +93,58 @@ class CameraState:
     def start_ai_loop(self):
         def _ai_loop():
             last_seen_version = -1
+            frame_count = 0
             while self.active:
                 try:
                     if embedder is None:
                         time.sleep(0.1)
                         continue
 
-                    payload_version = self.shared_frame_mgr.get_version()
-                    if payload_version == last_seen_version:
+                    frame_version = self.shared_frame_mgr.get_version()
+                    if frame_version == last_seen_version:
                         time.sleep(0.05)
                         continue
 
-                    last_seen_version = payload_version
-                    payload = self.shared_frame_mgr.read_payload()
-                    self._process_payload(payload)
-                except Exception as e:
-                    logging.error(f"Error in AI loop: {e}")
+                    last_seen_version = frame_version
+                    frame_count += 1
+
+                    # Apply frame sampling to skip unnecessary processing
+                    if frame_count % PROCESS_EVERY_N_FRAMES != 0:
+                        continue
+
+                    frame = self.shared_frame_mgr.read_frame()
+                    self._process_camera_frame(frame)
+                except Exception:
                     time.sleep(0.05)
 
         self.ai_thread = threading.Thread(target=_ai_loop, daemon=True)
         self.ai_thread.start()
 
-    def _process_payload(self, payload):
-        if embedder is None or not payload:
+    def _process_camera_frame(self, frame):
+        if embedder is None or frame is None:
             return
 
-        faces = payload.get("faces", [])
-        
+        detections = embedder.detect(frame)
         face_records = []
-        for face in faces:
-            bbox = face.get("bbox")
-            landmark = face.get("landmark", [])
-            image_base64 = face.get("image_base64")
-            
-            if not bbox or not image_base64:
-                continue
-                
-            try:
-                raw_bytes = base64.b64decode(image_base64)
-                image_array = np.frombuffer(raw_bytes, dtype=np.uint8)
-                crop_bgr = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-                
-                if crop_bgr is None:
-                    continue
-                    
-                x1, y1, x2, y2 = map(int, bbox)
-                
-                # Check quality based on BBox size
-                quality_ok = True
-                w = x2 - x1
-                if w < 100:  # arbitrary MIN_FACE_BBOX_SIZE 
-                    quality_ok = False
-                    
-                face_records.append(
-                    {
-                        "bbox": (x1, y1, x2, y2),
-                        "landmark": np.array(landmark, dtype=np.float32) if landmark else None,
-                        "score": 1.0,
-                        "quality_ok": quality_ok,
-                        "embedding": None,
-                        "crop_bgr": crop_bgr
-                    }
-                )
-            except Exception as e:
-                logging.warning(f"Error parsing face payload: {e}")
+        for bbox, landmark, score in zip(*detections):
+            x1, y1, x2, y2 = map(int, bbox)
+            quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+
+            face_records.append(
+                {
+                    "bbox": (x1, y1, x2, y2),
+                    "landmark": landmark,
+                    "score": float(score),
+                    "quality_ok": quality_ok,
+                    "embedding": None,
+                }
+            )
 
         tracked_faces = self.track_manager.process_faces(
-            face_records, frame=None, embedder=embedder
+            face_records, frame=frame, embedder=embedder
         )
-        
         annot_faces = []
+
         for face in tracked_faces:
             x1, y1, x2, y2 = face["bbox"]
             quality_ok = face["quality_ok"]
@@ -897,17 +877,19 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
     try:
         while True:
             try:
-                data_str = await websocket.receive_text()
+                data = await websocket.receive_bytes()
             except Exception:
                 break
 
-            # Write payload into this camera's state
-            if data_str:
+            # Write frame into this camera's state
+            if data:
                 try:
-                    payload = json.loads(data_str)
-                    state.shared_frame_mgr.write_payload(payload)
-                except Exception as e:
-                    logging.error(f"Failed to parse or write payload: {e}")
+                    img_array = np.frombuffer(data, dtype=np.uint8)
+                    frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                    if frame is not None:
+                        state.shared_frame_mgr.write_frame(frame)
+                except Exception:
+                    pass
 
             # Return current annotations (AI thread updates asynchronously)
             annotations = state.shared_frame_mgr.get_annotations()

@@ -1,78 +1,17 @@
-# 🔍 Phân Tích Logic Vận Hành Backend
+# Phân tích lỗi "BBox tách làm 2"
 
-## Kiến Trúc Tổng Quan
+Lỗi "bbox tách làm 2" mà bạn gặp phải không phải là lỗi nhận diện sai hoặc bị lật tọa độ, mà là **lỗi độ trễ (latency)** giữa 2 hệ thống:
 
-```mermaid
-graph TB
-    subgraph "Frontend (Browser)"
-        CAM[Webcam Camera]
-        UI[Next.js UI]
-    end
+1. **Local FaceDetector (viền xám):** Chạy trực tiếp trên trình duyệt ở tốc độ khung hình cao (30-60 FPS), nên nó bám theo mặt bạn cực kỳ mượt mà.
+2. **Backend Face Recognition (viền tím có chữ A):** Phải gửi ảnh qua mạng, xử lý AI nặng, nên nó bị trễ (lag) khoảng 0.5 - 1 giây.
 
-    subgraph "Backend (FastAPI)"
-        API["/api/process_frame"]
-        SFM["SharedFrameManager<br/>(Bộ nhớ đệm khung hình)"]
-        AI["AI Thread<br/>(Vòng lặp liên tục)"]
-        DET["MediaPipe FaceLandmarker<br/>(Phát hiện khuôn mặt)"]
-        EMB["GhostFaceNet INT8<br/>(Trích xuất embedding)"]
-        TRK["GuestTrackManager<br/>(ByteTrack + Kalman Filter)"]
-        DB["SQLite DB"]
-        PKL["EncodeFile.p / GuestCache.p"]
-    end
+**Hiện tượng xảy ra:**
+Khi bạn vừa di chuyển đầu (như trong ảnh là chuyển từ giữa/phải khung hình sang mép trái), khung xám lập tức bám theo mặt bạn sang trái. Tuy nhiên, khung tím của backend vẫn đang hiển thị vị trí của bạn từ **0.5 giây trước** (ở vị trí tủ tài liệu phía bên phải). 
+Do 2 khung này cách xa nhau, thuật toán của hệ thống cho rằng đây là 2 khuôn mặt khác nhau, nên nó hiển thị tách làm 2 khung. Khung tím giữ lại nhãn "A", còn khung xám hiển thị không nhãn vì chưa kịp đồng bộ với backend.
 
-    CAM -->|"Base64 JPEG"| API
-    API -->|"Ghi frame"| SFM
-    SFM -->|"Đọc frame mới nhất"| AI
-    AI --> DET
-    DET -->|"bbox + 5 landmarks"| EMB
-    EMB -->|"512-d embedding"| TRK
-```
+## Giải pháp:
+Tôi sẽ cập nhật lại thuật toán `Hybrid Tracking` trên Frontend:
+- Sử dụng **Temporal Tracking (Theo dõi theo thời gian thực):** Nếu khung xám mất kết nối với khung tím hiện tại, nó sẽ tự động "nhớ" nhãn "A" từ khung hình trước đó nhờ theo dõi độ tương đồng IoU liên tục.
+- Tự động ẩn khung tím bị trễ đi để giao diện gọn gàng, và tự động gắn nhãn "A" cho khung xám đang bám sát mặt bạn.
 
----
-
-## 🐞 Phân Tích Lỗi BBox Nhận Diện Bị Tách Rời (Mirrored BBox Issue)
-
-### 1. Hiện tượng lỗi (Symptom)
-Khi tích hợp `useLocalFaceDetector` (MediaPipe JS) chạy trực tiếp trên Frontend để tạo BBox tracking mượt mà (viền xám), chúng ta gặp hiện tượng:
-- BBox Local (màu xám) bám chuẩn xác vào khuôn mặt người dùng trên màn hình.
-- BBox Recognition của Backend (có huy hiệu, ví dụ "A" hoặc "H") lại xuất hiện ở **vị trí đối xứng ngang (horizontally mirrored)** so với khuôn mặt.
-- Kết quả là BBox bị tách làm 2, hệ thống không thể merge chúng lại với nhau.
-
-### 2. Phân tích nguyên nhân gốc rễ (Root Cause)
-Sự sai lệch này bắt nguồn từ **sự bất đồng bộ hệ tọa độ (Coordinate System Discrepancy)** giữa Frontend và Backend khi xử lý luồng video từ Front-facing Camera (Camera trước/Webcam):
-
-1. **Local FaceDetector (Frontend):** 
-   - MediaPipe JS (`@mediapipe/tasks-vision`) đọc dữ liệu trực tiếp từ thẻ `<video>`. 
-   - Trong một số trình duyệt hoặc driver camera, luồng video raw từ "user-facing camera" có thể được hệ thống ngầm lật (mirror) để mang lại trải nghiệm "soi gương" cho người dùng, HOẶC bản thân MediaPipe tự động lật tọa độ `originX` theo chuẩn front-camera. Kết quả là tọa độ `left` của Local BBox hoàn toàn khớp với hình ảnh hiển thị trên UI.
-
-2. **Canvas -> WebSocket (Backend Pipeline):**
-   - Frontend dùng `canvas.drawImage(video)` để chụp khung hình gửi về Backend. Thao tác này chụp lại các pixel theo **hệ tọa độ thực tế (unmirrored)** của video stream gốc.
-   - Backend nhận ảnh JPEG không bị lật, chạy AI model (MediaPipe Python / OpenCV) và trả về tọa độ `x1, y1, x2, y2`.
-   - Vì ảnh gửi đi không bị lật, nhưng giao diện người dùng (UI) lại hiển thị theo hướng lật (soi gương), tọa độ trả về từ Backend khi áp lên UI sẽ bị ngược 100% theo trục ngang (Trái thành Phải, Phải thành Trái).
-
-=> Trạng thái cũ (trước khi có Local Tracking), BBox của backend thực chất **luôn bị lật ngược**. Nhưng vì độ trễ (delay) của WebSocket, người dùng ít khi để ý sự đối xứng hoàn hảo này, chỉ thấy nó "hơi lệch". Khi có Local BBox siêu mượt làm hệ quy chiếu, sự lật ngược này lộ rõ ngay lập tức.
-
-### 3. Hướng khắc phục: Thuật toán Dual-IoU (Đã triển khai)
-Việc ép lật (force flip) hình ảnh trước khi gửi cho Backend hoặc ép lật tọa độ hiển thị có thể gây lỗi nghiêm trọng nếu sau này người dùng đổi sang IP Camera, Camera sau (Rear camera) hoặc Video không bị lật.
-
-Giải pháp toàn diện là sử dụng **Thuật toán Khớp BBox Kép (Dual-IoU)** tại Component `CameraStream.jsx`:
-
-```javascript
-// 1. Tính độ khớp (IoU) theo hệ tọa độ bình thường
-const iouNormal = calculateIoU(localFace, backendFace);
-
-// 2. Tính độ khớp (IoU) theo hệ tọa độ lật ngang (Mirrored)
-const flippedBackendFace = {
-  ...backendFace,
-  left: 100 - backendFace.left - backendFace.width
-};
-const iouFlipped = calculateIoU(localFace, flippedBackendFace);
-
-// 3. Quyết định tự động
-// Nếu iouFlipped cao hơn iouNormal -> Hệ thống tự nhận biết stream đang bị lật!
-```
-
-**Ưu điểm của giải pháp này:**
-- **Auto-Detect:** Hệ thống tự động phát hiện xem stream camera hiện tại có bị lật hay không ngay trong runtime, không cần hardcode.
-- **Robustness:** Hoạt động hoàn hảo với mọi loại camera (Webcam tích hợp, IP Camera RTSP, Camera sau điện thoại).
-- **Seamless Merge:** BBox của backend ngay lập tức được lật lại đúng hướng và hợp nhất (merge) hoàn hảo với Local BBox, ghim huy hiệu nhận diện chuẩn xác lên khuôn mặt đang di chuyển.
+Bạn hãy kiểm tra lại bảng phân tích này. Nếu bạn đồng ý, tôi sẽ sửa lại thuật toán trong `CameraStream.jsx` ngay bây giờ!

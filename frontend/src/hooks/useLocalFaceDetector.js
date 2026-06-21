@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 
-export function useLocalFaceDetector(videoRef, onFacesDetected = null) {
+export function useLocalFaceDetector(videoRef) {
   const [localFaces, setLocalFaces] = useState([]);
   const faceDetectorRef = useRef(null);
   const requestRef = useRef(null);
@@ -61,27 +61,14 @@ export function useLocalFaceDetector(videoRef, onFacesDetected = null) {
                  
                  const mappedFaces = detections.detections.map(d => {
                      const { originX, originY, width, height } = d.boundingBox;
-                     
-                     // d.keypoints is an array of {x, y} normalized coordinates (0.0 to 1.0)
-                     const keypoints = d.keypoints ? d.keypoints.map(kp => ({
-                         x: kp.x,
-                         y: kp.y
-                     })) : [];
-                     
                      return {
                          left: (originX / sw) * 100,
                          top: (originY / sh) * 100,
                          width: (width / sw) * 100,
                          height: (height / sh) * 100,
-                         // Keep raw pixel values for backend cropping
-                         rawBox: { x: originX, y: originY, w: width, h: height },
-                         keypoints: keypoints
                      };
                  });
                  setLocalFaces(mappedFaces);
-                 if (onFacesDetected) {
-                     onFacesDetected(mappedFaces, video);
-                 }
              }
           } catch(err) {
              console.error("Face detection error:", err);
