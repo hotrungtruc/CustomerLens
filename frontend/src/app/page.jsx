@@ -376,7 +376,7 @@ export default function DashboardPage() {
             title="Smart Front-door AI"
           />
 
-          <div className="flex-1 min-h-0 overflow-hidden bg-slate-950 relative">
+          <div className="flex-1 min-h-0 overflow-hidden bg-slate-950 relative mb-6">
             <CameraStream
               sessionId={sessionId}
               highlightedTrackId={highlightedTrackId}
