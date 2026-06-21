@@ -44,9 +44,10 @@ export default function CameraStream({
     customers,
     frameSize,
     cameraError,
+    handleFacesDetected,
   } = useCamera(sessionId);
 
-  const localFaces = useLocalFaceDetector(videoRef);
+  const localFaces = useLocalFaceDetector(videoRef, handleFacesDetected);
 
   // Lift customers + frameSize to parent whenever they change
   useEffect(() => {

@@ -367,7 +367,7 @@ class GuestTrackManager:
             if (
                 record.get("embedding") is None
                 and quality_ok
-                and frame is not None
+                and (frame is not None or record.get("crop_bgr") is not None)
                 and embedder is not None
                 and "landmark" in record
             ):
@@ -376,7 +376,7 @@ class GuestTrackManager:
 
                 def _extract():
                     try:
-                        emb = embedder.get_embedding(frame, record["landmark"])
+                        emb = embedder.get_embedding(record.get("crop_bgr", frame), record["landmark"])
                         norm_emb = normalize_embedding(emb)
                         track_state.embeddings.append(norm_emb)
                         # Re-calculate guest_quality_ok here since we use it
