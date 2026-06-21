@@ -317,7 +317,8 @@ export default function DashboardPage() {
 
   const handleSelectTrack = useCallback((id) => setHighlightedTrackId(id), []);
 
-  const recentCustomers = customers.slice(0, 4);
+  const validCustomers = customers.filter((c) => c.id != null);
+  const recentCustomers = validCustomers.slice(0, 4);
 
   // Click vào card trong right panel
   const handleCardClick = useCallback(
@@ -412,6 +413,10 @@ export default function DashboardPage() {
                   onClick={handleCardClick}
                 />
               ))
+            ) : customers.length > 0 ? (
+              <div className="px-5 py-8 text-center text-xs text-slate-400 animate-pulse">
+                Đang phân tích khuôn mặt...
+              </div>
             ) : (
               <div className="px-5 py-8 text-center text-xs text-slate-400">
                 Chưa có khách nào trong khung hình
