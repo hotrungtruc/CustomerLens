@@ -9,19 +9,9 @@ const MAX_UPLOAD_HEIGHT = 360;
 const RECONNECT_DELAY_MS = 2000;
 
 function getWsUrl(sessionId) {
-  // Derive WS URL from the API base URL so it works in any environment
+  // Derive WS URL from current page origin so it works in any environment
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  let host = "localhost:8000";
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_HOST;
-  if (baseUrl) {
-    try {
-      // Handle both full URLs (http://host:port) and bare host:port
-      const url = baseUrl.includes("://") ? new URL(baseUrl) : new URL(`http://${baseUrl}`);
-      host = url.host; // includes port if present
-    } catch (_) {
-      host = baseUrl.replace(/^https?:\/\//, "");
-    }
-  }
+  const host = process.env.NEXT_PUBLIC_API_HOST || "localhost:8000";
   return `${protocol}//${host}/ws/${encodeURIComponent(sessionId)}`;
 }
 
