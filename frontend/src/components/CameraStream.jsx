@@ -233,38 +233,6 @@ export default function CameraStream({
               </div>
             );
           })}
-
-          {unmatchedBackendFaces.map((face) => {
-            const isHl = highlightedTrackId === face.track_id;
-            const { symbol, theme } = getTrackBadge(face.track_id);
-
-            return (
-              <div
-                key={`unmatched-${face.track_id}`}
-                className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] transition-all duration-100 ease-linear ${
-                  isHl
-                    ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
-                    : face.detected
-                      ? "border-white/80"
-                      : "border-slate-300 opacity-50"
-                }`}
-                style={{
-                  left: `${face.left}%`,
-                  top: `${face.top}%`,
-                  width: `${Math.max(face.width, 6)}%`,
-                  height: `${Math.max(face.height, 8)}%`,
-                }}
-              >
-                <div
-                  className={`-mt-3 ml-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-white/40 ${theme.base} ${theme.ring} ${
-                    isHl ? "scale-110" : ""
-                  }`}
-                >
-                  {symbol}
-                </div>
-              </div>
-            );
-          })}
         </div>
 
         {/* Hidden capture canvas */}
