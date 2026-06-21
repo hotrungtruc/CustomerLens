@@ -145,11 +145,11 @@ export default function CustomerDetailPage() {
     : [];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid lg:grid-cols-[64px_minmax(0,1fr)]">
+    <main className="h-dvh w-screen overflow-hidden bg-white">
+      <div className="grid h-full w-full overflow-hidden lg:grid-cols-[64px_minmax(0,1fr)]">
         <Sidebar active="customers" />
 
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 bg-slate-50">
           <PageHeader
             title="Hồ sơ Khách hàng"
             subtitle="Thông tin chi tiết và lịch sử của khách hàng."

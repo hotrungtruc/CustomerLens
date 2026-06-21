@@ -205,11 +205,11 @@ export default function CameraPage() {
     shown.find((cam) => cam.id === expandedCameraId) || null;
 
   return (
-    <main className="h-dvh overflow-hidden bg-slate-50 p-2 sm:p-3 lg:p-4">
-      <div className="mx-auto flex h-full max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid lg:grid-cols-[64px_minmax(0,1fr)]">
+    <main className="h-dvh w-screen overflow-hidden bg-white">
+      <div className="grid h-full w-full overflow-hidden lg:grid-cols-[64px_minmax(0,1fr)]">
         <Sidebar active="camera" />
 
-        <div className="flex min-w-0 min-h-0 flex-col">
+        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 bg-slate-50">
           <PageHeader
             title="Quản lý Camera"
             subtitle="Theo dõi tất cả camera trực tiếp trong hệ thống."
