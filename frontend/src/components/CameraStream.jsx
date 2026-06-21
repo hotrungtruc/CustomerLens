@@ -25,6 +25,7 @@ function calculateIoU(boxA, boxB) {
  *   sessionId         — unique ID for this camera session (backend creates its own CameraState)
  *   highlightedTrackId — track_id to highlight with a white ring
  *   framed            — wrap in a card border/shadow
+ *   fullHeight        — force container to full height
  *   onCustomersChange — optional callback(customers, frameSize) for parent state lifting
  */
 export default function CameraStream({
@@ -32,6 +33,7 @@ export default function CameraStream({
   highlightedTrackId = null,
   framed = true,
   compact = false,
+  fullHeight = false,
   onCustomersChange = null,
 }) {
   const {
@@ -140,8 +142,8 @@ export default function CameraStream({
     <div
       className={
         framed
-          ? "h-full overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)]"
-          : "h-full overflow-hidden bg-white"
+          ? "h-full overflow-hidden rounded-[28px] border border-slate-200/80 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.08)] flex flex-col"
+          : "h-full overflow-hidden bg-white flex flex-col"
       }
     >
       {/* ── Header bar ── */}
@@ -178,14 +180,14 @@ export default function CameraStream({
       ) : null}
 
       {/* ── Video + overlays ── */}
-      <div className={`relative bg-slate-950 ${compact ? "h-full" : ""}`}>
+      <div className={`relative bg-slate-950 flex-1 min-h-0 ${compact || fullHeight ? "h-full" : ""}`}>
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted
           className={
-            compact
+            compact || fullHeight
               ? "h-full min-h-0 w-full object-cover"
               : "aspect-[16/10] h-auto min-h-[180px] w-full object-cover sm:min-h-[260px] md:min-h-[320px] lg:min-h-[360px]"
           }

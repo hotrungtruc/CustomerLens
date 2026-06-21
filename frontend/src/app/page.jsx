@@ -365,8 +365,8 @@ export default function DashboardPage() {
   );
 
   return (
-    <main className="h-dvh overflow-hidden bg-slate-50 p-2 sm:p-3 lg:p-4">
-      <div className="mx-auto grid h-full max-w-[1400px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[64px_minmax(0,1fr)_280px]">
+    <main className="h-dvh w-screen overflow-hidden bg-white">
+      <div className="grid h-full w-full overflow-hidden lg:grid-cols-[64px_minmax(0,1fr)_320px]">
         {/* Cột 1: Sidebar */}
         <Sidebar active="overview" />
 
@@ -377,15 +377,14 @@ export default function DashboardPage() {
             subtitle="Quản lý camera của bạn và các thông tin khách hàng theo thời gian thực."
           />
 
-          <div className="flex-1 min-h-0 overflow-hidden p-3 sm:p-4 lg:p-5">
-            <div className="h-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <CameraStream
-                sessionId={sessionId}
-                highlightedTrackId={highlightedTrackId}
-                framed={false}
-                onCustomersChange={handleCustomersChange}
-              />
-            </div>
+          <div className="flex-1 min-h-0 overflow-hidden bg-slate-950 relative">
+            <CameraStream
+              sessionId={sessionId}
+              highlightedTrackId={highlightedTrackId}
+              framed={false}
+              fullHeight={true}
+              onCustomersChange={handleCustomersChange}
+            />
           </div>
         </div>
 
