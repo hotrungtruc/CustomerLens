@@ -374,7 +374,6 @@ export default function DashboardPage() {
         <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100">
           <PageHeader
             title="Smart Front-door AI"
-            subtitle="Quản lý camera của bạn và các thông tin khách hàng theo thời gian thực."
           />
 
           <div className="flex-1 min-h-0 overflow-hidden bg-slate-950 relative">
