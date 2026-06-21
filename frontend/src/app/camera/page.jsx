@@ -4,37 +4,20 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
-import CameraStream from "../../components/CameraStream";
+import CameraViewerStream from "../../components/CameraViewerStream";
 import { Maximize2, RefreshCw, X } from "lucide-react";
 
-const CAMERA_NAMES = [
-  "Cổng chính",
-  "Hành lang A",
-  "Sảnh tiếp tân",
-  "Bãi giữ xe",
-  "Khu quầy 1",
-  "Khu quầy 2",
-  "Cửa phụ",
-  "Kho hàng",
-  "Cầu thang",
-  "Sảnh chờ",
-  "Lối VIP",
-  "Khu giao nhận",
-  "Phòng họp",
-  "Tầng 2",
-  "Tầng 3",
-  "Back office",
-  "Khu kỹ thuật",
-  "Cổng sau",
+const BASE_CAMERA_NAMES = [
+  "Cổng chính", "Hành lang A", "Sảnh tiếp tân", "Bãi giữ xe",
+  "Khu quầy 1", "Khu quầy 2", "Cửa phụ", "Kho hàng",
+  "Cầu thang", "Sảnh chờ", "Lối VIP", "Khu giao nhận",
+  "Phòng họp", "Tầng 2", "Tầng 3", "Back office",
+  "Khu kỹ thuật", "Cổng sau",
 ];
 
-const OFFLINE_CAMERA_INDEXES = new Set([4, 9, 14, 17]);
-
-const CAMERAS = CAMERA_NAMES.map((name, index) => ({
+const BASE_CAMERAS = BASE_CAMERA_NAMES.map((name, index) => ({
   id: `DSLR-${String(index + 1).padStart(3, "0")}`,
   name,
-  status: OFFLINE_CAMERA_INDEXES.has(index) ? "offline" : "live",
-  detections: (index % 4) + 1,
 }));
 
 function CameraBadge({ cam }) {
@@ -84,7 +67,7 @@ function CameraTile({ cam, onExpand }) {
           </div>
         </div>
       ) : (
-        <CameraStream sessionId={cam.id} framed={false} compact />
+        <CameraViewerStream sessionId={cam.id} framed={false} compact />
       )}
     </div>
   );
@@ -135,7 +118,7 @@ function ExpandedCameraModal({ cam, onClose }) {
           </div>
         ) : (
           <div className="h-[calc(82dvh-49px)] min-h-[320px] bg-slate-950">
-            <CameraStream sessionId={cam.id} framed={false} compact />
+            <CameraViewerStream sessionId={cam.id} framed={false} compact={false} />
           </div>
         )}
       </div>
@@ -149,6 +132,7 @@ export default function CameraPage() {
   const [role, setRole] = useState(null);
   const [allowedCameras, setAllowedCameras] = useState([]);
   const [expandedCameraId, setExpandedCameraId] = useState(null);
+  const [activeCameraIds, setActiveCameraIds] = useState([]);
 
   useEffect(() => {
     const savedRole = localStorage.getItem("role") || "guest";
@@ -164,6 +148,52 @@ export default function CameraPage() {
       setAllowedCameras([]);
     }
   }, [router]);
+
+  const fetchActiveCameras = async () => {
+    try {
+      const protocol = window.location.protocol;
+      const host = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_HOST || "localhost:8000";
+      let baseUrl = host.includes("://") ? host : `${protocol}//${host}`;
+      // Clean trailing slash
+      baseUrl = baseUrl.replace(/\/$/, "");
+      const res = await fetch(`${baseUrl}/api/cameras/active`);
+      const data = await res.json();
+      if (data.status === "success") setActiveCameraIds(data.active_cameras || []);
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    if (role === null) return;
+    fetchActiveCameras();
+    const interval = setInterval(fetchActiveCameras, 5000);
+    return () => clearInterval(interval);
+  }, [role]);
+
+  const CAMERAS = useMemo(() => {
+    const cams = [];
+    // 1. Add all active sessions (both known DSLRs and Guest Devices)
+    activeCameraIds.forEach((id) => {
+      const baseCam = BASE_CAMERAS.find((c) => c.id === id);
+      cams.push({
+        id,
+        name: baseCam ? baseCam.name : `Guest Device`,
+        status: "live",
+      });
+    });
+
+    // 2. Add offline DSLRs
+    BASE_CAMERAS.forEach((baseCam) => {
+      if (!activeCameraIds.includes(baseCam.id)) {
+        cams.push({
+          id: baseCam.id,
+          name: baseCam.name,
+          status: "offline",
+        });
+      }
+    });
+
+    return cams;
+  }, [activeCameraIds]);
 
   const counts = useMemo(() => {
     const live = CAMERAS.filter((cam) => cam.status === "live").length;
@@ -232,7 +262,7 @@ export default function CameraPage() {
               ))}
             </div>
 
-            <button className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50">
+            <button onClick={fetchActiveCameras} className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50">
               <RefreshCw className="h-4 w-4" />
             </button>
           </div>

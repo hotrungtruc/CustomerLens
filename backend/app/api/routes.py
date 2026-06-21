@@ -84,9 +84,9 @@ class CameraState:
             min_detection_score=MIN_DETECTION_SCORE,
             guest_prefix=f"GUEST_{camera_id}",
         )
-        self.current_customer_id = None
         self.current_customer_seen_at = None
         self.active = True
+        self.subscribers = []
         self.ai_thread = None
         self.start_ai_loop()
 
@@ -866,8 +866,8 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
-@router.websocket("/ws/{session_id}")
-async def websocket_camera(websocket: WebSocket, session_id: str):
+@router.websocket("/ws/publish/{session_id}")
+async def websocket_camera_publish(websocket: WebSocket, session_id: str):
     """Persistent bidirectional channel per browser tab.
 
     Client sends:  Raw binary bytes of JPEG image
@@ -900,16 +900,51 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
 
             w = state.shared_frame_mgr.width
             h = state.shared_frame_mgr.height
+            json_payload = {
+                "customers": customers,
+                "frame_size": {"width": w, "height": h},
+            }
 
             try:
-                await websocket.send_json(
-                    {
-                        "customers": customers,
-                        "frame_size": {"width": w, "height": h},
-                    }
-                )
+                # Send back to publisher
+                await websocket.send_json(json_payload)
+
+                # Broadcast to subscribers
+                if data:
+                    disconnected = []
+                    for sub in state.subscribers:
+                        try:
+                            await sub.send_bytes(data)
+                            await sub.send_json(json_payload)
+                        except Exception:
+                            disconnected.append(sub)
+                    for sub in disconnected:
+                        state.subscribers.remove(sub)
             except Exception:
                 break
 
     except WebSocketDisconnect:
         pass
+
+
+@router.websocket("/ws/subscribe/{session_id}")
+async def websocket_camera_subscribe(websocket: WebSocket, session_id: str):
+    """View-only WebSocket channel for remote management."""
+    await websocket.accept()
+    state = get_camera_state(session_id)
+    state.subscribers.append(websocket)
+    try:
+        while True:
+            # Keep connection alive, wait for disconnect
+            _ = await websocket.receive_text()
+    except Exception:
+        if websocket in state.subscribers:
+            state.subscribers.remove(websocket)
+
+
+@router.get("/api/cameras/active")
+def get_active_cameras():
+    """Return a list of currently active camera session IDs."""
+    with CAMERA_STATES_LOCK:
+        active_sessions = [cid for cid, state in CAMERA_STATES.items() if state.active and cid != "default"]
+    return {"status": "success", "active_cameras": active_sessions}

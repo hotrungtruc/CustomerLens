@@ -22,7 +22,7 @@ function getWsUrl(sessionId) {
       host = baseUrl.replace(/^https?:\/\//, "");
     }
   }
-  return `${protocol}//${host}/ws/${encodeURIComponent(sessionId)}`;
+  return `${protocol}//${host}/ws/publish/${encodeURIComponent(sessionId)}`;
 }
 
 /**
