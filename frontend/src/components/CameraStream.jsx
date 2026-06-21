@@ -67,22 +67,42 @@ export default function CameraStream({
       };
     });
 
-  // Hybrid Tracking: Merge local faces with backend labels
+  // Hybrid Tracking: Merge local faces with backend labels.
+  // We check both normal and horizontally mirrored IoU because front-facing 
+  // webcams often produce mirrored local coordinates compared to the canvas output.
   const matchedBackendIds = new Set();
+  let isStreamMirrored = false;
+
   const mergedFaces = localFaces.map((localFace, i) => {
     let bestMatch = null;
     let bestIoU = 0;
+    let matchedFlipped = false;
     
     backendFaces.forEach((backendFace) => {
-      const iou = calculateIoU(localFace, backendFace);
-      if (iou > 0.2 && iou > bestIoU) {
-        bestIoU = iou;
+      const iouNormal = calculateIoU(localFace, backendFace);
+      
+      const flippedBackendFace = {
+        ...backendFace,
+        left: 100 - backendFace.left - backendFace.width
+      };
+      const iouFlipped = calculateIoU(localFace, flippedBackendFace);
+      
+      if (iouNormal > 0.2 && iouNormal > bestIoU) {
+        bestIoU = iouNormal;
         bestMatch = backendFace;
+        matchedFlipped = false;
+      }
+      
+      if (iouFlipped > 0.2 && iouFlipped > bestIoU) {
+        bestIoU = iouFlipped;
+        bestMatch = flippedBackendFace;
+        matchedFlipped = true;
       }
     });
     
     if (bestMatch) {
       matchedBackendIds.add(bestMatch.track_id);
+      if (matchedFlipped) isStreamMirrored = true;
     }
     
     return {
@@ -92,9 +112,13 @@ export default function CameraStream({
     };
   });
 
-  const unmatchedBackendFaces = backendFaces.filter(
-    (bf) => !matchedBackendIds.has(bf.track_id)
-  );
+  const unmatchedBackendFaces = backendFaces
+    .filter((bf) => !matchedBackendIds.has(bf.track_id))
+    .map((bf) => 
+      isStreamMirrored 
+        ? { ...bf, left: 100 - bf.left - bf.width } 
+        : bf
+    );
 
   const statusLabel =
     wsStatus === "live"
