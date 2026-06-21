@@ -422,6 +422,8 @@ class GuestTrackManager:
 
         # Process matches if we have embeddings ready
         if len(track_state.embeddings) > 0:
+            current_emb = track_state.embeddings[-1]
+            
             # Build combined lists for matching
             combined_embeddings = []
             combined_ids = []
@@ -435,7 +437,7 @@ class GuestTrackManager:
             # --- Multi-frame Voting Logic ---
             if self.use_pgvector:
                 # pgvector path: query HNSW index in Supabase for nearest match
-                pgvec_results = self._query_pgvector(norm_emb, top_k=3)
+                pgvec_results = self._query_pgvector(current_emb, top_k=3)
                 if pgvec_results:
                     voted_id = pgvec_results[0][0]  # best match customer_id
                     track_state.recent_votes.append(voted_id)
@@ -443,7 +445,7 @@ class GuestTrackManager:
                     # Also check in-memory guest embeddings (not yet in DB)
                     if self.guest_embeddings:
                         guest_sims = cosine_similarities(
-                            self.guest_embeddings, norm_emb
+                            self.guest_embeddings, current_emb
                         )
                         if guest_sims.size > 0:
                             best_g_idx = int(np.argmax(guest_sims))
@@ -459,7 +461,7 @@ class GuestTrackManager:
                         track_state.recent_votes.append(None)
             elif len(combined_embeddings) > 0:
                 # In-memory path (SQLite / fallback)
-                similarities = cosine_similarities(combined_embeddings, norm_emb)
+                similarities = cosine_similarities(combined_embeddings, current_emb)
                 if similarities.size > 0:
                     best_index = int(np.argmax(similarities))
                     best_sim = float(similarities[best_index])
