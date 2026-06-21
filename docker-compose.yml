@@ -11,6 +11,8 @@ services:
       - /srv/faceai/models:/app/models:ro
       - /srv/faceai/data:/app/data
       - ./backend/config.py:/app/config.py:ro
+    env_file:
+      - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
       - OMP_NUM_THREADS=2

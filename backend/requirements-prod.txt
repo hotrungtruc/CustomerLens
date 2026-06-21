@@ -7,3 +7,5 @@ mediapipe
 fastapi
 uvicorn[standard]
 scipy
+psycopg2-binary
+python-dotenv
