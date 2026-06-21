@@ -331,7 +331,7 @@ class GuestTrackManager:
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
-    def _query_pgvector(self, embedding, top_k=3):
+    def _query_pgvector(self, embedding, top_k=3, threshold=0.45):
         """Query pgvector HNSW index for the closest matches.
 
         Returns a list of (customer_id, similarity) tuples.
@@ -343,7 +343,7 @@ class GuestTrackManager:
             conn = get_db_connection()
             try:
                 results = search_similar_faces(
-                    conn, embedding, top_k=top_k, threshold=0.45
+                    conn, embedding, top_k=top_k, threshold=threshold
                 )
                 return results
             finally:
@@ -521,7 +521,9 @@ class GuestTrackManager:
 
             # Try pgvector first for the fallback mean-embedding match
             if self.use_pgvector:
-                pgvec_results = self._query_pgvector(avg_embedding, top_k=1)
+                pgvec_results = self._query_pgvector(
+                    avg_embedding, top_k=1, threshold=self.similarity_threshold
+                )
                 if pgvec_results and pgvec_results[0][1] >= self.similarity_threshold:
                     resolved_customer_id = pgvec_results[0][0]
                 # Also check in-memory guests
