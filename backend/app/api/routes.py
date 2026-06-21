@@ -84,10 +84,13 @@ class CameraState:
             min_detection_score=MIN_DETECTION_SCORE,
             guest_prefix=f"GUEST_{camera_id}",
         )
+        self.current_customer_id = None
         self.current_customer_seen_at = None
         self.active = True
-        self.subscribers = []
         self.ai_thread = None
+        self.subscribers = set()
+        self.latest_jpeg_bytes = None
+        self.last_frame_time = None
         self.start_ai_loop()
 
     def start_ai_loop(self):
@@ -867,11 +870,12 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
 @router.websocket("/ws/publish/{session_id}")
-async def websocket_camera_publish(websocket: WebSocket, session_id: str):
-    """Persistent bidirectional channel per browser tab.
+async def websocket_publish(websocket: WebSocket, session_id: str):
+    """Persistent bidirectional channel for the camera device (Publisher).
 
     Client sends:  Raw binary bytes of JPEG image
     Server sends:  { "customers": [...], "frame_size": { "width": N, "height": N } }
+    Server also broadcasts the JPEG and data to all subscribers.
     """
     await websocket.accept()
     state = get_camera_state(session_id)
@@ -885,6 +889,8 @@ async def websocket_camera_publish(websocket: WebSocket, session_id: str):
 
             # Write frame into this camera's state
             if data:
+                state.latest_jpeg_bytes = data
+                state.last_frame_time = datetime.now()
                 try:
                     img_array = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
@@ -905,46 +911,52 @@ async def websocket_camera_publish(websocket: WebSocket, session_id: str):
                 "frame_size": {"width": w, "height": h},
             }
 
+            # Send back to publisher
             try:
-                # Send back to publisher
                 await websocket.send_json(json_payload)
-
-                # Broadcast to subscribers
-                if data:
-                    disconnected = []
-                    for sub in state.subscribers:
-                        try:
-                            await sub.send_bytes(data)
-                            await sub.send_json(json_payload)
-                        except Exception:
-                            disconnected.append(sub)
-                    for sub in disconnected:
-                        state.subscribers.remove(sub)
             except Exception:
                 break
+                
+            # Broadcast to subscribers
+            dead_subs = set()
+            for sub in list(state.subscribers):
+                try:
+                    if state.latest_jpeg_bytes:
+                        await sub.send_bytes(state.latest_jpeg_bytes)
+                    await sub.send_json(json_payload)
+                except Exception:
+                    dead_subs.add(sub)
+                    
+            for dead in dead_subs:
+                state.subscribers.discard(dead)
 
     except WebSocketDisconnect:
         pass
 
 
 @router.websocket("/ws/subscribe/{session_id}")
-async def websocket_camera_subscribe(websocket: WebSocket, session_id: str):
-    """View-only WebSocket channel for remote management."""
+async def websocket_subscribe(websocket: WebSocket, session_id: str):
+    """Channel for Management devices to view the video feed."""
     await websocket.accept()
     state = get_camera_state(session_id)
-    state.subscribers.append(websocket)
+    state.subscribers.add(websocket)
     try:
+        # Keep connection open. The publisher loop will pump data into it.
         while True:
-            # Keep connection alive, wait for disconnect
-            _ = await websocket.receive_text()
+            await websocket.receive_text()
     except Exception:
-        if websocket in state.subscribers:
-            state.subscribers.remove(websocket)
+        pass
+    finally:
+        state.subscribers.discard(websocket)
 
 
 @router.get("/api/cameras/active")
-def get_active_cameras():
-    """Return a list of currently active camera session IDs."""
+def api_get_active_cameras():
+    """Returns a list of actively publishing camera session IDs."""
+    active = []
+    now = datetime.now()
     with CAMERA_STATES_LOCK:
-        active_sessions = [cid for cid, state in CAMERA_STATES.items() if state.active and cid != "default"]
-    return {"status": "success", "active_cameras": active_sessions}
+        for cid, state in CAMERA_STATES.items():
+            if state.last_frame_time and (now - state.last_frame_time).total_seconds() < 5:
+                active.append(cid)
+    return {"status": "success", "active_cameras": active}

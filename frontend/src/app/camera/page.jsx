@@ -176,7 +176,7 @@ export default function CameraPage() {
       const baseCam = BASE_CAMERAS.find((c) => c.id === id);
       cams.push({
         id,
-        name: baseCam ? baseCam.name : `Guest Device`,
+        name: baseCam ? baseCam.name : `Thiết bị ${id}`,
         status: "live",
       });
     });
