@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import secrets
@@ -10,6 +11,7 @@ import cv2
 import numpy as np
 from fastapi import (APIRouter, Header, HTTPException, Request, WebSocket,
                      WebSocketDisconnect)
+from fastapi.responses import Response
 
 # Session store mapping hex tokens to user dicts
 ACTIVE_SESSIONS = {}
@@ -88,9 +90,8 @@ class CameraState:
         self.current_customer_seen_at = None
         self.active = True
         self.ai_thread = None
-        self.subscribers = set()
-        self.latest_jpeg_bytes = None
-        self.last_frame_time = None
+        self.latest_jpeg = None          # Raw JPEG bytes of last received frame
+        self.last_frame_time = None      # time.time() when last frame was received
         self.start_ai_loop()
 
     def start_ai_loop(self):
@@ -869,13 +870,12 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
 
 
 # ── WebSocket endpoint ────────────────────────────────────────────────────────
-@router.websocket("/ws/publish/{session_id}")
-async def websocket_publish(websocket: WebSocket, session_id: str):
-    """Persistent bidirectional channel for the camera device (Publisher).
+@router.websocket("/ws/{session_id}")
+async def websocket_camera(websocket: WebSocket, session_id: str):
+    """Persistent bidirectional channel per browser tab.
 
     Client sends:  Raw binary bytes of JPEG image
     Server sends:  { "customers": [...], "frame_size": { "width": N, "height": N } }
-    Server also broadcasts the JPEG and data to all subscribers.
     """
     await websocket.accept()
     state = get_camera_state(session_id)
@@ -889,8 +889,9 @@ async def websocket_publish(websocket: WebSocket, session_id: str):
 
             # Write frame into this camera's state
             if data:
-                state.latest_jpeg_bytes = data
-                state.last_frame_time = datetime.now()
+                # Store raw JPEG bytes for snapshot API
+                state.latest_jpeg = bytes(data)
+                state.last_frame_time = time.time()
                 try:
                     img_array = np.frombuffer(data, dtype=np.uint8)
                     frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
@@ -906,57 +907,92 @@ async def websocket_publish(websocket: WebSocket, session_id: str):
 
             w = state.shared_frame_mgr.width
             h = state.shared_frame_mgr.height
-            json_payload = {
-                "customers": customers,
-                "frame_size": {"width": w, "height": h},
-            }
 
-            # Send back to publisher
             try:
-                await websocket.send_json(json_payload)
+                await websocket.send_json(
+                    {
+                        "customers": customers,
+                        "frame_size": {"width": w, "height": h},
+                    }
+                )
             except Exception:
                 break
-                
-            # Broadcast to subscribers
-            dead_subs = set()
-            for sub in list(state.subscribers):
-                try:
-                    if state.latest_jpeg_bytes:
-                        await sub.send_bytes(state.latest_jpeg_bytes)
-                    await sub.send_json(json_payload)
-                except Exception:
-                    dead_subs.add(sub)
-                    
-            for dead in dead_subs:
-                state.subscribers.discard(dead)
 
     except WebSocketDisconnect:
         pass
 
 
-@router.websocket("/ws/subscribe/{session_id}")
-async def websocket_subscribe(websocket: WebSocket, session_id: str):
-    """Channel for Management devices to view the video feed."""
-    await websocket.accept()
-    state = get_camera_state(session_id)
-    state.subscribers.add(websocket)
-    try:
-        # Keep connection open. The publisher loop will pump data into it.
-        while True:
-            await websocket.receive_text()
-    except Exception:
-        pass
-    finally:
-        state.subscribers.discard(websocket)
-
-
-@router.get("/api/cameras/active")
-def api_get_active_cameras():
-    """Returns a list of actively publishing camera session IDs."""
-    active = []
-    now = datetime.now()
+# ── Active sessions & snapshot endpoints ──────────────────────────────────────
+@router.get("/api/active_sessions")
+def api_active_sessions():
+    """Return a list of all camera sessions currently in memory."""
+    now = time.time()
     with CAMERA_STATES_LOCK:
+        sessions = []
         for cid, state in CAMERA_STATES.items():
-            if state.last_frame_time and (now - state.last_frame_time).total_seconds() < 5:
-                active.append(cid)
-    return {"status": "success", "active_cameras": active}
+            annotations = state.shared_frame_mgr.get_annotations()
+            face_count = len(annotations.get("faces", []))
+            is_active = (
+                state.last_frame_time is not None
+                and (now - state.last_frame_time) < 10
+            )
+            sessions.append({
+                "session_id": cid,
+                "face_count": face_count,
+                "active": bool(is_active),
+                "last_frame_time": state.last_frame_time,
+            })
+    return {"status": "success", "sessions": sessions}
+
+
+@router.get("/api/camera_snapshot/{session_id}")
+def api_camera_snapshot(session_id: str):
+    """Return the latest JPEG frame from a camera session as binary."""
+    with CAMERA_STATES_LOCK:
+        state = CAMERA_STATES.get(session_id)
+    if not state or not state.latest_jpeg:
+        raise HTTPException(status_code=404, detail="No frame available")
+    return Response(
+        content=state.latest_jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-cache, no-store"},
+    )
+
+
+# ── Observer WebSocket (read-only, no frame upload) ───────────────────────────
+@router.websocket("/ws/observe/{session_id}")
+async def websocket_observe(websocket: WebSocket, session_id: str):
+    """Read-only WebSocket: sends annotation data without requiring frames."""
+    await websocket.accept()
+
+    with CAMERA_STATES_LOCK:
+        if session_id not in CAMERA_STATES:
+            await websocket.close(code=4004, reason="Session not found")
+            return
+        state = CAMERA_STATES[session_id]
+
+    last_version = -1
+
+    try:
+        while True:
+            current_version = state.shared_frame_mgr.get_version()
+            if current_version != last_version:
+                last_version = current_version
+                annotations = state.shared_frame_mgr.get_annotations()
+                faces = annotations.get("faces", [])
+                customers = _build_customers_payload(
+                    faces, conn=None, camera_state=state
+                )
+                try:
+                    await websocket.send_json({
+                        "customers": customers,
+                        "frame_size": {
+                            "width": state.shared_frame_mgr.width,
+                            "height": state.shared_frame_mgr.height,
+                        },
+                    })
+                except Exception:
+                    break
+            await asyncio.sleep(0.2)
+    except WebSocketDisconnect:
+        pass

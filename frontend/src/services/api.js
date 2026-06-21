@@ -114,3 +114,11 @@ export async function fetchCustomerProfileById(customerId) {
   }
   return response.json();
 }
+
+export async function fetchActiveSessions() {
+  const response = await fetch(`${API_BASE_URL}/api/active_sessions`);
+  if (!response.ok) {
+    throw new Error("Network error");
+  }
+  return response.json();
+}

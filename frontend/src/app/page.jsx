@@ -290,11 +290,10 @@ export default function DashboardPage() {
   // backend CameraState instances and never share annotations.
   const sessionIdRef = useRef(null);
   if (!sessionIdRef.current && typeof window !== "undefined") {
-    let sid = localStorage.getItem("device_camera_id");
+    let sid = sessionStorage.getItem("session_camera_id");
     if (!sid) {
-      // Create a shorter, recognizable ID like GUEST-A1B2
-      sid = "GUEST-" + Math.random().toString(36).slice(2, 6).toUpperCase();
-      localStorage.setItem("device_camera_id", sid);
+      sid = "session-" + Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem("session_camera_id", sid);
     }
     sessionIdRef.current = sid;
   }

@@ -1,82 +1,83 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
-import CameraViewerStream from "../../components/CameraViewerStream";
-import { Maximize2, RefreshCw, X } from "lucide-react";
+import CameraViewer from "../../components/CameraViewer";
+import { Maximize2, RefreshCw, X, Wifi, WifiOff } from "lucide-react";
+import { fetchActiveSessions } from "../../services/api";
 
-const BASE_CAMERA_NAMES = [
-  "Cổng chính", "Hành lang A", "Sảnh tiếp tân", "Bãi giữ xe",
-  "Khu quầy 1", "Khu quầy 2", "Cửa phụ", "Kho hàng",
-  "Cầu thang", "Sảnh chờ", "Lối VIP", "Khu giao nhận",
-  "Phòng họp", "Tầng 2", "Tầng 3", "Back office",
-  "Khu kỹ thuật", "Cổng sau",
-];
-
-const BASE_CAMERAS = BASE_CAMERA_NAMES.map((name, index) => ({
-  id: `DSLR-${String(index + 1).padStart(3, "0")}`,
-  name,
-}));
-
-function CameraBadge({ cam }) {
+/* ── Session badge (top-left overlay) ───────────────────────────────────── */
+function SessionBadge({ session }) {
+  const isActive = session.active;
   return (
     <div className="min-w-0 text-white">
       <div className="flex min-w-0 items-center gap-1.5">
         <span className="truncate text-xs font-semibold sm:text-sm">
-          {cam.name}
+          {session.session_id}
         </span>
-        <span className="shrink-0 text-[10px] text-white/65">({cam.id})</span>
       </div>
-      {cam.status === "live" ? (
-        <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-red-200">
-          <span className="h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse" />
+      {isActive ? (
+        <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
           LIVE
         </span>
       ) : (
-        <span className="mt-0.5 inline-flex text-[10px] font-semibold text-slate-200">
-          Offline
+        <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-slate-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+          Idle
         </span>
       )}
     </div>
   );
 }
 
-function CameraTile({ cam, onExpand }) {
+/* ── Camera tile ────────────────────────────────────────────────────────── */
+function CameraTile({ session, onExpand }) {
   return (
     <div className="group relative h-full min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-950 shadow-sm">
+      {/* Top overlay */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 bg-gradient-to-b from-slate-950/85 via-slate-950/45 to-transparent p-2">
-        <CameraBadge cam={cam} />
+        <SessionBadge session={session} />
         <button
           type="button"
           onClick={onExpand}
           className="pointer-events-auto rounded-md border border-white/20 bg-white/15 p-1 text-white/80 backdrop-blur hover:bg-white/25 hover:text-white"
-          aria-label={`Phóng to ${cam.name}`}
+          aria-label={`Phóng to ${session.session_id}`}
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {cam.status === "offline" ? (
+      {/* Face count badge */}
+      {session.face_count > 0 && (
+        <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow backdrop-blur">
+          {session.face_count} khuôn mặt
+        </div>
+      )}
+
+      {session.active ? (
+        <CameraViewer sessionId={session.session_id} compact />
+      ) : (
         <div className="relative h-full overflow-hidden bg-slate-900">
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 pt-8">
-            <span className="text-xs font-medium text-white/80">
-              Mất kết nối
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/60">
+            <WifiOff className="h-5 w-5 text-white/40" />
+            <span className="text-xs font-medium text-white/50">
+              Không có tín hiệu
             </span>
           </div>
         </div>
-      ) : (
-        <CameraViewerStream sessionId={cam.id} framed={false} compact />
       )}
     </div>
   );
 }
 
-function ExpandedCameraModal({ cam, onClose }) {
+/* ── Expanded modal ─────────────────────────────────────────────────────── */
+function ExpandedModal({ session, onClose }) {
   useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -85,20 +86,30 @@ function ExpandedCameraModal({ cam, onClose }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm sm:p-6 lg:p-8"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="relative flex max-h-[82dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-white shadow-2xl">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-slate-800">
-              {cam.name}
+              {session.session_id}
             </span>
-            <span className="text-xs text-slate-400">({cam.id})</span>
-            <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600">
-              Expanded
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+                session.active
+                  ? "bg-emerald-50 text-emerald-600"
+                  : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {session.active ? "Live" : "Idle"}
             </span>
+            {session.face_count > 0 && (
+              <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
+                {session.face_count} khuôn mặt
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -110,30 +121,52 @@ function ExpandedCameraModal({ cam, onClose }) {
           </button>
         </div>
 
-        {cam.status === "offline" ? (
-          <div className="flex h-[calc(82dvh-49px)] min-h-[320px] items-center justify-center bg-slate-900">
-            <span className="text-base font-medium text-white">
-              Mất kết nối
-            </span>
-          </div>
-        ) : (
-          <div className="h-[calc(82dvh-49px)] min-h-[320px] bg-slate-950">
-            <CameraViewerStream sessionId={cam.id} framed={false} compact={false} />
-          </div>
-        )}
+        <div className="h-[calc(82dvh-49px)] min-h-[320px] bg-slate-950">
+          {session.active ? (
+            <CameraViewer sessionId={session.session_id} />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              <span className="text-base font-medium text-white/60">
+                Không có tín hiệu
+              </span>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
+/* ── Empty state ────────────────────────────────────────────────────────── */
+function EmptyState() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
+      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
+        <Wifi className="h-7 w-7 text-slate-400" />
+      </div>
+      <div className="text-center">
+        <p className="text-sm font-semibold text-slate-700">
+          Chưa có thiết bị nào kết nối
+        </p>
+        <p className="mt-1 text-xs text-slate-400">
+          Khi khách truy cập trang chủ và bật camera, thiết bị sẽ tự động xuất
+          hiện ở đây.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ── Main page ──────────────────────────────────────────────────────────── */
 export default function CameraPage() {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
   const [role, setRole] = useState(null);
-  const [allowedCameras, setAllowedCameras] = useState([]);
-  const [expandedCameraId, setExpandedCameraId] = useState(null);
-  const [activeCameraIds, setActiveCameraIds] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [expandedId, setExpandedId] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
+  // Auth check
   useEffect(() => {
     const savedRole = localStorage.getItem("role") || "guest";
     if (savedRole === "guest") {
@@ -141,78 +174,42 @@ export default function CameraPage() {
       return;
     }
     setRole(savedRole);
-    try {
-      const cams = JSON.parse(localStorage.getItem("cameras")) || [];
-      setAllowedCameras(cams);
-    } catch {
-      setAllowedCameras([]);
-    }
   }, [router]);
 
-  const fetchActiveCameras = async () => {
+  // Poll active sessions
+  const loadSessions = useCallback(async () => {
     try {
-      const protocol = window.location.protocol;
-      const host = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_HOST || "localhost:8000";
-      let baseUrl = host.includes("://") ? host : `${protocol}//${host}`;
-      // Clean trailing slash
-      baseUrl = baseUrl.replace(/\/$/, "");
-      const res = await fetch(`${baseUrl}/api/cameras/active`);
-      const data = await res.json();
-      if (data.status === "success") setActiveCameraIds(data.active_cameras || []);
+      const data = await fetchActiveSessions();
+      if (data.status === "success") {
+        setSessions(data.sessions || []);
+      }
     } catch (_) {}
-  };
+    setIsLoading(false);
+  }, []);
 
   useEffect(() => {
-    if (role === null) return;
-    fetchActiveCameras();
-    const interval = setInterval(fetchActiveCameras, 5000);
+    if (!role) return;
+    loadSessions();
+    const interval = setInterval(loadSessions, 3000);
     return () => clearInterval(interval);
-  }, [role]);
+  }, [role, loadSessions]);
 
-  const CAMERAS = useMemo(() => {
-    const cams = [];
-    // 1. Add all active sessions (both known DSLRs and Guest Devices)
-    activeCameraIds.forEach((id) => {
-      const baseCam = BASE_CAMERAS.find((c) => c.id === id);
-      cams.push({
-        id,
-        name: baseCam ? baseCam.name : `Thiết bị ${id}`,
-        status: "live",
-      });
-    });
-
-    // 2. Add offline DSLRs
-    BASE_CAMERAS.forEach((baseCam) => {
-      if (!activeCameraIds.includes(baseCam.id)) {
-        cams.push({
-          id: baseCam.id,
-          name: baseCam.name,
-          status: "offline",
-        });
-      }
-    });
-
-    return cams;
-  }, [activeCameraIds]);
-
+  // Counts
   const counts = useMemo(() => {
-    const live = CAMERAS.filter((cam) => cam.status === "live").length;
-    return {
-      all: CAMERAS.length,
-      live,
-      offline: CAMERAS.length - live,
-    };
-  }, []);
+    const active = sessions.filter((s) => s.active).length;
+    return { all: sessions.length, active, idle: sessions.length - active };
+  }, [sessions]);
 
   const filters = useMemo(
     () => [
       { key: "all", label: "Tất cả", count: counts.all },
-      { key: "live", label: "Đang live", count: counts.live },
-      { key: "offline", label: "Offline", count: counts.offline },
+      { key: "active", label: "Đang live", count: counts.active },
+      { key: "idle", label: "Idle", count: counts.idle },
     ],
     [counts],
   );
 
+  // Loading state
   if (role === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
@@ -221,18 +218,26 @@ export default function CameraPage() {
     );
   }
 
-  const filteredCameras =
-    role === "admin"
-      ? CAMERAS
-      : CAMERAS.filter((cam) => allowedCameras.includes(cam.id));
-
+  // Filter
   const shown =
     filter === "all"
-      ? filteredCameras
-      : filteredCameras.filter((cam) => cam.status === filter);
+      ? sessions
+      : filter === "active"
+        ? sessions.filter((s) => s.active)
+        : sessions.filter((s) => !s.active);
 
-  const expandedCamera =
-    shown.find((cam) => cam.id === expandedCameraId) || null;
+  const expandedSession =
+    shown.find((s) => s.session_id === expandedId) || null;
+
+  // Dynamic grid columns based on session count
+  const gridCols =
+    shown.length <= 1
+      ? "grid-cols-1"
+      : shown.length <= 4
+        ? "grid-cols-1 sm:grid-cols-2"
+        : shown.length <= 9
+          ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
 
   return (
     <main className="h-dvh w-screen overflow-hidden bg-white">
@@ -242,9 +247,10 @@ export default function CameraPage() {
         <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 bg-slate-50">
           <PageHeader
             title="Quản lý Camera"
-            subtitle="Theo dõi tất cả camera trực tiếp trong hệ thống."
+            subtitle="Theo dõi tất cả thiết bị đang kết nối vào hệ thống."
           />
 
+          {/* Filter bar */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 sm:px-4">
             <div className="flex flex-wrap items-center gap-2">
               {filters.map((item) => (
@@ -262,31 +268,44 @@ export default function CameraPage() {
               ))}
             </div>
 
-            <button onClick={fetchActiveCameras} className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50">
+            <button
+              onClick={loadSessions}
+              className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+              title="Làm mới"
+            >
               <RefreshCw className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="grid flex-1 min-h-0 auto-rows-fr grid-cols-1 gap-2 overflow-hidden p-2 sm:grid-cols-2 lg:grid-cols-6">
-            {shown.map((cam) => {
-              if (expandedCameraId === cam.id) return null;
-
-              return (
+          {/* Grid or empty state */}
+          {isLoading ? (
+            <div className="flex flex-1 items-center justify-center">
+              <p className="text-sm text-slate-400">
+                Đang tải danh sách thiết bị…
+              </p>
+            </div>
+          ) : shown.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div
+              className={`grid flex-1 min-h-0 auto-rows-fr gap-2 overflow-auto p-2 ${gridCols}`}
+            >
+              {shown.map((session) => (
                 <CameraTile
-                  key={cam.id}
-                  cam={cam}
-                  onExpand={() => setExpandedCameraId(cam.id)}
+                  key={session.session_id}
+                  session={session}
+                  onExpand={() => setExpandedId(session.session_id)}
                 />
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {expandedCamera ? (
-        <ExpandedCameraModal
-          cam={expandedCamera}
-          onClose={() => setExpandedCameraId(null)}
+      {expandedSession ? (
+        <ExpandedModal
+          session={expandedSession}
+          onClose={() => setExpandedId(null)}
         />
       ) : null}
     </main>
