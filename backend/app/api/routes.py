@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import hashlib
 import secrets
 import threading
@@ -906,7 +907,7 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
                     payload = json.loads(data_str)
                     state.shared_frame_mgr.write_payload(payload)
                 except Exception as e:
-                    logger.error(f"Failed to parse or write payload: {e}")
+                    logging.error(f"Failed to parse or write payload: {e}")
 
             # Return current annotations (AI thread updates asynchronously)
             annotations = state.shared_frame_mgr.get_annotations()
