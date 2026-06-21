@@ -495,7 +495,7 @@ def _build_customers_payload(faces: list, conn=None, camera_state=None) -> list:
             "track_id": track_id,
             "bbox": face.get("bbox"),
             "detected": bool(customer_id),
-            "id": customer_id or f"T{track_id}",
+            "id": customer_id,
             "name": "Khach moi",
             "email": None,
             "occupation": "General",
