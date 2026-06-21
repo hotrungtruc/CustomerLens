@@ -360,9 +360,10 @@ class GuestTrackManager:
             return existing_customer_id
 
         # --- LAZY EMBEDDING EXTRACTION (ASYNC) ---
+        target_len = max(self.buffer_size, self.guest_creation_buffer_size)
         if (
             existing_customer_id is None
-            and len(track_state.embeddings) < self.buffer_size
+            and len(track_state.embeddings) < target_len
         ):
             if (
                 record.get("embedding") is None
@@ -379,17 +380,8 @@ class GuestTrackManager:
                         emb = embedder.get_embedding(frame, record["landmark"])
                         norm_emb = normalize_embedding(emb)
                         track_state.embeddings.append(norm_emb)
-                        # Re-calculate guest_quality_ok here since we use it
-                        bbox = record["bbox"]
-                        w = bbox[2] - bbox[0]
-                        h = bbox[3] - bbox[1]
-                        score = record.get("score", 1.0)
-                        is_g_ok = (
-                            w >= GUEST_MIN_FACE_BBOX_SIZE
-                            and h >= GUEST_MIN_FACE_BBOX_SIZE
-                            and score >= GUEST_MIN_DETECTION_SCORE
-                            and quality_ok
-                        )
+                        # Use the guest_quality_ok calculated by the embedder
+                        is_g_ok = record.get("guest_quality_ok", False)
                         if is_g_ok:
                             track_state.guest_embeddings.append(norm_emb)
                     except Exception as e:

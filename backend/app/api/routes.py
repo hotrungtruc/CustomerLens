@@ -129,6 +129,7 @@ class CameraState:
         for bbox, landmark, score in zip(*detections):
             x1, y1, x2, y2 = map(int, bbox)
             quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+            guest_quality_ok = embedder.is_guest_quality_ok((x1, y1, x2, y2), score, landmark)
 
             face_records.append(
                 {
@@ -136,6 +137,7 @@ class CameraState:
                     "landmark": landmark,
                     "score": float(score),
                     "quality_ok": quality_ok,
+                    "guest_quality_ok": guest_quality_ok,
                     "embedding": None,
                 }
             )
