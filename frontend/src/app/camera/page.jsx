@@ -58,7 +58,7 @@ function CameraTile({ session, onExpand }) {
       )}
 
       {session.active ? (
-        <CameraViewer sessionId={session.session_id} compact />
+        <CameraViewer sessionId={session.session_id} compact refreshInterval={800} />
       ) : (
         <div className="relative h-full overflow-hidden bg-slate-900">
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/60">
@@ -123,7 +123,7 @@ function ExpandedModal({ session, onClose }) {
 
         <div className="h-[calc(82dvh-49px)] min-h-[320px] bg-slate-950">
           {session.active ? (
-            <CameraViewer sessionId={session.session_id} />
+            <CameraViewer sessionId={session.session_id} refreshInterval={300} />
           ) : (
             <div className="flex h-full items-center justify-center">
               <span className="text-base font-medium text-white/60">

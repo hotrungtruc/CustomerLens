@@ -12,18 +12,24 @@ import { API_BASE_URL } from "../services/api";
  * the observe WebSocket for annotation overlays. Does NOT open
  * the local webcam.
  */
-export default function CameraViewer({ sessionId, compact = false }) {
+export default function CameraViewer({ sessionId, compact = false, refreshInterval = 500 }) {
   const imgRef = useRef(null);
   const { customers, frameSize, status } = useCameraObserver(sessionId);
   const [imageSrc, setImageSrc] = useState(null);
 
-  // Poll for snapshot frames (~5 fps)
+  // Poll for snapshot frames
   useEffect(() => {
     if (!sessionId) return;
     let active = true;
+    let fetching = false;
     const url = `${API_BASE_URL}/api/camera_snapshot/${encodeURIComponent(sessionId)}`;
 
     async function fetchFrame() {
+      if (fetching) {
+        if (active) timer = setTimeout(fetchFrame, refreshInterval);
+        return;
+      }
+      fetching = true;
       try {
         const res = await fetch(url);
         if (res.ok && active) {
@@ -35,7 +41,8 @@ export default function CameraViewer({ sessionId, compact = false }) {
           });
         }
       } catch (_) {}
-      if (active) timer = setTimeout(fetchFrame, 200);
+      fetching = false;
+      if (active) timer = setTimeout(fetchFrame, refreshInterval);
     }
 
     let timer = setTimeout(fetchFrame, 0);
@@ -47,7 +54,7 @@ export default function CameraViewer({ sessionId, compact = false }) {
         return null;
       });
     };
-  }, [sessionId]);
+  }, [sessionId, refreshInterval]);
 
   // Build bounding boxes from observer annotations
   const boxes = customers
@@ -87,46 +94,26 @@ export default function CameraViewer({ sessionId, compact = false }) {
         </div>
       )}
 
-      {/* Bounding box overlays (only in expanded / non-compact mode) */}
-      {!compact &&
-        boxes.map((box) => (
+      {/* Bounding box overlays */}
+      {boxes.map((box) => (
+        <div
+          key={box.track_id}
+          className="absolute rounded-md border-2 border-white/70 pointer-events-none transition-all duration-150"
+          style={{
+            left: `${box.left}%`,
+            top: `${box.top}%`,
+            width: `${box.width}%`,
+            height: `${box.height}%`,
+          }}
+        >
+          {/* Badge */}
           <div
-            key={box.track_id}
-            className="absolute rounded-md border-2 border-white/70 pointer-events-none transition-all duration-150"
-            style={{
-              left: `${box.left}%`,
-              top: `${box.top}%`,
-              width: `${box.width}%`,
-              height: `${box.height}%`,
-            }}
+            className={`absolute -top-3 left-1/2 -translate-x-1/2 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${box.bgClass}`}
           >
-            {/* Badge */}
-            <div
-              className={`absolute -top-3 left-1/2 -translate-x-1/2 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white shadow ${box.bgClass}`}
-            >
-              {box.symbol}
-            </div>
+            {box.symbol}
           </div>
-        ))}
-
-      {/* Face count badge (compact mode) */}
-      {compact && boxes.length > 0 && (
-        <div className="absolute bottom-2 left-2 flex items-center gap-1">
-          {boxes.slice(0, 3).map((box) => (
-            <div
-              key={box.track_id}
-              className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold text-white shadow-lg ring-2 ring-white/40 ${box.bgClass}`}
-            >
-              {box.symbol}
-            </div>
-          ))}
-          {boxes.length > 3 && (
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-700 text-[10px] font-bold text-white shadow-lg ring-2 ring-white/40">
-              +{boxes.length - 3}
-            </div>
-          )}
         </div>
-      )}
+      ))}
 
       {/* Connection status overlay */}
       {status !== "live" && imageSrc && (
