@@ -2,7 +2,21 @@
 
 import { useEffect } from "react";
 import { useCamera } from "../hooks/useCamera";
+import { useLocalFaceDetector } from "../hooks/useLocalFaceDetector";
 import { getTrackBadge } from "../lib/trackBadge";
+
+// IoU matching (Intersection over Union)
+function calculateIoU(boxA, boxB) {
+  const xA = Math.max(boxA.left, boxB.left);
+  const yA = Math.max(boxA.top, boxB.top);
+  const xB = Math.min(boxA.left + boxA.width, boxB.left + boxB.width);
+  const yB = Math.min(boxA.top + boxA.height, boxB.top + boxB.height);
+  const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+  if (interArea === 0) return 0;
+  const boxAArea = boxA.width * boxA.height;
+  const boxBArea = boxB.width * boxB.height;
+  return interArea / (boxAArea + boxBArea - interArea);
+}
 
 /**
  * CameraStream — live webcam feed with bounding-box overlays.
@@ -32,10 +46,55 @@ export default function CameraStream({
     cameraError,
   } = useCamera(sessionId);
 
+  const localFaces = useLocalFaceDetector(videoRef);
+
   // Lift customers + frameSize to parent whenever they change
   useEffect(() => {
     onCustomersChange?.(customers, frameSize);
   }, [customers, frameSize, onCustomersChange]);
+
+  // Transform backend customers into percentage boxes
+  const backendFaces = customers
+    .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
+    .map((c) => {
+      const [x1, y1, x2, y2] = c.bbox;
+      return {
+        ...c,
+        left: (x1 / frameSize.width) * 100,
+        top: (y1 / frameSize.height) * 100,
+        width: ((x2 - x1) / frameSize.width) * 100,
+        height: ((y2 - y1) / frameSize.height) * 100,
+      };
+    });
+
+  // Hybrid Tracking: Merge local faces with backend labels
+  const matchedBackendIds = new Set();
+  const mergedFaces = localFaces.map((localFace, i) => {
+    let bestMatch = null;
+    let bestIoU = 0;
+    
+    backendFaces.forEach((backendFace) => {
+      const iou = calculateIoU(localFace, backendFace);
+      if (iou > 0.2 && iou > bestIoU) {
+        bestIoU = iou;
+        bestMatch = backendFace;
+      }
+    });
+    
+    if (bestMatch) {
+      matchedBackendIds.add(bestMatch.track_id);
+    }
+    
+    return {
+      ...localFace,
+      id: bestMatch ? bestMatch.track_id : `local-${i}`,
+      backendMatch: bestMatch,
+    };
+  });
+
+  const unmatchedBackendFaces = backendFaces.filter(
+    (bf) => !matchedBackendIds.has(bf.track_id)
+  );
 
   const statusLabel =
     wsStatus === "live"
@@ -110,34 +169,35 @@ export default function CameraStream({
 
         {/* Bounding box overlays */}
         <div className="pointer-events-none absolute inset-0">
-          {customers
-            .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
-            .map((c) => {
-              const [x1, y1, x2, y2] = c.bbox;
-              const left = (x1 / frameSize.width) * 100;
-              const top = (y1 / frameSize.height) * 100;
-              const width = ((x2 - x1) / frameSize.width) * 100;
-              const height = ((y2 - y1) / frameSize.height) * 100;
-              const isHl = highlightedTrackId === c.track_id;
-              const { symbol, theme } = getTrackBadge(c.track_id);
+          {mergedFaces.map((face) => {
+            const isHl = face.backendMatch && highlightedTrackId === face.backendMatch.track_id;
+            
+            let symbol = null;
+            let theme = null;
+            if (face.backendMatch) {
+               const badge = getTrackBadge(face.backendMatch.track_id);
+               symbol = badge.symbol;
+               theme = badge.theme;
+            }
 
-              return (
-                <div
-                  key={`overlay-${c.tile_id}`}
-                  className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] transition-all duration-100 ease-linear ${
-                    isHl
-                      ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
-                      : c.detected
-                        ? "border-white/80"
-                        : "border-slate-300"
-                  }`}
-                  style={{
-                    left: `${left}%`,
-                    top: `${top}%`,
-                    width: `${Math.max(width, 6)}%`,
-                    height: `${Math.max(height, 8)}%`,
-                  }}
-                >
+            return (
+              <div
+                key={face.id}
+                className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] transition-all duration-100 ease-linear ${
+                  isHl
+                    ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
+                    : face.backendMatch?.detected
+                      ? "border-white/80"
+                      : "border-slate-300"
+                }`}
+                style={{
+                  left: `${face.left}%`,
+                  top: `${face.top}%`,
+                  width: `${Math.max(face.width, 6)}%`,
+                  height: `${Math.max(face.height, 8)}%`,
+                }}
+              >
+                {face.backendMatch && theme && symbol && (
                   <div
                     className={`-mt-3 ml-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-white/40 ${theme.base} ${theme.ring} ${
                       isHl ? "scale-110" : ""
@@ -145,9 +205,42 @@ export default function CameraStream({
                   >
                     {symbol}
                   </div>
+                )}
+              </div>
+            );
+          })}
+
+          {unmatchedBackendFaces.map((face) => {
+            const isHl = highlightedTrackId === face.track_id;
+            const { symbol, theme } = getTrackBadge(face.track_id);
+
+            return (
+              <div
+                key={`unmatched-${face.track_id}`}
+                className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] transition-all duration-100 ease-linear ${
+                  isHl
+                    ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
+                    : face.detected
+                      ? "border-white/80"
+                      : "border-slate-300 opacity-50"
+                }`}
+                style={{
+                  left: `${face.left}%`,
+                  top: `${face.top}%`,
+                  width: `${Math.max(face.width, 6)}%`,
+                  height: `${Math.max(face.height, 8)}%`,
+                }}
+              >
+                <div
+                  className={`-mt-3 ml-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-white/40 ${theme.base} ${theme.ring} ${
+                    isHl ? "scale-110" : ""
+                  }`}
+                >
+                  {symbol}
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
         </div>
 
         {/* Hidden capture canvas */}
