@@ -437,7 +437,9 @@ class GuestTrackManager:
             # --- Multi-frame Voting Logic ---
             if self.use_pgvector:
                 # pgvector path: query HNSW index in Supabase for nearest match
-                pgvec_results = self._query_pgvector(current_emb, top_k=3)
+                pgvec_results = self._query_pgvector(
+                    current_emb, top_k=3, threshold=self.similarity_threshold
+                )
                 if pgvec_results:
                     voted_id = pgvec_results[0][0]  # best match customer_id
                     track_state.recent_votes.append(voted_id)
@@ -449,7 +451,7 @@ class GuestTrackManager:
                         )
                         if guest_sims.size > 0:
                             best_g_idx = int(np.argmax(guest_sims))
-                            if float(guest_sims[best_g_idx]) >= 0.45:
+                            if float(guest_sims[best_g_idx]) >= self.similarity_threshold:
                                 track_state.recent_votes.append(
                                     self.guest_ids[best_g_idx]
                                 )
@@ -466,7 +468,7 @@ class GuestTrackManager:
                     best_index = int(np.argmax(similarities))
                     best_sim = float(similarities[best_index])
                     # Lower threshold for individual frame vote
-                    if best_sim >= 0.45:
+                    if best_sim >= self.similarity_threshold:
                         if best_index < len(self.known_embeddings):
                             voted_id = self.known_ids[best_index]
                         else:
