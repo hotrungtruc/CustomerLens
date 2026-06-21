@@ -146,7 +146,7 @@ class GuestTrackManager:
         buffer_size=3,
         guest_creation_buffer_size=8,
         similarity_threshold=0.38,
-        iou_threshold=0.3,
+        iou_threshold=0.25,
         min_bbox_size=100,
         min_detection_score=0.85,
         guest_prefix="GUEST",
