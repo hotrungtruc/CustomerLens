@@ -15,9 +15,10 @@ BACKUP_DIR = DATABASE_DIR / "backups"
 DATABASE_URL = f"sqlite:///{PRODUCTION_DB_PATH}"
 
 MODELS_DIR = BASE_DIR / "models"
+EDGEFACE_PATH = MODELS_DIR / "edgeface_s_gamma_05.onnx"
 ADAFACE_PATH = MODELS_DIR / "adaface_ir50.onnx"
-RECOGNIZER_PATH = ADAFACE_PATH if ADAFACE_PATH.exists() else MODELS_DIR / "ghostface_int8.onnx"
-RECOGNIZER_FLOAT_PATH = ADAFACE_PATH if ADAFACE_PATH.exists() else MODELS_DIR / "ghostface_fp32.onnx"
+RECOGNIZER_PATH = EDGEFACE_PATH if EDGEFACE_PATH.exists() else (ADAFACE_PATH if ADAFACE_PATH.exists() else MODELS_DIR / "ghostface_int8.onnx")
+RECOGNIZER_FLOAT_PATH = EDGEFACE_PATH if EDGEFACE_PATH.exists() else (ADAFACE_PATH if ADAFACE_PATH.exists() else MODELS_DIR / "ghostface_fp32.onnx")
 FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
 MEDIAPIPE_FACE_MESH_MODEL_SELECTION = 0
 

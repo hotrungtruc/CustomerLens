@@ -6,6 +6,7 @@ from config import MODELS_DIR
 MODELS = {
     "face_landmarker.task": "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
     "ghostface_fp32.onnx": "https://github.com/andestech/ModelZoo/raw/master/GhostFaceNet/Model/ghostface_fp32.onnx",
+    "edgeface_s_gamma_05.onnx": "https://github.com/yakhyo/edgeface-onnx/releases/download/weights/edgeface_s_gamma_05.onnx",
 }
 
 
