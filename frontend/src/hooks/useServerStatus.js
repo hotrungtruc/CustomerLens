@@ -12,16 +12,19 @@ export function useServerStatus() {
       if (data.success) {
         if (data.state === "running") {
           setStatus("online");
+          setError(null);
         } else if (data.state === "pending") {
           setStatus("waking");
         } else {
-          setStatus("offline");
+          // AWS can take a few seconds to change state from 'stopped' to 'pending' after a start command.
+          // If we are currently 'waking', we should not immediately fall back to 'offline'.
+          setStatus((prev) => (prev === "waking" ? "waking" : "offline"));
         }
       } else {
-        setStatus("offline");
+        setStatus((prev) => (prev === "waking" ? "waking" : "offline"));
       }
     } catch (err) {
-      setStatus("offline");
+      setStatus((prev) => (prev === "waking" ? "waking" : "offline"));
       setError(err.message);
     }
   }, []);
