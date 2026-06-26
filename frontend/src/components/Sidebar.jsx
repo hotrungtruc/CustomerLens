@@ -8,7 +8,7 @@ import {
   Camera,
   Users,
   History,
-  Bell,
+  Shield,
   BarChart2,
   Settings,
   LogIn,
@@ -46,9 +46,9 @@ const ALL_NAV_ITEMS = [
   },
   {
     key: "notifications",
-    label: "Thông báo",
+    label: "Phân quyền",
     href: "/notifications",
-    Icon: Bell,
+    Icon: Shield,
     roles: ["admin"],
   },
   {
