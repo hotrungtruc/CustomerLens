@@ -1,0 +1,24 @@
+1. Thủ phạm chính: Phí thấu chi CPU (T3 Unlimited Mode)
+Đây là nguyên nhân lớn nhất khiến hóa đơn của bạn tăng vọt khi áp dụng mô hình "bật/tắt liên tục" với dòng máy t3.micro.
+
+Cơ chế CPU Credit: Dòng T3 hoạt động dựa trên "CPU Credit". Mỗi giờ rảnh rỗi (idle), máy sẽ tích lũy credit. Khi chạy tác vụ nặng (như Face AI đẩy CPU lên 100%), nó sẽ lấy credit này ra dùng.
+Chế độ Unlimited (Mặc định): Theo mặc định, EC2 T3 được bật chế độ "Unlimited". Nghĩa là nếu bạn xài hết credit tích lũy, AWS sẽ cho bạn "vay" (surplus credit) để máy không bị chậm, và nếu bạn không có thời gian rảnh để trả nợ, họ sẽ tính phí $0.05 / vCPU-hour.
+Vấn đề khi Wake-on-Demand:
+Khi bạn chạy máy 24/7: Máy có dư thời gian rảnh (ban đêm) để tích lũy credit, dư sức bù đắp cho vài tiếng chạy Face AI ban ngày. Kết quả: Không tốn thêm đồng nào.
+Khi bạn dùng Wake-on-Demand: Mỗi khi bạn Stop máy, toàn bộ CPU credit tích lũy bị xóa sạch về 0. Khi bạn bật máy lại (Start), việc boot HĐH và chạy ngay Face AI sẽ đẩy CPU lên 100%. Vì credit = 0, AWS lập tức ghi nợ (surplus). Và vì máy tự động Stop sau 15 phút rảnh (nhờ CloudWatch), nó vĩnh viễn không có thời gian rảnh để trả khoản nợ này.
+Hậu quả: AWS sẽ tính tiền toàn bộ khoản thấu chi này vào hóa đơn ngay lúc máy tắt. Nếu một ngày bạn bật/tắt máy 5-10 lần, khoản tiền "phạt" này cộng lại sẽ vượt xa tiền thuê nguyên tháng của t3.micro!
+
+
+2. Phí cố định của ổ cứng (EBS Volume)
+Nhiều người lầm tưởng "tắt EC2 là hóa đơn về 0".
+
+Khi trạng thái EC2 là Stopped, bạn không bị tính tiền tính toán (Compute CPU/RAM).
+Nhưng bạn vẫn bị tính tiền lưu trữ ổ cứng (EBS). Ổ cứng này vẫn nằm đó giữ dữ liệu cho bạn 24/7. Ví dụ: Nếu bạn dùng ổ 30GB gp3, bạn luôn mất cố định khoảng $2.4/tháng dù máy có bật hay tắt đi chăng nữa.
+
+
+3. Phí Public IP động (Quy định mới từ 02/2024)
+Tài liệu có nhắc đến việc tránh Elastic IP để không tốn $3.6/tháng. Tuy nhiên, từ tháng 2/2024, AWS áp dụng thu phí $0.005/giờ cho TẤT CẢ Public IPv4, kể cả IP động cấp cho máy lúc đang chạy. Bạn sẽ bị tính khoản nhỏ này trong những khoảng thời gian máy được đánh thức.
+
+
+4. Rủi ro từ CloudWatch (Detailed Monitoring)
+Trong Hướng dẫn Bước 1.2 có nói về việc tạo CloudWatch Alarm. Nếu bạn vô tình chọn chu kỳ quét là 1 phút (Detailed Monitoring) thay vì 5 phút (Standard), AWS sẽ tính thêm phí Detailed Monitoring (khoảng $2.10/tháng/instance) + phí Custom Metrics.

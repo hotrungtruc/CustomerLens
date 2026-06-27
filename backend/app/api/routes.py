@@ -12,13 +12,9 @@ import numpy as np
 from fastapi import (APIRouter, Header, HTTPException, Request, WebSocket,
                      WebSocketDisconnect)
 from fastapi.responses import Response
-import os
 
 # Session store mapping hex tokens to user dicts
 ACTIVE_SESSIONS = {}
-
-LAST_ACTIVE_TIME = time.time()
-AUTO_SHUTDOWN_TIMEOUT_SECONDS = 300  # 5 minutes
 
 
 def get_user_from_token(authorization: str | None = None):
@@ -207,27 +203,13 @@ def _run_cpu_bound(func, *args, **kwargs):
     return future.result()
 
 
-def _auto_shutdown_loop():
-    global LAST_ACTIVE_TIME
-    while True:
-        time.sleep(60)
-        idle_time = time.time() - LAST_ACTIVE_TIME
-        if idle_time > AUTO_SHUTDOWN_TIMEOUT_SECONDS:
-            print(f"System idle for {idle_time}s. Executing auto-shutdown to save costs.")
-            # Trigger EC2 auto shutdown
-            os.system("sudo shutdown -h now")
-
 def init_models(ai_executor: ThreadPoolExecutor | None = None):
-    global embedder, cpu_executor, LAST_ACTIVE_TIME
-    LAST_ACTIVE_TIME = time.time()
+    global embedder, cpu_executor
     embedder = InsightEmbedder()
     cpu_executor = ai_executor
 
     # Initialize default camera state
     get_camera_state("default")
-    
-    # Start auto-shutdown background thread
-    threading.Thread(target=_auto_shutdown_loop, daemon=True).start()
 
 
 def __decode_encodings(payload):
@@ -789,9 +771,6 @@ def api_check_in_by_id(customer_id: str):
 
 @router.post("/api/process_frame")
 async def api_process_frame(request: Request):
-    global LAST_ACTIVE_TIME
-    LAST_ACTIVE_TIME = time.time()
-    
     payload = await request.json()
     frame = _decode_frame_payload(payload.get("image"))
     camera_id = payload.get("camera_id")

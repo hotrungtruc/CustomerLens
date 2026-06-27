@@ -9,7 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@aws-sdk/client-ec2": "^3.1073.0",
     "@mediapipe/tasks-vision": "^0.10.35",
     "eslint-config-next": "^16.2.9",
     "lucide-react": "^1.17.0",

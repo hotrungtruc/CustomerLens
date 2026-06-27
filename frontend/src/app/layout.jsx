@@ -25,9 +25,7 @@ export default function RootLayout({ children }) {
     <html lang="vi" className={`${displayFont.variable} ${bodyFont.variable}`}>
       <body className="h-full antialiased">
         <MobileNav />
-        <ServerGate>
-          <div className="h-dvh overflow-hidden pt-12 lg:pt-0">{children}</div>
-        </ServerGate>
+        <div className="h-dvh overflow-hidden pt-12 lg:pt-0">{children}</div>
       </body>
     </html>
   );
