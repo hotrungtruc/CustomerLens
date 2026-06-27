@@ -256,6 +256,26 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        _add_missing_columns(
+            conn,
+            "customers",
+            {
+                "phone": "VARCHAR(50) DEFAULT NULL",
+                "email": "VARCHAR(255) DEFAULT NULL",
+                "occupation": "VARCHAR(255) DEFAULT NULL",
+                "registered_at": "VARCHAR(255) DEFAULT NULL",
+                "tenure": "INTEGER NOT NULL DEFAULT 0",
+                "loyalty_tier": "VARCHAR(50) NOT NULL DEFAULT 'Standard'",
+                "total_visits": "INTEGER NOT NULL DEFAULT 0",
+                "last_visit": "VARCHAR(255) NOT NULL DEFAULT '1970-01-01 00:00:00'",
+                "total_spending": "REAL NOT NULL DEFAULT 0",
+                "note": "TEXT DEFAULT NULL",
+                "customer_type": "VARCHAR(50) NOT NULL DEFAULT 'registered'",
+                "status": "VARCHAR(50) NOT NULL DEFAULT 'active'",
+                "created_at": "VARCHAR(255) DEFAULT NULL",
+                "updated_at": "VARCHAR(255) DEFAULT NULL",
+            },
+        )
         conn.commit()
         try:
             _migrate_embeddings(conn)
