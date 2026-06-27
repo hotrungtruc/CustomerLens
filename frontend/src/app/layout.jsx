@@ -1,7 +1,7 @@
 import "./globals.css";
 import { Inter, DM_Sans } from "next/font/google";
 import MobileNav from "../components/MobileNav";
-import ServerGate from "../components/ServerGate";
+
 
 const displayFont = DM_Sans({
   subsets: ["latin"],
