@@ -85,7 +85,7 @@ export default function CameraViewer({ sessionId, compact = false, refreshInterv
       ))}
 
       {/* Connection status overlay */}
-      {status !== "live" && imageSrc && (
+      {status !== "live" && videoStream && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm">
           <span className="text-xs font-medium text-white/80">
             {status === "connecting" ? "Đang kết nối…" : "Mất kết nối"}

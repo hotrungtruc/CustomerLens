@@ -209,8 +209,8 @@ export function useCamera(sessionId) {
 
         const constraints = {
           video: deviceId
-            ? { deviceId: { exact: deviceId } }
-            : { facingMode: "user" },
+            ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, frameRate: { ideal: 60 } }
+            : { facingMode: "user", width: { ideal: 1280 }, frameRate: { ideal: 60 } },
           audio: false,
         };
 
