@@ -40,7 +40,7 @@ services:
     container_name: faceai_redis
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"
+      - "0.0.0.0:6379:6379"
     volumes:
       - redis_data:/data
     mem_limit: 100m
