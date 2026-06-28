@@ -490,14 +490,20 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
     r = await get_redis()
     pubsub = r.pubsub()
     await pubsub.subscribe(f"camera_results_{session_id}")
+    await pubsub.subscribe(f"webrtc_signaling_{session_id}")
 
     async def reader():
         async for message in pubsub.listen():
             if message["type"] == "message":
                 try:
+                    channel = message["channel"].decode("utf-8")
                     data = json.loads(message["data"])
-                    state.latest_customers_payload = data.get("customers", [])
-                    await websocket.send_json(data)
+                    if channel == f"camera_results_{session_id}":
+                        state.latest_customers_payload = data.get("customers", [])
+                        await websocket.send_json(data)
+                    elif channel == f"webrtc_signaling_{session_id}":
+                        if data.get("sender") == "admin":
+                            await websocket.send_json(data)
                 except Exception:
                     pass
 
@@ -506,27 +512,37 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
     try:
         while True:
             try:
-                data = await websocket.receive_bytes()
+                msg = await websocket.receive()
             except Exception:
                 break
 
-            if data:
-                state.latest_jpeg = bytes(data)
-                state.last_frame_time = time.time()
-                
-                opeid = str(uuid.uuid4())
-                meta_dict = {
-                    "opeid": opeid,
-                    "camera_id": session_id,
-                    "timestamp": datetime.now().isoformat()
-                }
-                meta_json = json.dumps(meta_dict).encode("utf-8")
-                meta_len = len(meta_json).to_bytes(4, byteorder="big")
-                
-                packed_payload = meta_len + meta_json + bytes(data)
-                
-                await r.lpush(f"camera_frames_{session_id}", packed_payload)
-                await r.ltrim(f"camera_frames_{session_id}", 0, 10)
+            if "bytes" in msg:
+                data = msg["bytes"]
+                if data:
+                    state.latest_jpeg = bytes(data)
+                    state.last_frame_time = time.time()
+                    
+                    opeid = str(uuid.uuid4())
+                    meta_dict = {
+                        "opeid": opeid,
+                        "camera_id": session_id,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    meta_json = json.dumps(meta_dict).encode("utf-8")
+                    meta_len = len(meta_json).to_bytes(4, byteorder="big")
+                    
+                    packed_payload = meta_len + meta_json + bytes(data)
+                    
+                    await r.lpush(f"camera_frames_{session_id}", packed_payload)
+                    await r.ltrim(f"camera_frames_{session_id}", 0, 10)
+            elif "text" in msg:
+                try:
+                    text_data = msg["text"]
+                    parsed = json.loads(text_data)
+                    parsed["sender"] = "camera"
+                    await r.publish(f"webrtc_signaling_{session_id}", json.dumps(parsed))
+                except Exception:
+                    pass
     except WebSocketDisconnect:
         pass
     finally:
@@ -576,6 +592,23 @@ async def websocket_observe(websocket: WebSocket, session_id: str):
     r = await get_redis()
     pubsub = r.pubsub()
     await pubsub.subscribe(f"camera_results_{session_id}")
+    await pubsub.subscribe(f"webrtc_signaling_{session_id}")
+
+    async def reader():
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                try:
+                    channel = message["channel"].decode("utf-8")
+                    data = json.loads(message["data"])
+                    if channel == f"camera_results_{session_id}":
+                        await websocket.send_json(data)
+                    elif channel == f"webrtc_signaling_{session_id}":
+                        if data.get("sender") == "camera":
+                            await websocket.send_json(data)
+                except Exception:
+                    pass
+
+    reader_task = asyncio.create_task(reader())
 
     try:
         # Send initial state
@@ -586,14 +619,16 @@ async def websocket_observe(websocket: WebSocket, session_id: str):
                 "height": FRAME_HEIGHT,
             },
         })
-        async for message in pubsub.listen():
-            if message["type"] == "message":
-                try:
-                    data = json.loads(message["data"])
-                    await websocket.send_json(data)
-                except Exception:
-                    pass
+        while True:
+            try:
+                msg = await websocket.receive_text()
+                parsed = json.loads(msg)
+                parsed["sender"] = "admin"
+                await r.publish(f"webrtc_signaling_{session_id}", json.dumps(parsed))
+            except Exception:
+                break
     except WebSocketDisconnect:
         pass
     finally:
+        reader_task.cancel()
         await pubsub.unsubscribe()

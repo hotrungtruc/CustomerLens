@@ -48,6 +48,7 @@ export function useCamera(sessionId) {
   const sendingRef = useRef(false);
   const reconnectRef = useRef(null);
   const skipNextDeviceStartRef = useRef(false);
+  const peerConnectionsRef = useRef({});
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -68,13 +69,60 @@ export function useCamera(sessionId) {
       if (mountedRef.current) setWsStatus("live");
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       if (!mountedRef.current) return;
       try {
         const data = JSON.parse(event.data);
-        if (data.frame_size?.width) setFrameSize(data.frame_size);
-        setCustomers(data.customers ?? []);
-      } catch (_) {}
+        
+        // Handle AI Tracking Data
+        if (data.customers) {
+          if (data.frame_size?.width) setFrameSize(data.frame_size);
+          setCustomers(data.customers);
+          return;
+        }
+        
+        // Handle WebRTC Signaling
+        if (data.type === "webrtc_offer") {
+          const adminId = data.admin_id;
+          const pc = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+          });
+          peerConnectionsRef.current[adminId] = pc;
+          
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => {
+              pc.addTrack(track, streamRef.current);
+            });
+          }
+          
+          pc.onicecandidate = (e) => {
+            if (e.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: "webrtc_ice",
+                admin_id: adminId,
+                candidate: e.candidate
+              }));
+            }
+          };
+          
+          await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          
+          wsRef.current.send(JSON.stringify({
+            type: "webrtc_answer",
+            admin_id: adminId,
+            sdp: answer
+          }));
+        } else if (data.type === "webrtc_ice" && data.admin_id) {
+          const pc = peerConnectionsRef.current[data.admin_id];
+          if (pc && data.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        }
+      } catch (e) {
+        console.error("WS Message Error", e);
+      }
     };
 
     ws.onerror = () => {
@@ -143,6 +191,10 @@ export function useCamera(sessionId) {
     timerRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    
+    // Close all WebRTC connections
+    Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
+    peerConnectionsRef.current = {};
   }, []);
 
   const startCamera = useCallback(

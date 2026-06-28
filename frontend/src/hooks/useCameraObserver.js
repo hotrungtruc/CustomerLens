@@ -21,16 +21,20 @@ function getObserveWsUrl(sessionId) {
 }
 
 /**
- * useCameraObserver — read-only WebSocket that receives annotations
- * from a remote camera session without sending any frames.
+ * useCameraObserver — read-only WebSocket + WebRTC that receives annotations
+ * and WebRTC video stream from a remote camera session.
  */
 export function useCameraObserver(sessionId) {
   const [customers, setCustomers] = useState([]);
   const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
   const [status, setStatus] = useState("connecting");
+  const [videoStream, setVideoStream] = useState(null);
+  
   const wsRef = useRef(null);
+  const pcRef = useRef(null);
   const mountedRef = useRef(true);
   const reconnectRef = useRef(null);
+  const adminIdRef = useRef(crypto.randomUUID());
 
   const connect = useCallback(() => {
     if (!mountedRef.current || !sessionId) return;
@@ -39,16 +43,70 @@ export function useCameraObserver(sessionId) {
     wsRef.current = ws;
     setStatus("connecting");
 
-    ws.onopen = () => {
-      if (mountedRef.current) setStatus("live");
+    ws.onopen = async () => {
+      if (!mountedRef.current) return;
+      setStatus("live");
+      
+      // Initialize WebRTC on WS open
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+      pcRef.current = pc;
+      
+      pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          setVideoStream(event.streams[0]);
+        }
+      };
+      
+      pc.onicecandidate = (e) => {
+        if (e.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: "webrtc_ice",
+            candidate: e.candidate
+          }));
+        }
+      };
+      
+      // Create Offer
+      try {
+        // Add a transceiver to force receiving video
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        ws.send(JSON.stringify({
+          type: "webrtc_offer",
+          sdp: offer
+        }));
+      } catch (err) {
+        console.error("Error creating WebRTC offer", err);
+      }
     };
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       if (!mountedRef.current) return;
       try {
         const data = JSON.parse(event.data);
-        if (data.frame_size?.width) setFrameSize(data.frame_size);
-        setCustomers(data.customers ?? []);
+        
+        // Handle AI Tracking Data
+        if (data.customers) {
+          if (data.frame_size?.width) setFrameSize(data.frame_size);
+          setCustomers(data.customers);
+          return;
+        }
+        
+        // Handle WebRTC Signaling from Camera
+        if (data.type === "webrtc_answer" && data.admin_id === adminIdRef.current) {
+          const pc = pcRef.current;
+          if (pc && pc.signalingState !== "stable") {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+          }
+        } else if (data.type === "webrtc_ice" && data.admin_id === adminIdRef.current) {
+          const pc = pcRef.current;
+          if (pc && data.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        }
       } catch (_) {}
     };
 
@@ -59,6 +117,9 @@ export function useCameraObserver(sessionId) {
     ws.onclose = () => {
       if (!mountedRef.current) return;
       setStatus("disconnected");
+      setVideoStream(null);
+      pcRef.current?.close();
+      pcRef.current = null;
       reconnectRef.current = setTimeout(connect, 3000);
     };
   }, [sessionId]);
@@ -69,9 +130,10 @@ export function useCameraObserver(sessionId) {
     return () => {
       mountedRef.current = false;
       wsRef.current?.close();
+      pcRef.current?.close();
       clearTimeout(reconnectRef.current);
     };
   }, [connect]);
 
-  return { customers, frameSize, status };
+  return { customers, frameSize, status, videoStream };
 }

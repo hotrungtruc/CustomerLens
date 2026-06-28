@@ -13,48 +13,17 @@ import { API_BASE_URL } from "../services/api";
  * the local webcam.
  */
 export default function CameraViewer({ sessionId, compact = false, refreshInterval = 500 }) {
-  const imgRef = useRef(null);
-  const { customers, frameSize, status } = useCameraObserver(sessionId);
-  const [imageSrc, setImageSrc] = useState(null);
+  const { customers, frameSize, status, videoStream } = useCameraObserver(sessionId);
+  const videoRef = useRef(null);
 
-  // Poll for snapshot frames
+  // Poll for snapshot frames - REMOVED! We now use WebRTC videoStream.
+
+  // Attach WebRTC stream to video element
   useEffect(() => {
-    if (!sessionId) return;
-    let active = true;
-    let fetching = false;
-    const url = `${API_BASE_URL}/api/camera_snapshot/${encodeURIComponent(sessionId)}`;
-
-    async function fetchFrame() {
-      if (fetching) {
-        if (active) timer = setTimeout(fetchFrame, refreshInterval);
-        return;
-      }
-      fetching = true;
-      try {
-        const res = await fetch(url);
-        if (res.ok && active) {
-          const blob = await res.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          setImageSrc((prev) => {
-            if (prev) URL.revokeObjectURL(prev);
-            return objectUrl;
-          });
-        }
-      } catch (_) {}
-      fetching = false;
-      if (active) timer = setTimeout(fetchFrame, refreshInterval);
+    if (videoRef.current && videoStream) {
+      videoRef.current.srcObject = videoStream;
     }
-
-    let timer = setTimeout(fetchFrame, 0);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-      setImageSrc((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-    };
-  }, [sessionId, refreshInterval]);
+  }, [videoStream]);
 
   // Build bounding boxes from observer annotations
   const boxes = customers
@@ -77,13 +46,13 @@ export default function CameraViewer({ sessionId, compact = false, refreshInterv
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-950">
       {/* Video frame */}
-      {imageSrc ? (
-        <img
-          ref={imgRef}
-          src={imageSrc}
-          alt={`Camera ${sessionId}`}
+      {videoStream ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
           className="h-full w-full object-cover"
-          draggable={false}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center">
@@ -98,7 +67,7 @@ export default function CameraViewer({ sessionId, compact = false, refreshInterv
       {boxes.map((box) => (
         <div
           key={box.track_id}
-          className="absolute rounded-md border-2 border-white/70 pointer-events-none transition-all duration-150"
+          className="absolute rounded-md border-2 border-white/70 pointer-events-none transition-all duration-300 ease-linear"
           style={{
             left: `${box.left}%`,
             top: `${box.top}%`,
