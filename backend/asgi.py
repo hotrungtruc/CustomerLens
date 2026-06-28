@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from app.api.routes import camera_feed, init_models, router
+from app.api.routes import init_models, router
 from config import CORS_ORIGINS
 
 
@@ -51,26 +51,6 @@ def shutdown_event():
     if ai_executor:
         ai_executor.shutdown(wait=False)
         ai_executor = None
-
-
-async def _async_frame_generator():
-    gen = camera_feed()
-    loop = asyncio.get_running_loop()
-    while True:
-        try:
-            frame = await loop.run_in_executor(stream_executor, next, gen)
-        except StopIteration:
-            break
-        except Exception:
-            break
-        else:
-            yield frame
-            await asyncio.sleep(0.01)
-
-
-@app.get("/video_feed")
-def video_feed():
-    return StreamingResponse(_async_frame_generator(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 
