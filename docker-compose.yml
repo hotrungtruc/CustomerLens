@@ -32,3 +32,37 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    container_name: faceai_redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    mem_limit: 100m
+
+  ai_worker:
+    image: face-recognition-system-backend:latest
+    container_name: faceai_worker
+    restart: unless-stopped
+    command: python app/ai_worker.py
+    volumes:
+      - /srv/faceai/models:/app/models:ro
+      - /srv/faceai/data:/app/data
+      - ./backend/config.py:/app/config.py:ro
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OMP_NUM_THREADS=2
+      - OPENBLAS_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:

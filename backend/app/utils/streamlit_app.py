@@ -8,7 +8,7 @@ from app.core.guest_tracking import GuestTrackManager
 from app.core.insight_embedding import InsightEmbedder
 from app.db.connection import (get_customer_info, get_db_connection,
                                update_visit_record)
-from config import (ENCODE_FILE, GUEST_CACHE_FILE, GUEST_CREATION_BUFFER_SIZE,
+from config import (GUEST_CREATION_BUFFER_SIZE,
                     IMAGES_DIR, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE,
                     SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE,
                     TRACK_IOU_THRESHOLD)
@@ -24,8 +24,6 @@ st.set_page_config(
 def load_models():
     embedder = InsightEmbedder()
     track_manager = GuestTrackManager(
-        ENCODE_FILE,
-        guest_cache_file=GUEST_CACHE_FILE,
         buffer_size=TRACK_BUFFER_SIZE,
         guest_creation_buffer_size=GUEST_CREATION_BUFFER_SIZE,
         similarity_threshold=SIMILARITY_THRESHOLD,

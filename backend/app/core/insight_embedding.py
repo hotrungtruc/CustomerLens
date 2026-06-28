@@ -378,6 +378,67 @@ class InsightEmbedder:
 
         return normalize_embedding(embedding)
 
+    def get_batch_embeddings(self, image_bgr, list_of_landmarks):
+        """Batch extraction of face embeddings."""
+        if not list_of_landmarks:
+            return []
+
+        blobs = []
+        valid_indices = []
+
+        input_shape = self.recognizer.get_inputs()[0].shape
+        is_nhwc = input_shape[-1] == 3 or input_shape[-1] == "3"
+        is_adaface = "adaface" in getattr(self, "_model_name", "").lower()
+        swap_rb = not is_adaface
+
+        for i, landmarks in enumerate(list_of_landmarks):
+            matrix, _ = cv2.estimateAffinePartial2D(
+                landmarks.astype(np.float32),
+                ARC_FACE_TEMPLATE,
+                method=cv2.LMEDS,
+            )
+            if matrix is None:
+                continue
+
+            aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
+
+            if is_nhwc:
+                aligned_rgb = cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)
+                aligned_norm = (aligned_rgb.astype(np.float32) - 127.5) / 127.5
+                blob = np.expand_dims(aligned_norm, axis=0)
+            else:
+                blob = cv2.dnn.blobFromImage(
+                    aligned,
+                    1.0 / 127.5,
+                    FACE_SIZE,
+                    (127.5, 127.5, 127.5),
+                    swapRB=swap_rb,
+                )
+
+            blobs.append(blob)
+            valid_indices.append(i)
+
+        if not blobs:
+            return [None] * len(list_of_landmarks)
+
+        input_data = np.vstack(blobs)
+        
+        io_binding = self.recognizer.io_binding()
+        output_name = self.recognizer.get_outputs()[0].name
+
+        io_binding.bind_cpu_input(self.recognizer_input, input_data)
+        io_binding.bind_output(output_name)
+
+        self.recognizer.run_with_iobinding(io_binding)
+        outputs = io_binding.copy_outputs_to_cpu()[0]
+
+        results = [None] * len(list_of_landmarks)
+        for idx, out_emb in zip(valid_indices, outputs):
+            results[idx] = normalize_embedding(out_emb)
+
+        return results
+
+
 
 def require_file(path):
     if not os.path.exists(path):

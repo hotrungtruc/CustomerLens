@@ -141,8 +141,6 @@ class TrackState:
 class GuestTrackManager:
     def __init__(
         self,
-        encode_file,
-        guest_cache_file=None,
         buffer_size=3,
         guest_creation_buffer_size=8,
         similarity_threshold=0.38,
@@ -151,8 +149,6 @@ class GuestTrackManager:
         min_detection_score=0.85,
         guest_prefix="GUEST",
     ):
-        self.encode_file = Path(encode_file)
-        self.guest_cache_file = Path(guest_cache_file) if guest_cache_file else None
         self.buffer_size = buffer_size
         self.guest_creation_buffer_size = guest_creation_buffer_size
         self.similarity_threshold = similarity_threshold
@@ -175,65 +171,33 @@ class GuestTrackManager:
         self.load_known_embeddings()
 
     def load_known_embeddings(self):
-        if not self.encode_file.exists():
-            self.known_embeddings = []
-            self.known_ids = []
-            return
-
         try:
-            if self.encode_file.stat().st_size == 0:
-                raise EOFError("empty encodings file")
+            from app.db.connection import get_db_connection
+            from app.db.vector_search import fetch_all_embeddings_from_db
 
-            with open(self.encode_file, "rb") as file:
-                payload = pickle.load(file)
-        except (EOFError, pickle.UnpicklingError, OSError, ValueError):
-            self.known_embeddings = []
-            self.known_ids = []
-            return
-
-        if isinstance(payload, (list, tuple)) and len(payload) == 2:
-            self.known_embeddings, self.known_ids = payload
-        else:
-            self.known_embeddings = []
-            self.known_ids = []
-
-        # Attempt to load guest cache if available
-        if self.guest_cache_file and self.guest_cache_file.exists():
+            conn = get_db_connection()
             try:
-                if self.guest_cache_file.stat().st_size == 0:
-                    raise EOFError("empty guest cache file")
-                with open(self.guest_cache_file, "rb") as gf:
-                    gpayload = pickle.load(gf)
-                if isinstance(gpayload, (list, tuple)) and len(gpayload) == 2:
-                    self.guest_embeddings, self.guest_ids = gpayload
-            except (EOFError, pickle.UnpicklingError, OSError, ValueError):
-                self.guest_embeddings = []
-                self.guest_ids = []
+                (
+                    self.known_embeddings,
+                    self.known_ids,
+                    self.guest_embeddings,
+                    self.guest_ids,
+                ) = fetch_all_embeddings_from_db(conn)
+            finally:
+                conn.close()
+        except Exception:
+            self.known_embeddings = []
+            self.known_ids = []
+            self.guest_embeddings = []
+            self.guest_ids = []
 
     def _persist_known_embeddings_async(self):
-        def worker():
-            with self._save_lock:
-                if self.guest_cache_file is None:
-                    return
-
-                self.guest_cache_file.parent.mkdir(parents=True, exist_ok=True)
-                payload = [self.guest_embeddings, self.guest_ids]
-                with open(self.guest_cache_file, "wb") as file:
-                    pickle.dump(payload, file)
-
-        thread = threading.Thread(target=worker, daemon=True)
-        thread.start()
+        # No longer used (stateless backend)
+        pass
 
     def persist_known_embeddings(self):
-        """Synchronously persist `self.known_embeddings` + `self.known_ids` to the main encode file."""
-        with self._save_lock:
-            try:
-                self.encode_file.parent.mkdir(parents=True, exist_ok=True)
-                payload = [self.known_embeddings, self.known_ids]
-                with open(self.encode_file, "wb") as f:
-                    pickle.dump(payload, f)
-            except Exception:
-                pass
+        # No longer used (stateless backend)
+        pass
 
     def promote_guest(self, guest_id: str, new_id: str) -> bool:
         """Promote a guest entry (guest_id) into the known encodings with new_id.
@@ -252,10 +216,8 @@ class GuestTrackManager:
                 self.known_embeddings.append(emb)
                 self.known_ids.append(new_id)
 
-                # persist both: main encodings and updated guest cache
-                self.persist_known_embeddings()
-                # update guest cache file async
-                self._persist_known_embeddings_async()
+                # Persist to local .p files is removed (stateless backend)
+
 
                 # Also write promoted embedding to pgvector
                 if self.use_pgvector:
@@ -294,7 +256,6 @@ class GuestTrackManager:
         self.guest_embeddings.append(normalized)
         self.guest_ids.append(guest_id)
         self._insert_guest_into_main_db_async(guest_id, normalized)
-        self._persist_known_embeddings_async()
         return guest_id
 
     def _insert_guest_into_main_db_async(self, guest_id, embedding=None):
@@ -359,37 +320,7 @@ class GuestTrackManager:
         if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
             return existing_customer_id
 
-        # --- LAZY EMBEDDING EXTRACTION (ASYNC) ---
-        target_len = max(self.buffer_size, self.guest_creation_buffer_size)
-        if (
-            existing_customer_id is None
-            and len(track_state.embeddings) < target_len
-        ):
-            if (
-                record.get("embedding") is None
-                and quality_ok
-                and frame is not None
-                and embedder is not None
-                and "landmark" in record
-            ):
-                if not getattr(track_state, "is_extracting", False):
-                    track_state.is_extracting = True
-
-                def _extract():
-                    try:
-                        emb = embedder.get_embedding(frame, record["landmark"])
-                        norm_emb = normalize_embedding(emb)
-                        track_state.embeddings.append(norm_emb)
-                        # Use the guest_quality_ok calculated by the embedder
-                        is_g_ok = record.get("guest_quality_ok", False)
-                        if is_g_ok:
-                            track_state.guest_embeddings.append(norm_emb)
-                    except Exception as e:
-                        logger.warning("Lazy embedding async error: %s", e)
-                    finally:
-                        track_state.is_extracting = False
-
-                threading.Thread(target=_extract, daemon=True).start()
+        # (Lazy extraction removed. Batch extraction is done before calling this)
 
         embedding = record.get("embedding")
 
@@ -680,9 +611,14 @@ class GuestTrackManager:
             else:
                 unmatched_tracks_final = list(unmatched_tracks)
 
-            # 5. Process matches and update states
+            # 5. Update states and collect batch embedding requests
             all_matches = matched_1 + matched_2
             matched_detections = {}
+
+            batch_landmarks = []
+            batch_records = []
+            batch_tracks = []
+            target_len = max(self.buffer_size, self.guest_creation_buffer_size)
 
             for track, det in all_matches:
                 updated_box = track.kf.update(det["bbox"])
@@ -691,10 +627,20 @@ class GuestTrackManager:
                 track.last_seen_frame = self.frame_index
                 track.last_seen_at = now
 
-                resolved_id = self._recognize_face(track, det, now, frame, embedder)
-                matched_detections[id(det)] = (track.track_id, resolved_id)
+                quality_ok = bool(det.get("quality_ok", True))
+                if (
+                    track.resolved_customer_id is None
+                    and len(track.embeddings) < target_len
+                    and det.get("embedding") is None
+                    and quality_ok
+                    and "landmark" in det
+                ):
+                    batch_landmarks.append(det["landmark"])
+                    batch_records.append(det)
+                    batch_tracks.append(track)
 
             # 6. Initialize new tracks for unmatched high-score detections
+            new_tracks_to_process = []
             for det in unmatched_high_dets:
                 x1, y1, x2, y2 = det["bbox"]
                 w, h = x2 - x1, y2 - y1
@@ -713,9 +659,39 @@ class GuestTrackManager:
                     last_seen_at=now,
                 )
                 self.tracks[track_id] = new_track
+                new_tracks_to_process.append((new_track, det))
 
+                quality_ok = bool(det.get("quality_ok", True))
+                if (
+                    new_track.resolved_customer_id is None
+                    and len(new_track.embeddings) < target_len
+                    and det.get("embedding") is None
+                    and quality_ok
+                    and "landmark" in det
+                ):
+                    batch_landmarks.append(det["landmark"])
+                    batch_records.append(det)
+                    batch_tracks.append(new_track)
+
+            # --- BATCH EMBEDDING EXTRACTION ---
+            if batch_landmarks and frame is not None and embedder is not None:
+                try:
+                    batch_embs = embedder.get_batch_embeddings(frame, batch_landmarks)
+                    for det, track, emb in zip(batch_records, batch_tracks, batch_embs):
+                        if emb is not None:
+                            det["embedding"] = emb
+                except Exception as e:
+                    import logging
+                    logging.warning(f"Batch extraction error: {e}")
+
+            # Now sequentially call _recognize_face
+            for track, det in all_matches:
+                resolved_id = self._recognize_face(track, det, now, frame, embedder)
+                matched_detections[id(det)] = (track.track_id, resolved_id)
+
+            for new_track, det in new_tracks_to_process:
                 resolved_id = self._recognize_face(new_track, det, now, frame, embedder)
-                matched_detections[id(det)] = (track_id, resolved_id)
+                matched_detections[id(det)] = (new_track.track_id, resolved_id)
 
             # 7. Set unmatched tracks as lost
             for track in unmatched_tracks_final:

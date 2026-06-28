@@ -256,6 +256,17 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS recognize_logs (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                opeid UUID NOT NULL,
+                camera_id VARCHAR(255) NOT NULL,
+                customer_id VARCHAR(255) DEFAULT NULL,
+                track_id INTEGER DEFAULT NULL,
+                bbox JSONB DEFAULT NULL,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
         _add_missing_columns(
             conn,
             "customers",
@@ -437,6 +448,18 @@ def ensure_schema(conn):
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (order_id) REFERENCES orders(order_id),
             FOREIGN KEY (product_id) REFERENCES products(product_id)
+        )
+        """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS recognize_logs (
+            id TEXT PRIMARY KEY,
+            opeid TEXT NOT NULL,
+            camera_id TEXT NOT NULL,
+            customer_id TEXT DEFAULT NULL,
+            track_id INTEGER DEFAULT NULL,
+            bbox TEXT DEFAULT NULL,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
 
@@ -773,6 +796,82 @@ def update_attendance(
         (int(next_total or 0), event_time, customer_id),
     )
     conn.commit()
+
+
+def bulk_insert_recognize_logs(conn, logs):
+    """
+    Bulk insert recognize logs.
+    logs should be a list of dictionaries with keys:
+    opeid, camera_id, customer_id, track_id, bbox, timestamp
+    """
+    if not logs:
+        return
+
+    import json
+    import uuid
+    from datetime import datetime
+
+    if DB_TYPE == "postgresql":
+        # Ensure we have the underlying psycopg2 connection
+        pg_conn = conn.conn
+        cursor = pg_conn.cursor()
+        query = """
+            INSERT INTO recognize_logs (id, opeid, camera_id, customer_id, track_id, bbox, timestamp)
+            VALUES %s
+        """
+        values = []
+        for log in logs:
+            bbox_val = json.dumps(log.get("bbox")) if log.get("bbox") else None
+            ts = log.get("timestamp", datetime.now())
+            values.append(
+                (
+                    str(uuid.uuid4()),
+                    str(log["opeid"]),
+                    str(log["camera_id"]),
+                    str(log["customer_id"]) if log.get("customer_id") else None,
+                    int(log["track_id"]) if log.get("track_id") is not None else None,
+                    bbox_val,
+                    ts,
+                )
+            )
+        try:
+            psycopg2.extras.execute_values(cursor, query, values)
+            pg_conn.commit()
+        except Exception as e:
+            pg_conn.rollback()
+            print(f"Bulk insert recognize logs failed: {e}")
+        finally:
+            cursor.close()
+    else:
+        # SQLite
+        query = """
+            INSERT INTO recognize_logs (id, opeid, camera_id, customer_id, track_id, bbox, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        values = []
+        for log in logs:
+            bbox_val = json.dumps(log.get("bbox")) if log.get("bbox") else None
+            ts = log.get("timestamp", datetime.now().isoformat())
+            if isinstance(ts, datetime):
+                ts = ts.isoformat()
+            values.append(
+                (
+                    str(uuid.uuid4()),
+                    str(log["opeid"]),
+                    str(log["camera_id"]),
+                    str(log["customer_id"]) if log.get("customer_id") else None,
+                    int(log["track_id"]) if log.get("track_id") is not None else None,
+                    bbox_val,
+                    ts,
+                )
+            )
+        try:
+            cursor = conn.conn.cursor()
+            cursor.executemany(query, values)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"Bulk insert recognize logs failed: {e}")
 
 
 def upsert_customer(

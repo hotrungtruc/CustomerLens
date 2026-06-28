@@ -77,3 +77,52 @@ def insert_embedding_with_vector(
         """,
         (customer_id, face_embedding_blob, dim, model_name, vec_str),
     )
+
+
+def fetch_all_embeddings_from_db(conn):
+    """Fetch all face embeddings from the database.
+
+    Returns four lists:
+        known_embeddings, known_ids, guest_embeddings, guest_ids
+    """
+    if DB_TYPE != "postgresql":
+        return [], [], [], []
+
+    cursor = conn.cursor()
+    # Fetch customer_id and the vector representation as text (e.g. '[0.1, 0.2, ...]')
+    cursor.execute(
+        """
+        SELECT customer_id, embedding::text AS emb_text
+        FROM customer_embeddings
+        WHERE embedding IS NOT NULL
+        """
+    )
+    rows = cursor.fetchall()
+
+    known_embeddings = []
+    known_ids = []
+    guest_embeddings = []
+    guest_ids = []
+
+    for row in rows:
+        c_id = row["customer_id"]
+        emb_text = row["emb_text"]
+
+        if not emb_text or not emb_text.startswith("[") or not emb_text.endswith("]"):
+            continue
+
+        try:
+            # Parse the text string back to a list of floats
+            emb_list = [float(x) for x in emb_text[1:-1].split(",")]
+            emb_np = np.array(emb_list, dtype=np.float32)
+
+            if str(c_id).startswith("GUEST_"):
+                guest_embeddings.append(emb_np)
+                guest_ids.append(c_id)
+            else:
+                known_embeddings.append(emb_np)
+                known_ids.append(c_id)
+        except Exception:
+            continue
+
+    return known_embeddings, known_ids, guest_embeddings, guest_ids
