@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     ports:
       # Bind only to localhost so Nginx is the only entry point
-      - "127.0.0.1:8000:8000"
+      - "0.0.0.0:8000:8000"
     volumes:
       # Persistent data outside the container - survives rebuilds
       - /srv/faceai/models:/app/models:ro
