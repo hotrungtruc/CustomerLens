@@ -866,7 +866,7 @@ def bulk_insert_recognize_logs(conn, logs):
                 )
             )
         try:
-            cursor = conn.conn.cursor()
+            cursor = conn.cursor()
             cursor.executemany(query, values)
             conn.commit()
         except Exception as e:
