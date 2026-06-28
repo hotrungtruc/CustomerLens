@@ -290,7 +290,7 @@ export default function DashboardPage() {
   // backend CameraState instances and never share annotations.
   const sessionIdRef = useRef(null);
   if (!sessionIdRef.current && typeof window !== "undefined") {
-    sessionIdRef.current = "default";
+    sessionIdRef.current = "camera_" + Math.random().toString(36).substring(2, 9);
   }
   const sessionId = sessionIdRef.current || "default";
 
