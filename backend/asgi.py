@@ -8,7 +8,20 @@ from app.api.routes import router
 from config import CORS_ORIGINS
 
 
-app = FastAPI()
+from contextlib import asynccontextmanager
+from app.db.connection import get_db_connection, ensure_schema
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Initialize database schema on startup
+    conn = get_db_connection()
+    try:
+        ensure_schema(conn)
+    finally:
+        conn.close()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

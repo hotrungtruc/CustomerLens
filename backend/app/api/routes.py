@@ -604,9 +604,10 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
                         # Process in thread to avoid blocking asyncio loop
                         customers = await asyncio.to_thread(process_tracking_and_db, data)
                         state.latest_customers_payload = customers
+                        frame_size = data.get("frame_size", {"width": FRAME_WIDTH, "height": FRAME_HEIGHT})
                         pubsub_message = {
                             "customers": customers,
-                            "frame_size": {"width": FRAME_WIDTH, "height": FRAME_HEIGHT}
+                            "frame_size": frame_size
                         }
                         await websocket.send_json(pubsub_message)
                     elif channel == f"webrtc_signaling_{session_id}":

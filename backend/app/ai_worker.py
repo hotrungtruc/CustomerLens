@@ -117,7 +117,8 @@ def main():
                 "opeid": opeid,
                 "camera_id": camera_id,
                 "timestamp": data.get("timestamp"),
-                "face_records": face_records
+                "face_records": face_records,
+                "frame_size": {"width": frame.shape[1], "height": frame.shape[0]}
             }
             redis_client.publish(pubsub_channel, json.dumps(payload))
             
