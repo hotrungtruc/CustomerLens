@@ -1,5 +1,8 @@
 services:
   backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     image: face-recognition-system-backend:latest
     container_name: faceai_backend
     restart: unless-stopped
