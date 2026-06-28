@@ -31,10 +31,10 @@ def main():
     # Initialize Models
     embedder = InsightEmbedder()
     
-    frame_queue = "camera_frames"
+    frame_queue = "camera_frames_v2"
     frame_count = 0
     
-    logger.info("Worker is ready and waiting for frames on global queue 'camera_frames'...")
+    logger.info("Worker is ready and waiting for frames on global queue 'camera_frames_v2'...")
     
     while True:
         try:

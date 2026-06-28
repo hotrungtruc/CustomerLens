@@ -644,8 +644,8 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
                     packed_payload = meta_len + meta_json + bytes(data)
                     
                     # Push to global camera_frames queue
-                    await r.lpush("camera_frames", packed_payload)
-                    await r.ltrim("camera_frames", 0, 50)
+                    await r.lpush("camera_frames_v2", packed_payload)
+                    await r.ltrim("camera_frames_v2", 0, 50)
             elif "text" in msg:
                 try:
                     text_data = msg["text"]
