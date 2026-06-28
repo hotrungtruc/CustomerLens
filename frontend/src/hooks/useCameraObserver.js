@@ -63,6 +63,7 @@ export function useCameraObserver(sessionId) {
         if (e.candidate && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: "webrtc_ice",
+            admin_id: adminIdRef.current,
             candidate: e.candidate
           }));
         }
@@ -76,6 +77,7 @@ export function useCameraObserver(sessionId) {
         await pc.setLocalDescription(offer);
         ws.send(JSON.stringify({
           type: "webrtc_offer",
+          admin_id: adminIdRef.current,
           sdp: offer
         }));
       } catch (err) {
