@@ -19,7 +19,7 @@ from fastapi.responses import Response
 ACTIVE_SESSIONS = {}
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-redis_pool = aioredis.ConnectionPool.from_url(REDIS_URL)
+redis_pool = aioredis.ConnectionPool.from_url(REDIS_URL, max_connections=200)
 
 async def get_redis():
     return aioredis.Redis(connection_pool=redis_pool)
@@ -658,7 +658,13 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
         pass
     finally:
         reader_task.cancel()
+        try:
+            await reader_task
+        except (asyncio.CancelledError, Exception):
+            pass
         await pubsub.unsubscribe()
+        await pubsub.aclose()
+        await r.aclose()
 
 @router.get("/api/active_sessions")
 def api_active_sessions():
@@ -742,4 +748,10 @@ async def websocket_observe(websocket: WebSocket, session_id: str):
         pass
     finally:
         reader_task.cancel()
+        try:
+            await reader_task
+        except (asyncio.CancelledError, Exception):
+            pass
         await pubsub.unsubscribe()
+        await pubsub.aclose()
+        await r.aclose()
