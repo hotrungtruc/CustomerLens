@@ -53,6 +53,11 @@ class InsightEmbedder:
         session_options.graph_optimization_level = (
             ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         )
+        
+        # Optimize for 2 vCPUs (EC2 instances)
+        session_options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+        session_options.intra_op_num_threads = 2
+        session_options.inter_op_num_threads = 1
         self.det_size = det_size
 
         # Try to load the recognizer model, with fallback to float model if int8 fails
