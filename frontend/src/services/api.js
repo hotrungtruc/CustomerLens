@@ -122,3 +122,31 @@ export async function fetchActiveSessions() {
   }
   return response.json();
 }
+
+export async function fetchSettings() {
+  const response = await fetch(`${API_BASE_URL}/api/settings`, {
+    headers: {
+      ...getAuthHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error("Network error");
+  }
+  return response.json();
+}
+
+export async function updateSettings(payload) {
+  const response = await fetch(`${API_BASE_URL}/api/settings`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Request failed");
+  }
+  return response.json();
+}

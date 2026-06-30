@@ -45,6 +45,7 @@ from app.db.connection import (create_or_update_customer_profile,
                                get_db_connection, update_attendance, bulk_insert_recognize_logs)
 from config import (CHECKIN_COOLDOWN_SECONDS, FRAME_HEIGHT, FRAME_WIDTH,
                     GUEST_CREATION_BUFFER_SIZE, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD)
+from app.core.settings import system_settings
 from app.core.guest_tracking import GuestTrackManager
 
 def _apply_profile_to_payload(payload: dict, info: dict):
@@ -98,6 +99,18 @@ def index():
 @router.get("/test")
 def test():
     return {"status": "ok", "message": "FastAPI backend is running"}
+
+@router.get("/api/settings")
+def get_settings():
+    system_settings.load_settings()
+    return system_settings.get_all()
+
+@router.post("/api/settings")
+async def update_settings(request: Request, authorization: str | None = Header(default=None)):
+    require_admin(authorization)
+    data = await request.json()
+    system_settings.update(data)
+    return {"status": "ok", "message": "Settings updated successfully", "settings": system_settings.get_all()}
 
 @router.post("/api/login")
 async def api_login(request: Request):
@@ -521,8 +534,7 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
     # Initialize GuestTrackManager for this session
     track_manager = GuestTrackManager(
         buffer_size=TRACK_BUFFER_SIZE,
-        guest_creation_buffer_size=GUEST_CREATION_BUFFER_SIZE,
-        similarity_threshold=SIMILARITY_THRESHOLD,
+        similarity_threshold=system_settings.get("similarity_threshold", SIMILARITY_THRESHOLD),
         iou_threshold=TRACK_IOU_THRESHOLD,
         min_bbox_size=MIN_FACE_BBOX_SIZE,
         min_detection_score=MIN_DETECTION_SCORE,

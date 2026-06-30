@@ -14,6 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.insight_embedding import InsightEmbedder
 from config import PROCESS_EVERY_N_FRAMES
+from app.core.settings import system_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("AIWorker")
@@ -48,7 +49,13 @@ def main():
             
             # It's a frame (Binary Packed)
             frame_count += 1
-            if frame_count % PROCESS_EVERY_N_FRAMES != 0:
+            
+            # Reload settings every 60 frames to check for updates
+            if frame_count % 60 == 0:
+                system_settings.load_settings()
+                
+            current_n_frames = system_settings.get("process_every_n_frames", PROCESS_EVERY_N_FRAMES)
+            if frame_count % current_n_frames != 0:
                 continue
                 
             # Unpack 4-byte length
