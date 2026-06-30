@@ -54,7 +54,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
+  const loadData = () => {
+    setLoading(true);
     fetchSettings()
       .then((data) => {
         setSettings((prev) => ({ ...prev, ...data }));
@@ -64,7 +65,15 @@ export default function SettingsPage() {
         console.error("Failed to load settings", err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadData();
   }, []);
+
+  const handleReload = () => {
+    loadData();
+  };
 
   const handleChange = (key, value) => {
     const floatKeys = [
@@ -104,19 +113,10 @@ export default function SettingsPage() {
       <div className="grid h-full w-full overflow-hidden lg:grid-cols-[64px_minmax(0,1fr)]">
         <Sidebar active="settings" />
 
-        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 bg-slate-50">
+        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 bg-slate-50 relative">
           <PageHeader
             title="Cài đặt hệ thống"
             subtitle="Cấu hình hệ thống nhận diện."
-            action={
-              <button
-                onClick={handleSave}
-                disabled={loading || saving}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 z-20 relative"
-              >
-                {saving ? "Đang lưu..." : "Lưu cài đặt"}
-              </button>
-            }
           />
 
           <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 pb-20">
@@ -272,6 +272,24 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Sticky action buttons at bottom right */}
+          <div className="absolute bottom-6 right-6 flex items-center gap-3 z-50">
+            <button
+              onClick={handleReload}
+              disabled={loading || saving}
+              className="rounded-md bg-white border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 shadow-sm disabled:opacity-50 transition-colors"
+            >
+              Hủy thay đổi
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={loading || saving}
+              className="rounded-md bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 shadow-md disabled:opacity-50 transition-colors"
+            >
+              {saving ? "Đang lưu..." : "Lưu cài đặt"}
+            </button>
           </div>
         </div>
       </div>
