@@ -754,9 +754,9 @@ class GuestTrackManager:
                         }
                     )
 
-            # Also include tracks that are currently lost but still alive (to prevent UI flickering)
+            # Also include tracks that are currently lost but recently seen (to prevent UI flickering)
             for track_id, track in self.tracks.items():
-                if track.state == "lost":
+                if track.state == "lost" and (self.frame_index - track.last_seen_frame) <= 2:
                     outputs.append(
                         {
                             "track_id": track_id,
