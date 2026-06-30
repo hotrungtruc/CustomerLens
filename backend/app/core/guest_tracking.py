@@ -754,18 +754,4 @@ class GuestTrackManager:
                         }
                     )
 
-            # Also include tracks that are currently lost but recently seen (to prevent UI flickering)
-            for track_id, track in self.tracks.items():
-                if track.state == "lost" and (self.frame_index - track.last_seen_frame) <= 2:
-                    outputs.append(
-                        {
-                            "track_id": track_id,
-                            "customer_id": track.resolved_customer_id,
-                            "bbox": track.predicted_bbox,
-                            "embedding_ready": len(track.embeddings) >= self.buffer_size,
-                            "quality_ok": False,
-                            "pending_guest": track.resolved_customer_id is None and len(track.guest_embeddings) < self.guest_creation_buffer_size,
-                        }
-                    )
-
             return outputs
