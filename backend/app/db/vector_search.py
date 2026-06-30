@@ -38,10 +38,10 @@ def search_similar_faces(
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT customer_id, 1 - (embedding <=> %s::vector) AS similarity
+        SELECT customer_id, 1 - ((embedding::halfvec) <=> %s::halfvec) AS similarity
         FROM customer_embeddings
         WHERE embedding IS NOT NULL
-        ORDER BY embedding <=> %s::vector
+        ORDER BY (embedding::halfvec) <=> %s::halfvec
         LIMIT %s
         """,
         (vec_str, vec_str, top_k),

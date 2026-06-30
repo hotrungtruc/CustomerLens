@@ -202,13 +202,19 @@ def ensure_schema(conn):
         except Exception:
             pass  # Column may already exist
 
-        # Create HNSW index for fast cosine similarity search
+        # Drop old standard vector index if it exists to save space
+        try:
+            conn.execute("DROP INDEX IF EXISTS idx_customer_embeddings_hnsw")
+        except Exception:
+            pass
+
+        # Create HNSW index for fast cosine similarity search using halfvec (float16)
         try:
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_customer_embeddings_hnsw
+                CREATE INDEX IF NOT EXISTS idx_customer_embeddings_hnsw_halfvec
                 ON customer_embeddings
-                USING hnsw (embedding vector_cosine_ops)
-                WITH (m = 16, ef_construction = 64)
+                USING hnsw ((embedding::halfvec) halfvec_cosine_ops)
+                WITH (m = 32, ef_construction = 128)
                 """)
         except Exception:
             pass  # Index may already exist
