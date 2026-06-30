@@ -622,6 +622,7 @@ async def websocket_camera(websocket: WebSocket, session_id: str):
                             "frame_size": frame_size
                         }
                         await websocket.send_json(pubsub_message)
+                        await r.publish(f"camera_results_{session_id}", json.dumps(pubsub_message))
                     elif channel == f"webrtc_signaling_{session_id}":
                         if data.get("sender") == "admin":
                             await websocket.send_json(data)
