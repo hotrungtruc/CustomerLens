@@ -44,7 +44,7 @@ DEBUG_SHOW_SIMILARITY = False
 # 0 = Rear/external camera
 # 1 = Front camera (built-in laptop camera)
 # Try both if needed
-CAMERA_INDEX = 1  # ✅ Front camera (Laptop built-in) - UPDATED
+CAMERA_INDEX = 1  # Front camera (Laptop built-in) 
 FRAME_WIDTH = 640
 FRAME_HEIGHT = 360
 FRAME_JPEG_QUALITY = 80
