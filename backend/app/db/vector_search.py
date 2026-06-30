@@ -68,15 +68,31 @@ def insert_embedding_with_vector(
     the BYTEA column while enabling HNSW search on the vector column.
     """
     vec_str = _embedding_to_pgvector_literal(embedding_np)
-    conn.execute(
-        """
-        INSERT INTO customer_embeddings (
-            customer_id, face_embedding, embedding_dim, model_name,
-            embedding, created_at, updated_at
-        ) VALUES (%s, %s, %s, %s, %s::vector, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """,
-        (customer_id, face_embedding_blob, dim, model_name, vec_str),
-    )
+    from config import DB_TYPE
+    if DB_TYPE == "postgresql":
+        # On Supabase, the table is heavily truncated (no face_embedding, embedding_dim, etc.)
+        # so we only insert the essential columns and use ON CONFLICT DO UPDATE
+        conn.execute(
+            """
+            INSERT INTO customer_embeddings (
+                customer_id, embedding, updated_at
+            ) VALUES (%s, %s::halfvec, CURRENT_TIMESTAMP)
+            ON CONFLICT (customer_id) DO UPDATE SET
+                embedding = EXCLUDED.embedding,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (customer_id, vec_str),
+        )
+    else:
+        conn.execute(
+            """
+            INSERT INTO customer_embeddings (
+                customer_id, face_embedding, embedding_dim, model_name,
+                embedding, updated_at
+            ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (customer_id, face_embedding_blob, dim, model_name, vec_str),
+        )
 
 
 def fetch_all_embeddings_from_db(conn):
