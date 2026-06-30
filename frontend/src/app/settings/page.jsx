@@ -101,8 +101,10 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await updateSettings(settings);
+      alert("Đã lưu cài đặt thành công!");
     } catch (err) {
       console.error("Failed to update settings", err);
+      alert("Lỗi khi lưu cài đặt: " + err.message);
     } finally {
       setSaving(false);
     }
