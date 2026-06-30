@@ -10,6 +10,7 @@ from app.db.connection import (ensure_schema, get_db_connection,
 from app.utils.logger import get_logger
 from config import (GUEST_MIN_DETECTION_SCORE, GUEST_MIN_FACE_BBOX_SIZE,
                     NEW_GUEST_DEBOUNCE_SECONDS, NEW_GUEST_DEBOUNCE_SIMILARITY)
+from app.core.settings import system_settings
 from db_config import USE_SUPABASE
 from scipy.optimize import linear_sum_assignment
 
@@ -331,10 +332,12 @@ class GuestTrackManager:
             w = bbox[2] - bbox[0]
             h = bbox[3] - bbox[1]
             score = record.get("score", 1.0)
+            min_bbox = system_settings.get("guest_min_face_bbox_size", GUEST_MIN_FACE_BBOX_SIZE)
+            min_score = system_settings.get("guest_min_detection_score", GUEST_MIN_DETECTION_SCORE)
             guest_quality_ok = (
-                w >= GUEST_MIN_FACE_BBOX_SIZE
-                and h >= GUEST_MIN_FACE_BBOX_SIZE
-                and score >= GUEST_MIN_DETECTION_SCORE
+                w >= min_bbox
+                and h >= min_bbox
+                and score >= min_score
                 and quality_ok
             )
         else:
@@ -492,9 +495,11 @@ class GuestTrackManager:
                         known_similarity = float(np.max(known_scores))
 
                 track_age_seconds = now - track_state.first_seen_at
-                if track_age_seconds < NEW_GUEST_DEBOUNCE_SECONDS:
+                debounce_sec = system_settings.get("new_guest_debounce_seconds", NEW_GUEST_DEBOUNCE_SECONDS)
+                debounce_sim = system_settings.get("new_guest_debounce_similarity", NEW_GUEST_DEBOUNCE_SIMILARITY)
+                if track_age_seconds < debounce_sec:
                     resolved_customer_id = None
-                elif known_similarity >= NEW_GUEST_DEBOUNCE_SIMILARITY:
+                elif known_similarity >= debounce_sim:
                     resolved_customer_id = None
                 else:
                     resolved_customer_id = self._register_guest(

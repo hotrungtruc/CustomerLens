@@ -4,26 +4,32 @@ import threading
 from pathlib import Path
 from typing import Any, Dict
 
-from config import DATA_DIR, PROCESS_EVERY_N_FRAMES, SIMILARITY_THRESHOLD
+from config import (DATA_DIR, PROCESS_EVERY_N_FRAMES, SIMILARITY_THRESHOLD,
+                    MIN_FACE_BBOX_SIZE, MIN_DETECTION_SCORE, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD,
+                    GUEST_CREATION_BUFFER_SIZE, GUEST_MIN_DETECTION_SCORE, GUEST_MIN_FACE_BBOX_SIZE,
+                    NEW_GUEST_DEBOUNCE_SECONDS, NEW_GUEST_DEBOUNCE_SIMILARITY,
+                    CHECKIN_COOLDOWN_SECONDS, CUSTOMER_PROFILE_HOLD_SECONDS)
 
 SETTINGS_FILE = DATA_DIR / "settings.json"
 _settings_lock = threading.Lock()
 
 # Default fallback settings mapping
 DEFAULT_SETTINGS = {
-    "camera_resolution": "1080p",
     "process_every_n_frames": PROCESS_EVERY_N_FRAMES,
-    "video_storage_days": 30,
-    "motion_detection": True,
-    
     "similarity_threshold": SIMILARITY_THRESHOLD,
-    "detection_mode": "Nhanh",
-    "auto_update_template": True,
-    "unknown_face_alert": True,
+    "min_face_bbox_size": MIN_FACE_BBOX_SIZE,
+    "min_detection_score": MIN_DETECTION_SCORE,
+    "track_buffer_size": TRACK_BUFFER_SIZE,
+    "track_iou_threshold": TRACK_IOU_THRESHOLD,
     
-    "vip_notification": True,
-    "email_alert": False,
-    "sound_alert": True,
+    "guest_creation_buffer_size": GUEST_CREATION_BUFFER_SIZE,
+    "guest_min_detection_score": GUEST_MIN_DETECTION_SCORE,
+    "guest_min_face_bbox_size": GUEST_MIN_FACE_BBOX_SIZE,
+    "new_guest_debounce_seconds": NEW_GUEST_DEBOUNCE_SECONDS,
+    "new_guest_debounce_similarity": NEW_GUEST_DEBOUNCE_SIMILARITY,
+    
+    "checkin_cooldown_seconds": CHECKIN_COOLDOWN_SECONDS,
+    "customer_profile_hold_seconds": CUSTOMER_PROFILE_HOLD_SECONDS,
 }
 
 class SettingsManager:

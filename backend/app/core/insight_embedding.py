@@ -10,6 +10,7 @@ from config import (FACE_LANDMARKER_TASK, GUEST_MIN_DETECTION_SCORE,
                     MEDIAPIPE_FACE_MESH_MODEL_SELECTION, MIN_DETECTION_SCORE,
                     MIN_FACE_BBOX_SIZE, RECOGNIZER_FLOAT_PATH, RECOGNIZER_PATH,
                     SIMILARITY_THRESHOLD)
+from app.core.settings import system_settings
 
 logger = get_logger(__name__)
 
@@ -203,10 +204,11 @@ class InsightEmbedder:
         width = max(0, right - left)
         height = max(0, bottom - top)
 
-        if width < GUEST_MIN_FACE_BBOX_SIZE or height < GUEST_MIN_FACE_BBOX_SIZE:
+        min_guest_bbox = system_settings.get("guest_min_face_bbox_size", GUEST_MIN_FACE_BBOX_SIZE)
+        if width < min_guest_bbox or height < min_guest_bbox:
             return False
-
-        if float(score) < GUEST_MIN_DETECTION_SCORE:
+            
+        if float(score) < system_settings.get("guest_min_detection_score", GUEST_MIN_DETECTION_SCORE):
             return False
 
         # Check if frontal face based on eye distance
