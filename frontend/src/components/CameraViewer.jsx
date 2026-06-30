@@ -67,7 +67,7 @@ export default function CameraViewer({ sessionId, compact = false, refreshInterv
       {boxes.map((box) => (
         <div
           key={box.track_id}
-          className="absolute rounded-md border-2 border-white/70 pointer-events-none transition-all duration-300 ease-linear"
+          className="absolute rounded-md border-2 border-white/70 pointer-events-none transition-all duration-75 ease-out"
           style={{
             left: `${box.left}%`,
             top: `${box.top}%`,
