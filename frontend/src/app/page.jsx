@@ -6,6 +6,7 @@ import Link from "next/link";
 import Sidebar from "../components/Sidebar";
 import PageHeader from "../components/PageHeader";
 import CameraStream from "../components/CameraStream";
+import { KeyRound, X } from "lucide-react";
 import { getTrackBadge } from "../lib/trackBadge";
 import {
   claimDeviceEnrollment,
@@ -292,8 +293,9 @@ export default function DashboardPage() {
   const [cameraIdentity, setCameraIdentity] = useState(null);
   const [identityError, setIdentityError] = useState("");
   const [pairingCode, setPairingCode] = useState("");
-  const [pairingError, setPairingError] = useState("");
   const [claimingPairing, setClaimingPairing] = useState(false);
+  const [pairingError, setPairingError] = useState("");
+  const [showPairingForm, setShowPairingForm] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -416,34 +418,54 @@ export default function DashboardPage() {
 
           <div className="flex-1 min-h-0 overflow-hidden bg-slate-950 relative mb-6">
             {cameraIdentity?.is_new || identityError ? (
-              <div className="absolute right-3 top-3 z-20 w-64 rounded-xl border border-white/15 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur">
-                <p className="text-xs font-semibold">Khôi phục camera cũ</p>
-                <p className="mt-1 text-[11px] text-slate-300">
-                  Nhập mã 6 số do quản trị viên tạo.
-                </p>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    value={pairingCode}
-                    onChange={(event) =>
-                      setPairingCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-                    }
-                    placeholder="000000"
-                    inputMode="numeric"
-                    className="min-w-0 flex-1 rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-xs tracking-[0.2em] outline-none focus:border-blue-400"
-                  />
-                  <button
-                    type="button"
-                    onClick={handlePairingClaim}
-                    disabled={pairingCode.length !== 6 || claimingPairing}
-                    className="rounded-lg bg-blue-500 px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
-                  >
-                    Ghép
-                  </button>
+              showPairingForm ? (
+                <div className="absolute right-3 bottom-3 z-20 w-64 rounded-xl border border-white/15 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold">Khôi phục camera cũ</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowPairingForm(false)}
+                      className="text-slate-400 hover:text-white"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-300">
+                    Nhập mã 6 số do quản trị viên tạo.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      value={pairingCode}
+                      onChange={(event) =>
+                        setPairingCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                      }
+                      placeholder="000000"
+                      inputMode="numeric"
+                      className="min-w-0 flex-1 rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-xs tracking-[0.2em] outline-none focus:border-blue-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={handlePairingClaim}
+                      disabled={pairingCode.length !== 6 || claimingPairing}
+                      className="rounded-lg bg-blue-500 px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
+                    >
+                      Ghép
+                    </button>
+                  </div>
+                  {pairingError ? (
+                    <p className="mt-2 text-[11px] text-rose-300">{pairingError}</p>
+                  ) : null}
                 </div>
-                {pairingError ? (
-                  <p className="mt-2 text-[11px] text-rose-300">{pairingError}</p>
-                ) : null}
-              </div>
+              ) : (
+                <button
+                  onClick={() => setShowPairingForm(true)}
+                  className="absolute right-3 bottom-3 z-20 flex items-center gap-1.5 rounded-full bg-slate-900/60 px-3 py-1.5 text-white/80 shadow-sm backdrop-blur hover:bg-slate-900/80 hover:text-white transition-all"
+                  title="Khôi phục camera cũ"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  <span className="text-[11px] font-medium">Khôi phục thiết bị</span>
+                </button>
+              )
             ) : null}
             {identityError ? (
               <div className="flex h-full items-center justify-center px-6 text-center text-sm text-rose-300">
