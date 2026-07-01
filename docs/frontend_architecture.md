@@ -24,21 +24,19 @@ Frontend của Front Door AI được xây dựng với các tiêu chí: **Hiể
 ## 3. Active Prefetching (Tải trước Dữ liệu Khách hàng)
 Nhằm giảm thiểu độ trễ truy xuất dữ liệu khi quản trị viên tương tác:
 - Ngay khi luồng WebSocket phát hiện một định danh khách hàng (ví dụ: `CUS_001`) xuất hiện trong khung hình.
-- Hook `useProfilePrefetch` ở cấp Root sẽ lập tức kích hoạt API chạy ngầm để lấy toàn bộ lịch sử giao dịch và thông tin chi tiết của `CUS_001`.
+- Hook `useProfilePrefetch` ở cấp Root sẽ lập tức kích hoạt API chạy ngầm để lấy toàn bộ lịch sử giao dịch và thông tin chi tiết của `CUS_001`. (Lưu ý: Hook này có cơ chế guard, chỉ kích hoạt khi user có role `admin` để tránh bị lỗi 401 Unauthorized do quyền truy cập bị giới hạn).
 - Dữ liệu này được lưu trữ tạm thời vào `sessionStorage`.
 - Khi người quản lý click vào khuôn mặt trên màn hình, trang Chi tiết Khách hàng (`/customers/[id]`) sẽ được tải **ngay lập tức** nhờ đọc dữ liệu từ SessionStorage thay vì phải chờ phản hồi API lần nữa.
 
 ---
 
 ## 4. Role-Based Access Control (RBAC - Phân quyền)
-Ứng dụng áp dụng cơ chế Bảo vệ Route (Route Protection) tại phía Client thông qua Context (`UserProvider`).
+Ứng dụng áp dụng cơ chế Bảo vệ Route (Route Protection) tại phía Client thông qua Context (`UserProvider`). Mọi thao tác thay đổi dữ liệu từ Frontend đều phải trải qua bước xác thực JWT Token `require_admin` tại Backend.
 
 **Các Vai trò (Roles):**
 1. **`guest` (Mặc định):** Chỉ có quyền xem trang Dashboard (Thống kê tổng quan), không được phép xem luồng Camera hoặc danh sách khách hàng.
-2. **`moderator` (Nhân viên Lễ tân):** Được phép truy cập Dashboard và xem luồng Camera. Danh sách Camera được quyền truy cập sẽ bị giới hạn cứng dựa vào cấu hình phân quyền từ Backend.
-3. **`admin` (Quản lý):** Toàn quyền hệ thống bao gồm xem, chỉnh sửa hồ sơ, tải ảnh và xóa dữ liệu khách hàng.
-
-*(Mọi thao tác thay đổi dữ liệu từ Frontend đều phải trải qua bước xác thực JWT Token `require_admin` tại Backend).*
+2. **`moderator` (Nhân viên Lễ tân):** Được phép truy cập Dashboard và xem luồng Camera. **Quản lý Camera:** Danh sách Camera được quyền truy cập sẽ bị giới hạn cứng dựa vào cấu hình phân quyền từ Backend. Khi tải catalog camera hoặc mở WebSocket observer, hệ thống sẽ lọc dữ liệu chỉ trả về các `camera_id` mà moderator này được cấp phép.
+3. **`admin` (Quản lý):** Toàn quyền hệ thống bao gồm xem, chỉnh sửa hồ sơ, tải ảnh, xóa dữ liệu khách hàng. Admin cũng có quyền truy cập màn hình **Phân quyền** để tạo tài khoản, đổi mật khẩu, khóa/mở khóa tài khoản moderator, và gán quyền xem cụ thể từng Camera ID cho các moderator.
 
 ---
 

@@ -17,9 +17,10 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
 3. **Worker Tier (AI Processing):**
    - Là các tiến trình (containers) độc lập, hoàn toàn **Stateless** (không lưu trạng thái).
    - Lắng nghe hàng đợi từ Redis, kéo frame về, xử lý phát hiện (Detection), theo dõi (Tracking) và trích xuất vector (Embedding).
-   - Đẩy kết quả trở lại một kênh (channel) đặc thù của `session_id` tương ứng trên Redis.
-4. **Data Tier (Database & Vector Store):**
-   - Sử dụng **PostgreSQL (Supabase)** kết hợp **pgvector** cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search).
+   - Đẩy kết quả trở lại một kênh (channel) đặc thù của `connection_id` tương ứng trên Redis.
+4. **Data Tier (Database & Cloud Storage):**
+   - **PostgreSQL (Supabase):** Kết hợp `pgvector` cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer.
+   - **Supabase Storage:** Lưu trữ ảnh đại diện của khách hàng trên Cloud CDN (với cơ chế Fallback lưu tại Local nếu mất kết nối).
 
 ---
 
@@ -31,10 +32,10 @@ Hệ thống sử dụng Redis làm Message Broker trung tâm:
 - Bất kỳ AI Worker nào đang rảnh (Idle) sẽ bốc (pop) frame từ queue này để xử lý.
 - Cơ chế này cho phép **Horizontal Scaling** vô hạn: Càng nhiều camera kết nối, quản trị viên chỉ cần bật thêm (scale up) AI Worker Node. API Server không bao giờ bị nghẽn CPU.
 
-### 2.2. Streaming qua WebSocket
-Hệ thống loại bỏ hoàn toàn HTTP Polling cũ kỹ, thay bằng kết nối WebSocket bền vững (`/ws/{session_id}`).
-- Mỗi Client kết nối với một `session_id` duy nhất (Session Isolation).
-- Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng của session đó (`worker_results_{session_id}`). API Server đang subscribe kênh này sẽ nhận kết quả và forward về đúng Client.
+### 2.2. Streaming qua WebSocket & Session Isolation
+Hệ thống loại bỏ hoàn toàn HTTP Polling cũ kỹ, thay bằng kết nối WebSocket bền vững (`/ws/{camera_id}` hoặc `/ws/observe/{camera_id}`).
+- **Session Isolation:** Mặc dù endpoint sử dụng chung `camera_id` tĩnh, nhưng ở phía backend mỗi khi có Client/Tab Trình duyệt kết nối, hệ thống sẽ tự động sinh ra một `connection_id` ngẫu nhiên duy nhất (VD: `conn_uuid...`). Luồng camera và kết quả bounding box của Tab nào sẽ chỉ được gửi về đúng Tab đó thông qua `connection_id` này, đảm bảo tính riêng tư và tránh xung đột khi nhiều người quản trị mở nhiều camera cùng lúc.
+- Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng của session đó (`worker_results_{connection_id}`). API Server đang subscribe kênh này sẽ nhận kết quả và forward về đúng Client.
 
 ---
 
@@ -66,15 +67,16 @@ graph TD
         H -->|3. Publish Result| E
     end
 
-    subgraph Database [Cloud Database]
-        F -->|Query / Insert| I[(Supabase pgvector)]
-        G -->|Query / Insert| I
-        H -->|Query / Insert| I
+    subgraph Database [Cloud Database & Storage]
+        F -->|HNSW Search / Dual-write| I[(Supabase pgvector)]
+        G -->|HNSW Search / Dual-write| I
+        H -->|HNSW Search / Dual-write| I
     end
 ```
 
-## 4. Tối ưu hóa Hiệu năng (Performance Optimizations)
+## 4. Tối ưu hóa Hiệu năng & Vận hành
 
-- **Connection Pool:** Cả API Server và AI Worker đều sử dụng `ThreadedConnectionPool` của psycopg2 để tái sử dụng kết nối.
+- **Connection Pool:** Cả API Server và AI Worker đều sử dụng `ThreadedConnectionPool` của `psycopg2` (min=2, max=10) để tái sử dụng kết nối Database, tránh tình trạng thắt nút cổ chai (bottleneck) khi truy vấn liên tục.
 - **Track Lifecycle Caching:** Dữ liệu hồ sơ khách hàng chỉ được truy vấn **1 lần duy nhất** khi khuôn mặt xuất hiện. AI Worker lưu vào RAM bộ cache của những người đang trong khung hình (`GuestTrackManager`), giảm tải 99% cho Database.
 - **Lazy Embedding & Throttling:** Quá trình trích xuất vector đặc trưng 512D (thao tác tốn kém nhất) chỉ xảy ra ở một số frame nhất định khi đủ điều kiện kích thước, và được chạy dưới dạng Background Thread bên trong AI Worker.
+- **Centralized Logging:** Mọi log của hệ thống (API Gateway, Redis, AI Worker) được quy chuẩn hóa cấu trúc qua module `logger.py` (`[HH:MM:SS] LEVEL module: message`), giúp dễ dàng giám sát trên môi trường Production.

@@ -8,8 +8,12 @@ Hệ thống giao tiếp thông qua hai phương thức chính: REST API (dành 
 
 Endpoint xử lý luồng ảnh từ thiết bị đầu cuối (Camera Client) và trả về dữ liệu nhận diện.
 
-**URL:** `ws://{host}:8000/ws/{session_id}`
-- `{session_id}`: Chuỗi ngẫu nhiên (UUID hoặc Random String) đại diện cho một kết nối Client để thiết lập cơ chế Session Isolation.
+**URL:** `ws://{host}:8000/ws/{camera_id}`
+- `{camera_id}`: ID định danh cố định của Camera Client. 
+- Hệ thống không còn dùng `session_id` ngẫu nhiên để định tuyến. Mỗi Camera sẽ có một ID cố định, backend sẽ tự động sinh `connection_id` tạm thời để quản lý kết nối.
+
+**URL Observer (Xem camera dành cho Moderator):** `ws://{host}:8000/ws/observe/{camera_id}`
+- Endpoint dành cho nhân viên Lễ tân/Moderator để stream kết quả nhận diện (Bounding box) về Dashboard mà không gửi frame ảnh lên. (Yêu cầu phân quyền hợp lệ).
 
 **Luồng dữ liệu (Data Flow):**
 1. **Client gửi (Upstream):** 
@@ -62,6 +66,7 @@ Xác thực người dùng và cấp phát Token.
 
 **`PUT /api/customer_profile`**
 Tạo mới hoặc cập nhật thông tin khách hàng. Nếu truyền tham số `source_id` là mã định danh Guest (`GUEST_...`), hệ thống sẽ thực hiện quá trình Gộp (Merge/Promote) vector đặc trưng.
+Ngoài ra, endpoint này còn xử lý ảnh tải lên (lưu vào **Supabase Storage**) và tự động **Clear Cache** (Track Lifecycle Cache) trên toàn bộ các camera state đang hoạt động để làm mới dữ liệu lập tức.
 
 - **Request Body (JSON):**
   ```json
@@ -70,7 +75,8 @@ Tạo mới hoặc cập nhật thông tin khách hàng. Nếu truyền tham s�
       "source_id": "GUEST_default_01_0001",
       "name": "Tran B",
       "phone": "0987654321",
-      "loyalty_tier": "Standard"
+      "loyalty_tier": "Standard",
+      "image": "base64_encoded_string..."
   }
   ```
 
@@ -118,7 +124,7 @@ Endpoint ẩn dành cho Quản trị viên (Super Admin) dùng để thực thi 
   ```
 
 **`POST /api/promote_guest`**
-Đồng bộ việc chuyển đổi `GUEST_ID` sang `CUSTOMER_ID` trong cấu trúc Vector In-memory và Database.
+Đồng bộ việc chuyển đổi `GUEST_ID` sang `CUSTOMER_ID` trong cấu trúc Vector In-memory và đồng thời thực hiện lệnh **pgvector sync** (chèn vector đặc trưng của guest vào bảng pgvector cho Customer mới) để HNSW Index được cập nhật chính xác.
 
 - **Request Body (JSON):**
   ```json

@@ -4,18 +4,18 @@ Chào mừng bạn đến với tài liệu kỹ thuật của dự án **Front 
 
 ## Mục lục Tài liệu (Table of Contents)
 
-1. [Kiến trúc Hệ thống (System Architecture)](system_architecture.md)
-   - Kiến trúc High-level, Luồng dữ liệu qua WebSocket.
-2. [Luồng Xử lý AI & Tracking (AI Pipeline)](ai_pipeline.md)
-   - Chi tiết về MediaPipe, Kalman Filter, Lazy Embedding, Multi-frame Voting và Vector Search.
-3. [Cấu trúc Cơ sở Dữ liệu (Database Schema)](database_schema.md)
-   - PostgreSQL, pgvector HNSW Index và SQLite fallback.
-4. [Kiến trúc Frontend (Frontend Architecture)](frontend_architecture.md)
-   - Next.js App Router, Active Prefetching, RBAC (Role-Based Access Control).
-5. [Tài liệu API & WebSocket (API Reference)](api_reference.md)
-   - RESTful APIs và Giao thức truyền phát WebSocket.
-6. [Hướng dẫn Vận hành & Bảo trì (Maintenance Guide)](maintenance_guide.md)
-   - Xử lý sự cố, CI/CD, Docker deployment.
+1. **[Kiến trúc Hệ thống (System Architecture)](system_architecture.md)**
+   - Kiến trúc High-level, Luồng dữ liệu WebSocket (Session Isolation), Dual-write Vector Database, Connection Pooling và Centralized Logging.
+2. **[Luồng Xử lý AI & Tracking (AI Pipeline)](ai_pipeline.md)**
+   - Chi tiết về MediaPipe, Kalman Filter, Lazy Embedding, quá trình định danh Guest qua HNSW Index và Multi-frame Voting.
+3. **[Cấu trúc Cơ sở Dữ liệu (Database Schema)](database_schema.md)**
+   - PostgreSQL, Supabase Storage, pgvector HNSW Index (cho cả khách hàng và Guest), cơ chế Dual-write (`vector(512)` và `BYTEA`), Bảng `users` cho phân quyền.
+4. **[Kiến trúc Frontend (Frontend Architecture)](frontend_architecture.md)**
+   - Next.js App Router, Cơ chế WebSocket-driven Active Prefetching, RBAC (Role-Based Access Control) bảo vệ Route cho Admin/Moderator/Guest.
+5. **[Tài liệu API & WebSocket (API Reference)](api_reference.md)**
+   - Giao thức truyền phát WebSocket Streaming, các RESTful APIs (bao gồm Login, check-in cooldown, và promote guest).
+6. **[Hướng dẫn Vận hành & Bảo trì (Maintenance Guide)](maintenance_guide.md)**
+   - Xử lý sự cố, CI/CD, Quản lý tài nguyên Docker.
 
 ---
-> **Lưu ý:** Hệ thống đang áp dụng những kỹ thuật tối ưu hóa hiện đại nhất như **Track Lifecycle Caching**, **pgvector HNSW**, và **Session Isolation** để đạt độ trễ cực thấp (Sub-millisecond) ở quy mô hàng ngàn khách hàng.
+> **Lưu ý:** Hệ thống đang áp dụng những kỹ thuật tối ưu hóa hiện đại nhất ở phiên bản **v1.4.0** như **Track Lifecycle Caching**, truy vấn **pgvector HNSW**, tái sử dụng kết nối qua **ThreadedConnectionPool**, và **Session Isolation** trên WebSocket để đạt độ trễ cực thấp (Sub-millisecond) ở quy mô hàng ngàn khách hàng, đồng thời tối ưu hóa tài nguyên phần cứng.

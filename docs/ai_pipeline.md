@@ -30,14 +30,14 @@ Việc trích xuất và nhận diện đặc trưng khuôn mặt liên tục tr
 
 ### Bước 4: So khớp & Multi-frame Voting (Nhận diện)
 Để giảm thiểu tỷ lệ nhận diện nhầm (False Positive), hệ thống không bao giờ chốt kết quả chỉ dựa trên 1 khung hình:
-- **Vector Search:** Gửi Vector 512 chiều lên PostgreSQL (Supabase). Bảng `customer_embeddings` sử dụng thuật toán **HNSW** của `pgvector` để tìm 3 khuôn mặt tương đồng nhất (`top_k=3`) với tốc độ < 5ms.
+- **Vector Search:** Gửi Vector 512 chiều lên PostgreSQL (Supabase). Bảng `customer_embeddings` sử dụng thuật toán **HNSW** của `pgvector` để tìm 3 khuôn mặt tương đồng nhất (`top_k=3`) với tốc độ < 5ms. Truy vấn này tìm kiếm trên toàn bộ tập dữ liệu chung của cả Khách hàng (Customer) lẫn Khách vãng lai (Guest).
 - **Cơ chế Bỏ phiếu (Voting):** Kết quả nhận diện của 5 frame gần nhất được đưa vào hàng đợi bỏ phiếu. Chỉ khi 3/5 frame đồng thuận chung một khách hàng (ví dụ: `CUST_001`), hệ thống mới chính thức xác nhận (Resolve) Track ID này thuộc về `CUST_001`.
 
 ### Bước 5: Đăng ký Khách Vãng Lai (Guest Registration)
 - Nếu một khuôn mặt xuất hiện trong camera quá lâu (vượt qua ngưỡng `GUEST_CREATION_BUFFER_SIZE`) nhưng hệ thống không tìm thấy kết quả trùng khớp trong cơ sở dữ liệu.
 - AI Worker tự động khởi tạo một định danh khách hàng mới (`Guest`).
-- Vector trung bình (Mean Embedding) của Guest này được lưu bất đồng bộ (Asynchronously) vào Supabase.
-- Trên giao diện Frontend, nhân viên có thể xem được lịch sử của Khách Vãng Lai này và tiến hành cập nhật thông tin nếu cần thiết.
+- Vector trung bình (Mean Embedding) của Guest này được lưu theo cơ chế **Dual-write** (lưu song song vào cột `vector(512)` cho `pgvector` và cột `BYTEA` cho dự phòng) một cách bất đồng bộ (Asynchronously) vào Supabase.
+- Trên giao diện Frontend, nhân viên có thể xem được lịch sử của Khách Vãng Lai này và tiến hành cập nhật thông tin nếu cần thiết. Hệ thống sẽ gọi API promote guest để tự động đồng bộ (sync) vector của Guest này thành Customer chính thức.
 
 ---
 

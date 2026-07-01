@@ -39,7 +39,7 @@ Trung tâm lưu trữ thông tin định danh của người dùng trong hệ th
 ---
 
 ## 3. Bảng `customer_embeddings` (Vector Đặc Trưng Khuôn Mặt)
-Bảng kết nối 1-Nhiều với bảng `customers`. Một định danh có thể có nhiều góc mặt, điều kiện ánh sáng khác nhau để cải thiện độ chính xác (Face Bank).
+Bảng kết nối 1-Nhiều với bảng `customers`. Một định danh có thể có nhiều góc mặt, điều kiện ánh sáng khác nhau để cải thiện độ chính xác (Face Bank). Bảng này lưu trữ vector cho CẢ Khách hàng đã đăng ký (Customer) và Khách vãng lai (Guest).
 
 | Column | Type | Description |
 | :--- | :--- | :--- |
@@ -47,7 +47,7 @@ Bảng kết nối 1-Nhiều với bảng `customers`. Một định danh có th
 | `customer_id` | VARCHAR(255) | Khóa ngoại (Foreign Key) trỏ về `customers(customer_id)`. Xóa Cascade. |
 | `embedding_dim`| INTEGER | Chiều của vector (Mặc định: 512) |
 | `model_name` | VARCHAR(100) | Tên mô hình tạo vector (Mặc định: `edgeface_s_gamma_05`) |
-| `face_embedding`| BYTEA | Bản sao nhị phân (Binary Blob) lưu giữ raw bytes. |
+| `face_embedding`| BYTEA | Bản sao nhị phân (Binary Blob) lưu giữ raw bytes. (Cơ chế Dual-write) |
 | **`embedding`** | **vector(512)** | Cột của `pgvector`. **Có Index HNSW**. Dùng để tính Cosine Similarity (`<=>`). |
 
 **Tối ưu Index HNSW:**
@@ -57,8 +57,8 @@ ON customer_embeddings USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 ```
 
-**Asynchronous Inserts:**
-Khi phát hiện khách vãng lai mới, API Backend không bắt luồng xử lý chính phải chờ CSDL phản hồi. Việc thêm (Insert) bản ghi vào bảng `customers` và `customer_embeddings` được đẩy vào Thread phụ bất đồng bộ (`asyncio.create_task`), giúp hiệu năng của WebSocket không bị gián đoạn.
+**Dual-write & Asynchronous Inserts:**
+Khi có vector mới (của Guest hoặc khi Customer cập nhật), hệ thống áp dụng cơ chế **Dual-write**: lưu đồng thời cả `BYTEA` (cho mục đích backup/fallback) và `vector(512)` (cho truy vấn pgvector). Việc Insert này được đẩy vào Thread phụ bất đồng bộ (`asyncio.create_task`), giúp hiệu năng của WebSocket không bị gián đoạn. Hơn nữa, việc cấu hình `ThreadedConnectionPool` đảm bảo có sẵn connection để Thread phụ sử dụng lập tức.
 
 ---
 
