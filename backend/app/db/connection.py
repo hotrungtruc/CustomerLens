@@ -194,19 +194,23 @@ def ensure_schema(conn):
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        conn.commit()  # Commit table creations
+
         # Add pgvector column (idempotent — does nothing if it already exists)
         try:
             conn.execute(
                 "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS embedding vector(512)"
             )
+            conn.commit()
         except Exception:
-            pass  # Column may already exist
+            conn.rollback()  # Clear the aborted transaction state
 
         # Drop old standard vector index if it exists to save space
         try:
             conn.execute("DROP INDEX IF EXISTS idx_customer_embeddings_hnsw")
+            conn.commit()
         except Exception:
-            pass
+            conn.rollback()
 
         # Create HNSW index for fast cosine similarity search using halfvec (float16)
         try:
@@ -216,8 +220,9 @@ def ensure_schema(conn):
                 USING hnsw ((embedding::halfvec) halfvec_cosine_ops)
                 WITH (m = 32, ef_construction = 128)
                 """)
+            conn.commit()
         except Exception:
-            pass  # Index may already exist
+            conn.rollback()
         conn.execute("""
             CREATE TABLE IF NOT EXISTS products (
                 product_id VARCHAR(255) PRIMARY KEY,
