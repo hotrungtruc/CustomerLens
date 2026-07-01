@@ -170,6 +170,7 @@ def ensure_schema(conn):
             conn,
             "users",
             {
+                "id": "SERIAL PRIMARY KEY",
                 "status": "VARCHAR(32) NOT NULL DEFAULT 'active'",
                 "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
                 "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
@@ -245,19 +246,22 @@ def ensure_schema(conn):
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        conn.commit()
         # Add pgvector column (idempotent — does nothing if it already exists)
         try:
             conn.execute(
                 "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS embedding vector(512)"
             )
+            conn.commit()
         except Exception:
-            pass  # Column may already exist
+            conn.rollback()  # Prevent InFailedSqlTransaction
 
         # Drop old standard vector index if it exists to save space
         try:
             conn.execute("DROP INDEX IF EXISTS idx_customer_embeddings_hnsw")
+            conn.commit()
         except Exception:
-            pass
+            conn.rollback()
 
         # Create HNSW index for fast cosine similarity search using halfvec (float16)
         try:
@@ -267,8 +271,9 @@ def ensure_schema(conn):
                 USING hnsw ((embedding::halfvec) halfvec_cosine_ops)
                 WITH (m = 32, ef_construction = 128)
                 """)
+            conn.commit()
         except Exception:
-            pass  # Index may already exist
+            conn.rollback()  # Index may already exist or halfvec not supported
         conn.execute("""
             CREATE TABLE IF NOT EXISTS products (
                 product_id VARCHAR(255) PRIMARY KEY,
@@ -389,6 +394,7 @@ def ensure_schema(conn):
         conn,
         "users",
         {
+            "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
             "status": "TEXT NOT NULL DEFAULT 'active'",
             "created_at": "TEXT DEFAULT NULL",
             "updated_at": "TEXT DEFAULT NULL",
