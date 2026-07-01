@@ -262,9 +262,11 @@ class GuestTrackManager:
     def _insert_guest_into_main_db_async(self, guest_id, embedding=None):
         def worker():
             try:
+                logger.info("Attempting to insert guest %s into DB", guest_id)
                 conn = get_db_connection()
                 ensure_schema(conn)
                 insert_guest_record(conn, guest_id)
+                logger.info("Successfully inserted guest record for %s", guest_id)
 
                 # Also store the embedding in customer_embeddings with pgvector
                 if embedding is not None and self.use_pgvector:
@@ -282,11 +284,15 @@ class GuestTrackManager:
                             model_name="w600k_mbf",
                         )
                         conn.commit()
+                        logger.info("Successfully inserted embedding for %s", guest_id)
                     except Exception as e:
                         logger.error("Failed to insert embedding for guest %s: %s", guest_id, e, exc_info=True)
+            except Exception as e:
+                logger.error("Error in _insert_guest_into_main_db_async worker for %s: %s", guest_id, e, exc_info=True)
             finally:
                 try:
-                    conn.close()
+                    if 'conn' in locals() and conn:
+                        conn.close()
                 except Exception:
                     pass
 

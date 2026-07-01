@@ -196,10 +196,19 @@ def ensure_schema(conn):
             """)
         conn.commit()  # Commit table creations
 
-        # Add pgvector column (idempotent — does nothing if it already exists)
+        # Add pgvector column and other potentially missing columns if the table was created manually
         try:
             conn.execute(
                 "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS embedding vector(512)"
+            )
+            conn.execute(
+                "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS face_embedding BYTEA"
+            )
+            conn.execute(
+                "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS embedding_dim INTEGER DEFAULT 512"
+            )
+            conn.execute(
+                "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS model_name VARCHAR(100) DEFAULT 'w600k_mbf'"
             )
             conn.commit()
         except Exception:
@@ -713,7 +722,7 @@ def get_customer_info(conn, customer_id):
             c.status,
             c.created_at,
             c.updated_at,
-            CASE WHEN e.face_embedding IS NULL THEN 0 ELSE 1 END AS has_face_embedding,
+            CASE WHEN e.customer_id IS NULL THEN 0 ELSE 1 END AS has_face_embedding,
             e.embedding_dim AS face_embedding_dim,
             e.model_name AS face_embedding_model,
             e.updated_at AS face_embedding_updated_at
