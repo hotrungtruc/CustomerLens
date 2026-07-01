@@ -282,8 +282,8 @@ class GuestTrackManager:
                             model_name="w600k_mbf",
                         )
                         conn.commit()
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.error("Failed to insert embedding for guest %s: %s", guest_id, e, exc_info=True)
             finally:
                 try:
                     conn.close()
@@ -310,7 +310,8 @@ class GuestTrackManager:
                 return results
             finally:
                 conn.close()
-        except Exception:
+        except Exception as e:
+            logger.error("pgvector query failed: %s", e, exc_info=True)
             return []
 
     def _recognize_face(self, track_state, record, now, frame=None, embedder=None):

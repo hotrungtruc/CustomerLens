@@ -38,10 +38,10 @@ def search_similar_faces(
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT customer_id, 1 - ((embedding::halfvec) <=> %s::halfvec) AS similarity
+        SELECT customer_id, 1 - (embedding <=> %s::vector) AS similarity
         FROM customer_embeddings
         WHERE embedding IS NOT NULL
-        ORDER BY (embedding::halfvec) <=> %s::halfvec
+        ORDER BY embedding <=> %s::vector
         LIMIT %s
         """,
         (vec_str, vec_str, top_k),
@@ -69,16 +69,13 @@ def insert_embedding_with_vector(
     """
     vec_str = _embedding_to_pgvector_literal(embedding_np)
     if DB_TYPE == "postgresql":
-        # On Supabase, the table is heavily truncated (no face_embedding, embedding_dim, etc.)
-        # so we only insert the essential columns and use ON CONFLICT DO UPDATE
+        # Plain INSERT — customer_embeddings has no UNIQUE constraint on
+        # customer_id (it uses id SERIAL PK), so ON CONFLICT would crash.
         conn.execute(
             """
             INSERT INTO customer_embeddings (
                 customer_id, embedding, updated_at
-            ) VALUES (%s, %s::halfvec, CURRENT_TIMESTAMP)
-            ON CONFLICT (customer_id) DO UPDATE SET
-                embedding = EXCLUDED.embedding,
-                updated_at = CURRENT_TIMESTAMP
+            ) VALUES (%s, %s::vector, CURRENT_TIMESTAMP)
             """,
             (customer_id, vec_str),
         )
