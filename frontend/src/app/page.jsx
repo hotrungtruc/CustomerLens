@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Sidebar from "../components/Sidebar";
 import PageHeader from "../components/PageHeader";
 import CameraStream from "../components/CameraStream";
 import { getTrackBadge } from "../lib/trackBadge";
-import { putCustomerProfile } from "../services/api";
+import {
+  claimDeviceEnrollment,
+  putCustomerProfile,
+  resolveDeviceIdentity,
+} from "../services/api";
 import { useProfilePrefetch } from "../hooks/useProfilePrefetch";
 
 // Phân biệt khách cũ vs khách mới
@@ -285,14 +289,52 @@ function CustomerCard({ c, onClick }) {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
+  const [cameraIdentity, setCameraIdentity] = useState(null);
+  const [identityError, setIdentityError] = useState("");
+  const [pairingCode, setPairingCode] = useState("");
+  const [pairingError, setPairingError] = useState("");
+  const [claimingPairing, setClaimingPairing] = useState(false);
 
-  // Each browser tab gets a unique session ID so concurrent users have isolated
-  // backend CameraState instances and never share annotations.
-  const sessionIdRef = useRef(null);
-  if (!sessionIdRef.current && typeof window !== "undefined") {
-    sessionIdRef.current = "camera_" + Math.random().toString(36).substring(2, 9);
-  }
-  const sessionId = sessionIdRef.current || "default";
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadIdentity() {
+      try {
+        const identity = await resolveDeviceIdentity();
+        if (!cancelled) setCameraIdentity(identity);
+      } catch (error) {
+        if (!cancelled) {
+          setIdentityError(
+            error instanceof Error
+              ? error.message
+              : "Không thể nhận diện thiết bị",
+          );
+        }
+      }
+    }
+
+    loadIdentity();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePairingClaim = async () => {
+    setClaimingPairing(true);
+    setPairingError("");
+    try {
+      const identity = await claimDeviceEnrollment(pairingCode.trim());
+      setCameraIdentity(identity);
+      setIdentityError("");
+      setPairingCode("");
+    } catch (error) {
+      setPairingError(
+        error instanceof Error ? error.message : "Mã ghép nối không hợp lệ",
+      );
+    } finally {
+      setClaimingPairing(false);
+    }
+  };
 
   // customers / frameSize are pushed up via the onCustomersChange callback from
   // CameraStream (which now owns the WebSocket connection internally).
@@ -373,13 +415,53 @@ export default function DashboardPage() {
           />
 
           <div className="flex-1 min-h-0 overflow-hidden bg-slate-950 relative mb-6">
-            <CameraStream
-              sessionId={sessionId}
-              highlightedTrackId={highlightedTrackId}
-              framed={false}
-              fullHeight={true}
-              onCustomersChange={handleCustomersChange}
-            />
+            {cameraIdentity?.is_new || identityError ? (
+              <div className="absolute right-3 top-3 z-20 w-64 rounded-xl border border-white/15 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur">
+                <p className="text-xs font-semibold">Khôi phục camera cũ</p>
+                <p className="mt-1 text-[11px] text-slate-300">
+                  Nhập mã 6 số do quản trị viên tạo.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    value={pairingCode}
+                    onChange={(event) =>
+                      setPairingCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder="000000"
+                    inputMode="numeric"
+                    className="min-w-0 flex-1 rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-xs tracking-[0.2em] outline-none focus:border-blue-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePairingClaim}
+                    disabled={pairingCode.length !== 6 || claimingPairing}
+                    className="rounded-lg bg-blue-500 px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
+                  >
+                    Ghép
+                  </button>
+                </div>
+                {pairingError ? (
+                  <p className="mt-2 text-[11px] text-rose-300">{pairingError}</p>
+                ) : null}
+              </div>
+            ) : null}
+            {identityError ? (
+              <div className="flex h-full items-center justify-center px-6 text-center text-sm text-rose-300">
+                {identityError}
+              </div>
+            ) : cameraIdentity ? (
+              <CameraStream
+                cameraId={cameraIdentity.camera_id}
+                highlightedTrackId={highlightedTrackId}
+                framed={false}
+                fullHeight={true}
+                onCustomersChange={handleCustomersChange}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-sm text-slate-300">
+                Đang nhận diện thiết bị…
+              </div>
+            )}
           </div>
         </div>
 

@@ -15,11 +15,35 @@ Lưu thông tin đăng nhập và Role-Based Access Control (RBAC).
 | `username` | VARCHAR(255) | Tên đăng nhập (Unique) |
 | `password_hash`| VARCHAR(255) | Mật khẩu (SHA-256 Hash) |
 | `role` | VARCHAR(50) | Vai trò (`admin`, `moderator`, `guest`) |
-| `cameras` | TEXT | Danh sách ID camera được phép (VD: `cam_01,cam_02`) |
+| `cameras` | TEXT | Trường permission legacy; code mới ưu tiên `user_camera_permissions` |
 
 ---
 
-## 2. Bảng `customers` (Hồ sơ Khách hàng)
+## 2. Camera identity và connection
+
+### `cameras`
+
+Catalog bền vững của điểm camera. `camera_id` có dạng opaque `cam_<uuid>`; `display_name` là tên hiển thị; `status` dùng `active` hoặc `replaced`. Live/Idle không lưu tại đây mà lấy từ Redis presence.
+
+### `camera_device_credentials`
+
+Liên kết camera với browser profile. Chỉ lưu SHA-256 của token entropy cao; hỗ trợ `last_used_at`, expiry và revoke. Token gốc chỉ tồn tại trong cookie HttpOnly.
+
+### `user_camera_permissions`
+
+Khóa ghép `(user_id, camera_id, permission)`. Admin được phép toàn bộ; moderator phải có permission `view`. `users.cameras` chỉ là fallback cho dữ liệu legacy.
+
+### `camera_connections`
+
+Audit từng WebSocket publisher bằng `connection_id`, `camera_id`, thời gian connect/disconnect và lý do disconnect. Presence realtime vẫn do Redis TTL quản lý.
+
+### `recognize_logs.connection_id`
+
+Nullable để giữ tương thích log cũ. Log mới ghi cả Camera ID ổn định và Connection ID tạm thời.
+
+---
+
+## 3. Bảng `customers` (Hồ sơ Khách hàng)
 Trung tâm lưu trữ thông tin của người dùng trong hệ thống (Hội viên, Khách vãng lai).
 
 | Column | Type | Description |
@@ -38,7 +62,7 @@ Trung tâm lưu trữ thông tin của người dùng trong hệ thống (Hội 
 
 ---
 
-## 3. Bảng `customer_embeddings` (Vector Khuôn Mặt - Quan trọng)
+## 4. Bảng `customer_embeddings` (Vector Khuôn Mặt - Quan trọng)
 Bảng kết nối 1-Nhiều với `customers`. Một người có thể có nhiều góc mặt, điều kiện ánh sáng khác nhau (Face Bank).
 
 | Column | Type | Description |
@@ -59,7 +83,7 @@ WITH (m = 16, ef_construction = 64);
 
 ---
 
-## 4. Bảng `attendance` (Nhật ký Ra Vào)
+## 5. Bảng `attendance` (Nhật ký Ra Vào)
 Ghi nhận mọi lượt check-in của hệ thống, phục vụ trích xuất báo cáo.
 
 | Column | Type | Description |
@@ -71,7 +95,7 @@ Ghi nhận mọi lượt check-in của hệ thống, phục vụ trích xuất 
 
 ---
 
-## 5. Kiến trúc Storage (Supabase Storage)
+## 6. Kiến trúc Storage (Supabase Storage)
 Hình ảnh profile của người dùng được tải lên thông qua **Supabase Storage REST API** (hoặc `supabase-js`).
 - **Bucket:** `customer-images` (Public).
 - **Quy tắc ghi:** Sử dụng `customer_id.jpg` để ghi đè (Upsert), tiết kiệm dung lượng.

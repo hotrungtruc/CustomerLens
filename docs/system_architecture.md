@@ -22,13 +22,17 @@ Hệ thống bao gồm 3 tầng (tiers) chính:
 
 ## 2. Luồng Dữ liệu (Data Flow) & Isolation
 
-### 2.1. Streaming qua WebSocket
-Hệ thống loại bỏ hoàn toàn HTTP Polling cũ kỹ, thay bằng kết nối WebSocket bền vững (`/ws/{session_id}`).
-- Mỗi Client kết nối với một `session_id` duy nhất (Session Isolation).
-- Khi Client A kết nối, Backend chỉ gửi lại kết quả bounding boxes và thông tin khách hàng của **chính khung hình mà Client A đã gửi lên**, không bị lẫn lộn với Client B.
+### 2.1. Camera identity và WebSocket
 
-### 2.2. Shared Frame Manager & Bỏ Frame (Frame Dropping)
-Backend duy trì một `SharedFrameManager` cho mỗi session.
+Frontend gọi `POST /api/device/identity` trước khi mở `/ws/{camera_id}`. Camera ID được lưu trong database và ổn định theo cookie HttpOnly. Backend xác thực Origin/cookie, acquire Redis lease, rồi mới `accept()` và sinh `connection_id` riêng cho handshake.
+
+Frame metadata mang cả `camera_id` và `connection_id`. AI worker publish vào `worker_results_{connection_id}`; master chỉ nhận kết quả nếu connection còn giữ lease. Observer dùng bridge ổn định `camera_updates:{camera_id}`.
+
+### 2.2. Queue AI và presence
+
+Publisher đẩy JPEG binary vào queue Redis chung `camera_frames_v2`. Worker stateless detect/embed rồi trả kết quả theo Connection ID. `ConnectionState` chỉ sống trong thời gian socket; catalog camera sống trong database.
+
+Redis key `camera:presence:{camera_id}` có TTL 15 giây, renew 5 giây và compare-and-delete khi cleanup. Vì vậy backend restart không mất catalog, còn mất mạng tự chuyển Idle sau TTL.
 - Frontend có thể gửi lên 30 FPS.
 - AI Thread chạy độc lập. Nếu AI đang xử lý chưa xong mà frame mới đến, frame cũ sẽ bị ghi đè (thay vì bị đưa vào hàng đợi gây độ trễ tích lũy).
 - Tham số `PROCESS_EVERY_N_FRAMES` cho phép AI chỉ lấy mẫu (ví dụ 10 FPS) để tiết kiệm CPU, trong khi UI vẫn hiển thị mượt mà.
@@ -41,17 +45,17 @@ Backend duy trì một `SharedFrameManager` cho mỗi session.
 graph TD
     subgraph Client [Client / Browser]
         A[Next.js UI] -->|getUserMedia| B(Canvas Frame)
-        B -->|WebSocket Base64| C[WS Connection]
+        B -->|JPEG binary + device cookie| C[Publisher WS]
     end
 
     subgraph Backend [FastAPI Backend]
         C -->|Frames| D[WS Route Handler]
-        D -->|Ghi đè Frame| E(SharedFrameManager)
-        E -->|Lấy Frame| F[AI Background Thread]
+        D -->|camera_id + connection_id| E[(Redis camera_frames_v2)]
+        E -->|BRPOP| F[Stateless AI Worker]
         F -->|Detect & Track| G[GuestTrackManager]
         G -->|HNSW Query| H[(Supabase pgvector)]
-        G -->|Trả kết quả| E
-        D <--|Đọc kết quả & Gửi về| E
+        G -->|worker_results connection_id| D
+        D -->|camera_updates camera_id| J[Authenticated Observer]
     end
 
     subgraph Cloud [Cloud Services]

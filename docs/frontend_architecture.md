@@ -15,9 +15,20 @@ Frontend của Front Door AI được thiết kế với mục tiêu **Hiển th
 Đây là lõi giao tiếp giữa Browser và Backend:
 - Đảm nhiệm lấy luồng ảnh từ thiết bị qua `navigator.mediaDevices.getUserMedia`.
 - Tự động Resize ảnh (tối đa 640x360) và nén chất lượng (`0.75 JPEG`) qua thẻ `Canvas` ẩn.
-- Khởi tạo kết nối WebSocket dựa trên `session_id`.
-- Đóng gói Frame ảnh thành chuỗi Base64 và gửi lên Server liên tục với khoảng thời gian `CAPTURE_INTERVAL_MS = 50ms` (~20 FPS).
+- Gọi `resolveDeviceIdentity()` với `credentials: include`, nhận `cameraId` ổn định rồi mở `/ws/{cameraId}`.
+- Chờ message `ready` chứa `connection_id` trước khi gửi JPEG binary mỗi `CAPTURE_INTERVAL_MS = 50ms` (~20 FPS).
+- Dừng reconnect khi connection bị takeover; người dùng có thể chủ động tiếp quản camera bằng lease mới.
 - Đồng thời nhận về `customers` (dữ liệu Box và Thông tin nhận diện) để Frontend vẽ đè lên Camera gốc.
+
+**Hook `useCameraObserver.js`**
+
+- Mở `/ws/observe/{cameraId}` bằng subprotocol `camera-observer` và login token.
+- Nhận annotation từ bridge ổn định theo Camera ID.
+- Khi nhận `publisher_ready` sau reconnect, tự tạo lại WebRTC offer/peer connection.
+
+**Recovery**
+
+Khi cookie bị mất/revoke, Dashboard cho nhập pairing code 6 số. Claim thành công thay HttpOnly credential và chuyển stream về Camera ID cũ; token thiết bị không đi qua JavaScript/localStorage.
 
 ---
 

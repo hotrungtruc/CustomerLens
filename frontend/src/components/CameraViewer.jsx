@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCameraObserver } from "../hooks/useCameraObserver";
 import { getTrackBadge, TRACK_BADGE_THEMES } from "../lib/trackBadge";
-import { API_BASE_URL } from "../services/api";
 
 /**
  * CameraViewer — read-only viewer for a remote camera session.
@@ -12,8 +11,8 @@ import { API_BASE_URL } from "../services/api";
  * the observe WebSocket for annotation overlays. Does NOT open
  * the local webcam.
  */
-export default function CameraViewer({ sessionId, compact = false, refreshInterval = 500 }) {
-  const { customers, frameSize, status, videoStream } = useCameraObserver(sessionId);
+export default function CameraViewer({ cameraId, compact = false }) {
+  const { customers, frameSize, status, videoStream } = useCameraObserver(cameraId);
   const videoRef = useRef(null);
 
   // Poll for snapshot frames - REMOVED! We now use WebRTC videoStream.

@@ -8,8 +8,12 @@ Hệ thống giao tiếp qua REST API (cho tác vụ quản lý) và WebSocket (
 
 Endpoint xử lý luồng ảnh từ Camera Client và trả về dữ liệu nhận diện khuôn mặt.
 
-**URL:** `ws://{host}:8000/ws/{session_id}`
-- `{session_id}`: Chuỗi ngẫu nhiên (UUID hoặc Random String) đại diện cho một Tab Browser để cô lập Session (Session Isolation).
+**URL publisher:** `ws://{host}:8000/ws/{camera_id}`
+
+- `{camera_id}` là danh tính ổn định do `POST /api/device/identity` trả về.
+- Browser phải có cookie HttpOnly `device_token`; backend kiểm tra Origin, cookie và Camera ID trước khi `accept()`.
+- Mỗi handshake sinh `connection_id` mới. Backend gửi `{ "type": "ready", "camera_id": "...", "connection_id": "..." }` trước khi nhận frame.
+- Redis giữ lease `camera:presence:{camera_id}` trong 15 giây và renew mỗi 5 giây. Chỉ một publisher được giữ lease.
 
 **Luồng dữ liệu (Data Flow):**
 1. **Client gửi (Upstream):** 
@@ -32,6 +36,10 @@ Endpoint xử lý luồng ảnh từ Camera Client và trả về dữ liệu nh
    }
    ```
 
+**URL observer:** `ws://{host}:8000/ws/observe/{camera_id}`
+
+Observer truyền hai WebSocket subprotocol: `camera-observer` và login token. Backend xác thực role/permission trước `accept()`; annotation được bridge qua `camera_updates:{camera_id}` nên publisher reconnect không đổi URL observer.
+
 ---
 
 ## 2. RESTful APIs
@@ -45,6 +53,30 @@ Xác thực người dùng và trả về Session Token.
   ```json
   { "username": "admin", "password": "secret_password" }
   ```
+
+### 2.2. Camera identity và recovery
+
+**`POST /api/device/identity`**
+
+Resolve-or-create camera bằng cookie HttpOnly. Không có cookie sẽ tạo camera mới; cookie hợp lệ trả lại Camera ID cũ; token revoked/invalid trả `401`.
+
+**`GET /api/cameras`**
+
+Yêu cầu `Authorization: Bearer <token>`. Admin thấy toàn bộ camera; moderator chỉ thấy camera có permission. Catalog lấy từ database, `active` và `connection_id` lấy từ Redis presence.
+
+**`POST /api/device/enrollments`**
+
+Admin tạo pairing code 6 số, dùng một lần và mặc định hết hạn sau 10 phút.
+
+**`POST /api/device/enrollments/claim`**
+
+Thiết bị dùng pairing code để nhận credential mới cho camera cũ. Credential chỉ được trả qua `Set-Cookie`; camera tạm tạo sau khi mất cookie được chuyển trạng thái `replaced`.
+
+**`PUT /api/users/{username}/camera_permissions`**
+
+Admin thay toàn bộ danh sách camera mà moderator được xem.
+
+Xem luồng quản trị đầy đủ tại [moderator_camera_permission_management.md](moderator_camera_permission_management.md).
 - **Response (200 OK):**
   ```json
   {
@@ -56,7 +88,7 @@ Xác thực người dùng và trả về Session Token.
 
 ---
 
-### 2.2. Quản lý Khách hàng (Profiles)
+### 2.3. Quản lý Khách hàng (Profiles)
 
 > **Yêu cầu Xác thực:** Thêm Header `Authorization: Bearer <token>` (Chỉ `admin` mới được cấp quyền ghi).
 
@@ -82,7 +114,7 @@ Xóa hồ sơ khách hàng, kèm theo xóa ảnh trên Supabase Storage và xóa
 
 ---
 
-### 2.3. Chấm công / Check-in (Attendance)
+### 2.4. Chấm công / Check-in (Attendance)
 
 **`POST /api/check_in/{customer_id}`**
 Thực hiện ghi nhận lượt tới thăm (Check-in) thủ công (Manual Override) hoặc gọi qua màn hình Detail.
@@ -105,7 +137,7 @@ Có cơ chế **Cooldown** (VD: 30 giây) để tránh spam.
 
 ---
 
-### 2.4. Promote Guest (Nâng cấp Vãng lai thành Khách hàng)
+### 2.5. Promote Guest (Nâng cấp Vãng lai thành Khách hàng)
 **`POST /api/promote_guest`**
 Dùng nội bộ để đồng bộ việc đổi `GUEST_ID` sang `CUSTOMER_ID` trong cấu trúc Vector In-memory và Database.
 

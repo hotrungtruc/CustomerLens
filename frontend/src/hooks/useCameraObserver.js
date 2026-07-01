@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-function getObserveWsUrl(sessionId) {
+const OBSERVER_WS_SUBPROTOCOL = "camera-observer";
+
+function getObserveWsUrl(cameraId) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  let host = "localhost:8000";
+  let host = `${window.location.hostname}:8000`;
   const baseUrl =
     process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_HOST;
   if (baseUrl) {
@@ -17,14 +19,14 @@ function getObserveWsUrl(sessionId) {
       host = baseUrl.replace(/^https?:\/\//, "");
     }
   }
-  return `${protocol}//${host}/ws/observe/${encodeURIComponent(sessionId)}`;
+  return `${protocol}//${host}/ws/observe/${encodeURIComponent(cameraId)}`;
 }
 
 /**
  * useCameraObserver — read-only WebSocket + WebRTC that receives annotations
  * and WebRTC video stream from a remote camera session.
  */
-export function useCameraObserver(sessionId) {
+export function useCameraObserver(cameraId) {
   const [customers, setCustomers] = useState([]);
   const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
   const [status, setStatus] = useState("connecting");
@@ -37,17 +39,25 @@ export function useCameraObserver(sessionId) {
   const adminIdRef = useRef(crypto.randomUUID());
 
   const connect = useCallback(() => {
-    if (!mountedRef.current || !sessionId) return;
+    if (!mountedRef.current || !cameraId) return;
 
-    const ws = new WebSocket(getObserveWsUrl(sessionId));
+    const token = localStorage.getItem("token");
+    if (!token) {
+      setStatus("error");
+      return;
+    }
+
+    const ws = new WebSocket(getObserveWsUrl(cameraId), [
+      OBSERVER_WS_SUBPROTOCOL,
+      token,
+    ]);
     wsRef.current = ws;
     setStatus("connecting");
 
-    ws.onopen = async () => {
+    const startPeerConnection = async () => {
       if (!mountedRef.current) return;
-      setStatus("live");
-      
-      // Initialize WebRTC on WS open
+      pcRef.current?.close();
+      setVideoStream(null);
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
       });
@@ -69,9 +79,7 @@ export function useCameraObserver(sessionId) {
         }
       };
       
-      // Create Offer
       try {
-        // Add a transceiver to force receiving video
         pc.addTransceiver('video', { direction: 'recvonly' });
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
@@ -85,10 +93,28 @@ export function useCameraObserver(sessionId) {
       }
     };
 
-    ws.onmessage = async (event) => {
+    ws.onopen = async () => {
       if (!mountedRef.current) return;
+      setStatus("live");
+      await startPeerConnection();
+    };
+
+    ws.onmessage = async (event) => {
+      if (!mountedRef.current || wsRef.current !== ws) return;
       try {
         const data = JSON.parse(event.data);
+
+        if (data.type === "publisher_ready") {
+          await startPeerConnection();
+          return;
+        }
+
+        if (data.type === "publisher_offline") {
+          pcRef.current?.close();
+          pcRef.current = null;
+          setVideoStream(null);
+          return;
+        }
         
         // Handle AI Tracking Data
         if (data.customers) {
@@ -113,25 +139,28 @@ export function useCameraObserver(sessionId) {
     };
 
     ws.onerror = () => {
-      if (mountedRef.current) setStatus("error");
+      if (mountedRef.current && wsRef.current === ws) setStatus("error");
     };
 
     ws.onclose = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || wsRef.current !== ws) return;
+      wsRef.current = null;
       setStatus("disconnected");
       setVideoStream(null);
       pcRef.current?.close();
       pcRef.current = null;
       reconnectRef.current = setTimeout(connect, 3000);
     };
-  }, [sessionId]);
+  }, [cameraId]);
 
   useEffect(() => {
     mountedRef.current = true;
     connect();
     return () => {
       mountedRef.current = false;
-      wsRef.current?.close();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      ws?.close();
       pcRef.current?.close();
       clearTimeout(reconnectRef.current);
     };

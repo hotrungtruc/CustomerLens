@@ -160,7 +160,58 @@ def ensure_schema(conn):
                 username VARCHAR(255) UNIQUE NOT NULL,
                 password_hash VARCHAR(255) NOT NULL,
                 role VARCHAR(50) NOT NULL,
-                cameras TEXT
+                cameras TEXT,
+                status VARCHAR(32) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+        _add_missing_columns(
+            conn,
+            "users",
+            {
+                "status": "VARCHAR(32) NOT NULL DEFAULT 'active'",
+                "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            },
+        )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cameras (
+                camera_id VARCHAR(64) PRIMARY KEY,
+                display_name VARCHAR(255) NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL,
+                last_seen_at TIMESTAMP DEFAULT NULL
+            )
+            """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS camera_device_credentials (
+                credential_id VARCHAR(64) PRIMARY KEY,
+                camera_id VARCHAR(64) NOT NULL REFERENCES cameras(camera_id) ON DELETE CASCADE,
+                token_hash VARCHAR(128) UNIQUE NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                last_used_at TIMESTAMP DEFAULT NULL,
+                expires_at TIMESTAMP DEFAULT NULL,
+                revoked_at TIMESTAMP DEFAULT NULL,
+                user_agent VARCHAR(512) DEFAULT NULL
+            )
+            """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_camera_permissions (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                camera_id VARCHAR(64) NOT NULL REFERENCES cameras(camera_id) ON DELETE CASCADE,
+                permission VARCHAR(32) NOT NULL DEFAULT 'view',
+                PRIMARY KEY (user_id, camera_id, permission)
+            )
+            """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS camera_connections (
+                connection_id VARCHAR(64) PRIMARY KEY,
+                camera_id VARCHAR(64) NOT NULL REFERENCES cameras(camera_id) ON DELETE CASCADE,
+                connected_at TIMESTAMP NOT NULL,
+                disconnected_at TIMESTAMP DEFAULT NULL,
+                disconnect_reason VARCHAR(255) DEFAULT NULL
             )
             """)
         conn.execute("""
@@ -270,9 +321,15 @@ def ensure_schema(conn):
                 customer_id VARCHAR(255) DEFAULT NULL,
                 track_id INTEGER DEFAULT NULL,
                 bbox JSONB DEFAULT NULL,
+                connection_id VARCHAR(64) DEFAULT NULL,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        _add_missing_columns(
+            conn,
+            "recognize_logs",
+            {"connection_id": "VARCHAR(64) DEFAULT NULL"},
+        )
         _add_missing_columns(
             conn,
             "customers",
@@ -322,7 +379,72 @@ def ensure_schema(conn):
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL,
-            cameras TEXT
+            cameras TEXT,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+    _add_missing_columns(
+        conn,
+        "users",
+        {
+            "status": "TEXT NOT NULL DEFAULT 'active'",
+            "created_at": "TEXT DEFAULT NULL",
+            "updated_at": "TEXT DEFAULT NULL",
+        },
+    )
+    conn.execute(
+        "UPDATE users SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP)"
+    )
+    conn.execute(
+        "UPDATE users SET updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)"
+    )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS cameras (
+            camera_id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            last_seen_at TEXT DEFAULT NULL
+        )
+        """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS camera_device_credentials (
+            credential_id TEXT PRIMARY KEY,
+            camera_id TEXT NOT NULL,
+            token_hash TEXT UNIQUE NOT NULL,
+            created_at TEXT NOT NULL,
+            last_used_at TEXT DEFAULT NULL,
+            expires_at TEXT DEFAULT NULL,
+            revoked_at TEXT DEFAULT NULL,
+            user_agent TEXT DEFAULT NULL,
+            FOREIGN KEY (camera_id) REFERENCES cameras(camera_id)
+        )
+        """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_camera_permissions (
+            user_id INTEGER NOT NULL,
+            camera_id TEXT NOT NULL,
+            permission TEXT NOT NULL DEFAULT 'view',
+            PRIMARY KEY (user_id, camera_id, permission),
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (camera_id) REFERENCES cameras(camera_id)
+        )
+        """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS camera_connections (
+            connection_id TEXT PRIMARY KEY,
+            camera_id TEXT NOT NULL,
+            connected_at TEXT NOT NULL,
+            disconnected_at TEXT DEFAULT NULL,
+            disconnect_reason TEXT DEFAULT NULL,
+            FOREIGN KEY (camera_id) REFERENCES cameras(camera_id)
         )
         """)
 
@@ -465,13 +587,279 @@ def ensure_schema(conn):
             customer_id TEXT DEFAULT NULL,
             track_id INTEGER DEFAULT NULL,
             bbox TEXT DEFAULT NULL,
+            connection_id TEXT DEFAULT NULL,
             timestamp TEXT DEFAULT CURRENT_TIMESTAMP
         )
         """)
+    _add_missing_columns(
+        conn,
+        "recognize_logs",
+        {"connection_id": "TEXT DEFAULT NULL"},
+    )
 
     _migrate_legacy_customer_data(conn)
     _migrate_embeddings(conn)
     conn.commit()
+
+
+def find_active_device_credential(conn, token_hash):
+    """Resolve a non-revoked, non-expired device token to its camera."""
+    return conn.execute(
+        """
+        SELECT
+            d.credential_id,
+            d.camera_id,
+            c.display_name,
+            c.status
+        FROM camera_device_credentials AS d
+        JOIN cameras AS c ON c.camera_id = d.camera_id
+        WHERE d.token_hash = ?
+          AND d.revoked_at IS NULL
+          AND (d.expires_at IS NULL OR d.expires_at > CURRENT_TIMESTAMP)
+          AND c.status = 'active'
+        """,
+        (token_hash,),
+    ).fetchone()
+
+
+def create_camera_and_credential(
+    conn,
+    camera_id,
+    display_name,
+    credential_id,
+    token_hash,
+    user_agent=None,
+):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT INTO cameras (
+            camera_id, display_name, status, created_at, updated_at, last_seen_at
+        ) VALUES (?, ?, 'active', ?, ?, ?)
+        """,
+        (camera_id, display_name, now, now, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO camera_device_credentials (
+            credential_id, camera_id, token_hash, created_at, last_used_at,
+            user_agent
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (credential_id, camera_id, token_hash, now, now, user_agent),
+    )
+
+
+def create_device_credential(
+    conn, camera_id, credential_id, token_hash, user_agent=None
+):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT INTO camera_device_credentials (
+            credential_id, camera_id, token_hash, created_at, last_used_at,
+            user_agent
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (credential_id, camera_id, token_hash, now, now, user_agent),
+    )
+    conn.execute(
+        """
+        UPDATE cameras
+        SET status = 'active', last_seen_at = ?, updated_at = ?
+        WHERE camera_id = ?
+        """,
+        (now, now, camera_id),
+    )
+
+
+def revoke_camera_credentials(conn, camera_id):
+    conn.execute(
+        """
+        UPDATE camera_device_credentials
+        SET revoked_at = ?
+        WHERE camera_id = ? AND revoked_at IS NULL
+        """,
+        (datetime.now().isoformat(timespec="seconds"), camera_id),
+    )
+
+
+def retire_replaced_camera(conn, camera_id):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.execute(
+        """
+        UPDATE camera_device_credentials
+        SET revoked_at = ?
+        WHERE camera_id = ? AND revoked_at IS NULL
+        """,
+        (now, camera_id),
+    )
+    conn.execute(
+        """
+        UPDATE cameras
+        SET status = 'replaced', updated_at = ?
+        WHERE camera_id = ?
+        """,
+        (now, camera_id),
+    )
+
+
+def touch_device_credential(conn, credential_id, camera_id):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.execute(
+        """
+        UPDATE camera_device_credentials
+        SET last_used_at = ?
+        WHERE credential_id = ?
+        """,
+        (now, credential_id),
+    )
+    conn.execute(
+        """
+        UPDATE cameras
+        SET last_seen_at = ?, updated_at = ?
+        WHERE camera_id = ?
+        """,
+        (now, now, camera_id),
+    )
+
+
+def list_active_cameras(conn):
+    return conn.execute(
+        """
+        SELECT camera_id, display_name, status, created_at, updated_at, last_seen_at
+        FROM cameras
+        WHERE status = 'active'
+        ORDER BY created_at ASC
+        """
+    ).fetchall()
+
+
+def update_camera_display_name(conn, camera_id, display_name):
+    cursor = conn.execute(
+        """
+        UPDATE cameras
+        SET display_name = ?, updated_at = ?
+        WHERE camera_id = ? AND status = 'active'
+        """,
+        (display_name, datetime.now().isoformat(timespec="seconds"), camera_id),
+    )
+    return cursor.rowcount > 0
+
+
+def list_users_with_permissions(conn):
+    active_camera_ids = {
+        row["camera_id"] for row in list_active_cameras(conn)
+    }
+    users = conn.execute(
+        """
+        SELECT id, username, role, cameras, status, created_at, updated_at
+        FROM users
+        ORDER BY username ASC
+        """
+    ).fetchall()
+    result = []
+    for row in users:
+        user = dict(row)
+        permission_rows = conn.execute(
+            """
+            SELECT camera_id
+            FROM user_camera_permissions
+            WHERE user_id = ? AND permission = 'view'
+            ORDER BY camera_id ASC
+            """,
+            (user["id"],),
+        ).fetchall()
+        normalized_ids = [
+            item["camera_id"]
+            for item in permission_rows
+            if item["camera_id"] in active_camera_ids
+        ]
+        legacy_ids = [
+            camera_id.strip()
+            for camera_id in str(user.pop("cameras") or "").split(",")
+            if camera_id.strip() in active_camera_ids
+        ]
+        user["camera_ids"] = normalized_ids if permission_rows else legacy_ids
+        result.append(user)
+    return result
+
+
+def camera_exists(conn, camera_id):
+    return conn.execute(
+        "SELECT 1 FROM cameras WHERE camera_id = ? AND status = 'active'",
+        (camera_id,),
+    ).fetchone() is not None
+
+
+def list_cameras_allowed_for_user(conn, user):
+    cameras = [dict(row) for row in list_active_cameras(conn)]
+    if user.get("role") == "admin":
+        return cameras
+
+    rows = conn.execute(
+        """
+        SELECT camera_id
+        FROM user_camera_permissions
+        WHERE user_id = ? AND permission = 'view'
+        """,
+        (user["id"],),
+    ).fetchall()
+    normalized_ids = {row["camera_id"] for row in rows}
+    legacy_row = conn.execute(
+        "SELECT cameras FROM users WHERE id = ?", (user["id"],)
+    ).fetchone()
+    legacy_ids = {
+        camera_id.strip()
+        for camera_id in str(legacy_row["cameras"] or "").split(",")
+        if camera_id.strip()
+    } if legacy_row else set()
+    allowed_ids = normalized_ids or legacy_ids
+    return [camera for camera in cameras if camera["camera_id"] in allowed_ids]
+
+
+def user_can_view_camera(conn, user, camera_id):
+    return any(
+        camera["camera_id"] == camera_id
+        for camera in list_cameras_allowed_for_user(conn, user)
+    )
+
+
+def replace_user_camera_permissions(conn, user_id, camera_ids):
+    conn.execute(
+        "DELETE FROM user_camera_permissions WHERE user_id = ? AND permission = 'view'",
+        (user_id,),
+    )
+    for camera_id in camera_ids:
+        conn.execute(
+            """
+            INSERT INTO user_camera_permissions (user_id, camera_id, permission)
+            VALUES (?, ?, 'view')
+            """,
+            (user_id, camera_id),
+        )
+
+
+def record_camera_connection(conn, connection_id, camera_id):
+    now = datetime.now().isoformat(timespec="seconds")
+    conn.execute(
+        """
+        INSERT INTO camera_connections (connection_id, camera_id, connected_at)
+        VALUES (?, ?, ?)
+        """,
+        (connection_id, camera_id, now),
+    )
+
+
+def close_camera_connection(conn, connection_id, reason):
+    conn.execute(
+        """
+        UPDATE camera_connections
+        SET disconnected_at = ?, disconnect_reason = ?
+        WHERE connection_id = ? AND disconnected_at IS NULL
+        """,
+        (datetime.now().isoformat(timespec="seconds"), reason, connection_id),
+    )
 
 
 def _migrate_legacy_customer_data(conn):
@@ -808,7 +1196,7 @@ def bulk_insert_recognize_logs(conn, logs):
     """
     Bulk insert recognize logs.
     logs should be a list of dictionaries with keys:
-    opeid, camera_id, customer_id, track_id, bbox, timestamp
+    opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp
     """
     if not logs:
         return
@@ -822,7 +1210,7 @@ def bulk_insert_recognize_logs(conn, logs):
         pg_conn = conn.conn
         cursor = pg_conn.cursor()
         query = """
-            INSERT INTO recognize_logs (id, opeid, camera_id, customer_id, track_id, bbox, timestamp)
+            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp)
             VALUES %s
         """
         values = []
@@ -834,6 +1222,7 @@ def bulk_insert_recognize_logs(conn, logs):
                     str(uuid.uuid4()),
                     str(log["opeid"]),
                     str(log["camera_id"]),
+                    str(log["connection_id"]) if log.get("connection_id") else None,
                     str(log["customer_id"]) if log.get("customer_id") else None,
                     int(log["track_id"]) if log.get("track_id") is not None else None,
                     bbox_val,
@@ -851,8 +1240,8 @@ def bulk_insert_recognize_logs(conn, logs):
     else:
         # SQLite
         query = """
-            INSERT INTO recognize_logs (id, opeid, camera_id, customer_id, track_id, bbox, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
         values = []
         for log in logs:
@@ -865,6 +1254,7 @@ def bulk_insert_recognize_logs(conn, logs):
                     str(uuid.uuid4()),
                     str(log["opeid"]),
                     str(log["camera_id"]),
+                    str(log["connection_id"]) if log.get("connection_id") else None,
                     str(log["customer_id"]) if log.get("customer_id") else None,
                     int(log["track_id"]) if log.get("track_id") is not None else None,
                     bbox_val,
