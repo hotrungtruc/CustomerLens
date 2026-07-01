@@ -1,61 +1,69 @@
 # Luồng Xử lý AI & Tracking (AI Pipeline)
 
-Luồng AI của Front Door AI là trái tim của hệ thống, được thiết kế để giải quyết bài toán: **Làm sao nhận diện chính xác một người đang di chuyển, quay mặt, độ sáng thay đổi, mà không làm giật FPS của Camera?**
+Luồng xử lý AI của Front Door AI được thiết kế để giải quyết bài toán cốt lõi: **Đảm bảo khả năng nhận diện chính xác, theo thời gian thực (Real-time), trong điều kiện ánh sáng và góc mặt thay đổi, mà không làm suy giảm hiệu năng (FPS) của luồng Camera.**
 
-## 1. Các Tầng Xử lý (Processing Layers)
+## 1. Phân Phối Tác Vụ Cơ Sở (Message Broker)
+
+Thay vì tích hợp chung luồng AI với API Server, hệ thống tách rời hoàn toàn:
+- API Server (FastAPI) nhận các frames liên tục từ WebSocket và đẩy chúng vào Redis Queue (`camera_frames_v2`).
+- Một nhóm các **AI Worker (Stateless)** lắng nghe queue này, kéo frame về để phân tích. Sự tách biệt này giúp mở rộng năng lực xử lý (Horizontal Scaling) vô hạn bằng cách chạy nhiều AI Worker song song.
+
+## 2. Các Tầng Xử lý Bên Trong Worker (Processing Layers)
+
+Khi một AI Worker nhận được Frame, quá trình xử lý trải qua các bước sau:
 
 ### Bước 1: Face Detection (Phát hiện khuôn mặt)
-- Sử dụng **MediaPipe Face Detector** (hoặc SCRFD tích hợp trong InsightFace).
-- Trả về Bounding Box (Tọa độ khuôn mặt) và Điểm Landmark (Mắt, Mũi, Miệng) kèm theo Score (Độ tin cậy).
-- Lọc bỏ các khuôn mặt quá nhỏ (`MIN_FACE_BBOX_SIZE`) hoặc độ tin cậy thấp (`MIN_DETECTION_SCORE`).
+- Sử dụng **MediaPipe Tasks API** để phát hiện cực nhanh các khuôn mặt trong khung hình.
+- Trả về Bounding Box (Tọa độ khuôn mặt) kèm theo Score (Độ tin cậy).
+- Bộ lọc cấu hình sẵn sẽ loại bỏ các khuôn mặt quá nhỏ (`MIN_FACE_BBOX_SIZE`) hoặc có độ tin cậy quá thấp (`MIN_DETECTION_SCORE`).
 
-### Bước 2: Object Tracking (Theo dõi Đối tượng với Kalman Filter)
-Việc nhận diện trên từng Frame là cực kỳ chậm. Giải pháp là **Tracking**:
-- Mỗi khuôn mặt được cấp một `Track ID` (VD: `T1`).
-- Sử dụng **Kalman Filter** để dự đoán vị trí khuôn mặt ở frame tiếp theo dựa trên vận tốc di chuyển.
-- Kết hợp với thuật toán Hungari (Hungarian Algorithm) qua **IOU (Intersection Over Union)** để map khuôn mặt ở frame N với frame N-1.
-- Nhờ Tracking, AI biết được khuôn mặt trong frame hiện tại chính là khách hàng đã nhận diện ở frame trước, bỏ qua bước nhận diện lại.
+### Bước 2: Object Tracking (Theo dõi Đối tượng liên tục)
+Việc trích xuất và nhận diện đặc trưng khuôn mặt liên tục trên từng Frame là tốn kém. Giải pháp tối ưu là áp dụng **Tracking**:
+- Mỗi khuôn mặt khi xuất hiện lần đầu được hệ thống cấp một `Track ID` nội bộ (Ví dụ: `T_1234`).
+- Sử dụng thuật toán **Kalman Filter** để dự đoán vị trí khuôn mặt ở frame tiếp theo dựa trên quỹ đạo và vận tốc di chuyển.
+- Kết hợp với thuật toán **IOU (Intersection Over Union)**, hệ thống ánh xạ khuôn mặt ở frame N với frame N-1.
+- Nếu Track ID này đã được định danh thành công ở các frame trước, hệ thống có thể kết luận danh tính ngay lập tức mà không cần phân tích lại đặc trưng.
 
-### Bước 3: Quality Check & Lazy Embedding Extraction
-- Thuật toán tự đánh giá độ sắc nét, góc xoay của khuôn mặt.
-- Nếu đạt chuẩn (`quality_ok = True`), AI spawn một Thread phụ (Asynchronous) để trích xuất Vector Embedding 512 chiều từ model **GhostFaceNet** hoặc **AdaFace**.
-- Vector này được thêm vào Buffer của `TrackState`.
+### Bước 3: Lazy Embedding Extraction (Trích xuất Đặc trưng)
+- Nếu Track ID chưa được định danh, AI sẽ trích xuất Vector Embedding 512 chiều từ mô hình **EdgeFace** (`edgeface_s_gamma_05.onnx`).
+- Quá trình này được thiết kế theo cơ chế *Lazy* (Chỉ chạy khi thực sự cần thiết và khung hình đủ tiêu chuẩn độ sắc nét/kích thước) nhằm tiết kiệm tài nguyên tính toán.
 
-### Bước 4: So khớp (Matching) & Multi-frame Voting
-Hệ thống không vội vàng kết luận dựa trên 1 frame duy nhất để tránh nhận diện sai (False Positive).
-- **HNSW Vector Search:** Gửi Vector 512D lên PostgreSQL (Supabase). Bảng `customer_embeddings` sử dụng thuật toán HNSW của `pgvector` để tìm 3 khuôn mặt gần giống nhất (`top_k=3`) với tốc độ < 2ms.
-- **Voting Cơ chế (Bỏ phiếu):** Lưu lại kết quả nhận diện của 5 frame gần nhất. Nếu 3/5 frame cùng nhận diện ra ID `CUST_001`, hệ thống mới chính thức "Chốt" (Resolve) khách hàng này.
+### Bước 4: So khớp & Multi-frame Voting (Nhận diện)
+Để giảm thiểu tỷ lệ nhận diện nhầm (False Positive), hệ thống không bao giờ chốt kết quả chỉ dựa trên 1 khung hình:
+- **Vector Search:** Gửi Vector 512 chiều lên PostgreSQL (Supabase). Bảng `customer_embeddings` sử dụng thuật toán **HNSW** của `pgvector` để tìm 3 khuôn mặt tương đồng nhất (`top_k=3`) với tốc độ < 5ms.
+- **Cơ chế Bỏ phiếu (Voting):** Kết quả nhận diện của 5 frame gần nhất được đưa vào hàng đợi bỏ phiếu. Chỉ khi 3/5 frame đồng thuận chung một khách hàng (ví dụ: `CUST_001`), hệ thống mới chính thức xác nhận (Resolve) Track ID này thuộc về `CUST_001`.
 
-### Bước 5: Đăng ký Khách vãng lai (Guest Registration)
-- Nếu Track tồn tại quá lâu (vượt `GUEST_CREATION_BUFFER_SIZE`) mà không khớp với bất kỳ ai, hệ thống tự động sinh ra một `GUEST_ID` (VD: `GUEST_default_01_0001`).
-- Vector trung bình (Mean Embedding) của Guest này được Insert tạm vào CSDL.
-- Trên giao diện Frontend, nhân viên có thể "Promote" (Chuyển đổi) Guest này thành Khách hàng chính thức.
+### Bước 5: Đăng ký Khách Vãng Lai (Guest Registration)
+- Nếu một khuôn mặt xuất hiện trong camera quá lâu (vượt qua ngưỡng `GUEST_CREATION_BUFFER_SIZE`) nhưng hệ thống không tìm thấy kết quả trùng khớp trong cơ sở dữ liệu.
+- AI Worker tự động khởi tạo một định danh khách hàng mới (`Guest`).
+- Vector trung bình (Mean Embedding) của Guest này được lưu bất đồng bộ (Asynchronously) vào Supabase.
+- Trên giao diện Frontend, nhân viên có thể xem được lịch sử của Khách Vãng Lai này và tiến hành cập nhật thông tin nếu cần thiết.
 
 ---
 
-## 2. Sơ đồ Luồng Tracking (Tracking Workflow)
+## 3. Sơ đồ Luồng Tracking (Tracking Workflow)
 
 ```mermaid
 sequenceDiagram
-    participant Camera
-    participant Detector
-    participant Tracker
-    participant Embedder
-    participant DB
+    participant API as API Server (Gateway)
+    participant Redis as Redis Queue
+    participant Worker as AI Worker
+    participant DB as PostgreSQL (Supabase)
 
-    Camera->>Detector: Frame
-    Detector->>Tracker: Bounding Boxes
-    Tracker->>Tracker: Kalman Predict & IOU Matching
-    alt Track mới hoặc chưa nhận diện
-        Tracker->>Embedder: Extract Vector (Async)
-        Embedder->>Tracker: 512D Vector
-        Tracker->>DB: pgvector HNSW Search
-        DB-->>Tracker: Top K Matches
-        Tracker->>Tracker: Lưu vào Voting Buffer
-        Tracker->>Tracker: Nút thắt: 3/5 Vote giống nhau?
+    API->>Redis: Publish Frame
+    Redis->>Worker: Pop Frame
+    Worker->>Worker: MediaPipe Face Detection
+    Worker->>Worker: Kalman Filter & IOU Tracking
+    
+    alt Track ID chưa được định danh
+        Worker->>Worker: EdgeFace Embedding (512D Vector)
+        Worker->>DB: pgvector HNSW Cosine Search
+        DB-->>Worker: Top K Matches
+        Worker->>Worker: Cập nhật Voting Buffer
+        Worker->>Worker: 3/5 Vote giống nhau? (Xác nhận Định danh)
     end
-    Tracker-->>Camera: Trả về Customer ID (Gắn nhãn)
+    
+    Worker->>Redis: Publish Result (Bounding Box, Customer Info)
+    Redis-->>API: Subscribe Result
+    API-->>Client: WebSocket Response
 ```
-
-## 3. Tự động Học hỏi (Auto Merge / Face Bank Update)
-Khi một `Track` ban đầu mờ/đeo kính (được ghi nhận là Guest vectors nội bộ), nhưng sau đó tháo kính và hệ thống nhận diện ra được người dùng, Backend sẽ tự động lấy trung bình cộng các vector mờ/đeo kính đó, **Merge** vào CSDL của người dùng. Việc này giúp hệ thống ngày càng thông minh và nhận ra khách hàng dễ dàng hơn ở các lần sau.
