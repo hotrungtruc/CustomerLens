@@ -48,7 +48,7 @@
 
 ---
 
-## Hướng Dẫn Cài Đặt Nhanh (Dành cho Khách Hàng / End-user)
+## Hướng Dẫn Cài Đặt Nhanh (Dành cho End-user)
 
 Để tự chạy hệ thống trên máy tính cá nhân (Windows, Mac, hoặc Linux), bạn vui lòng làm theo từng bước chi tiết dưới đây:
 
