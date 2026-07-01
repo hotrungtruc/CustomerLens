@@ -5,19 +5,29 @@ import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
 import CameraViewer from "../../components/CameraViewer";
-import { Maximize2, RefreshCw, X, Wifi, WifiOff } from "lucide-react";
-import { fetchActiveSessions } from "../../services/api";
+import { Maximize2, Pencil, RefreshCw, X, Wifi, WifiOff } from "lucide-react";
+import {
+  createDeviceEnrollment,
+  fetchCameras,
+  renameCamera,
+} from "../../services/api";
 
 /* ── Session badge (top-left overlay) ───────────────────────────────────── */
-function SessionBadge({ session }) {
-  const isActive = session.active;
+function CameraBadge({ camera }) {
+  const isActive = camera.active;
   return (
     <div className="min-w-0 text-white">
       <div className="flex min-w-0 items-center gap-1.5">
         <span className="truncate text-xs font-semibold sm:text-sm">
-          {session.session_id}
+          {camera.display_name || camera.camera_id}
         </span>
       </div>
+      <span
+        className="mt-0.5 block truncate font-mono text-[9px] text-slate-300"
+        title={camera.camera_id}
+      >
+        {camera.camera_id}
+      </span>
       {isActive ? (
         <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-300">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -34,31 +44,31 @@ function SessionBadge({ session }) {
 }
 
 /* ── Camera tile ────────────────────────────────────────────────────────── */
-function CameraTile({ session, onExpand }) {
+function CameraTile({ camera, onExpand, onPair, onRename, canManage }) {
   return (
     <div className="group relative h-full min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-950 shadow-sm">
       {/* Top overlay */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 bg-gradient-to-b from-slate-950/85 via-slate-950/45 to-transparent p-2">
-        <SessionBadge session={session} />
+        <CameraBadge camera={camera} />
         <button
           type="button"
           onClick={onExpand}
           className="pointer-events-auto rounded-md border border-white/20 bg-white/15 p-1 text-white/80 backdrop-blur hover:bg-white/25 hover:text-white"
-          aria-label={`Phóng to ${session.session_id}`}
+          aria-label={`Phóng to ${camera.camera_id}`}
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
       </div>
 
       {/* Face count badge */}
-      {session.face_count > 0 && (
+      {camera.face_count > 0 && (
         <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow backdrop-blur">
-          {session.face_count} khuôn mặt
+          {camera.face_count} khuôn mặt
         </div>
       )}
 
-      {session.active ? (
-        <CameraViewer sessionId={session.session_id} compact refreshInterval={800} />
+      {camera.active ? (
+        <CameraViewer cameraId={camera.camera_id} compact />
       ) : (
         <div className="relative h-full overflow-hidden bg-slate-900">
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/60">
@@ -69,12 +79,31 @@ function CameraTile({ session, onExpand }) {
           </div>
         </div>
       )}
+      {canManage ? (
+        <div className="absolute bottom-2 left-2 z-10 flex gap-1.5">
+          <button
+            type="button"
+            onClick={onRename}
+            className="flex items-center gap-1 rounded-md border border-white/20 bg-slate-950/60 px-2 py-1 text-[10px] font-semibold text-white/80 backdrop-blur hover:bg-slate-950/80"
+          >
+            <Pencil className="h-3 w-3" />
+            Đổi tên
+          </button>
+          <button
+            type="button"
+            onClick={onPair}
+            className="rounded-md border border-white/20 bg-slate-950/60 px-2 py-1 text-[10px] font-semibold text-white/80 backdrop-blur hover:bg-slate-950/80"
+          >
+            Mã ghép nối
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 /* ── Expanded modal ─────────────────────────────────────────────────────── */
-function ExpandedModal({ session, onClose }) {
+function ExpandedModal({ camera, onClose }) {
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === "Escape") onClose();
@@ -94,20 +123,23 @@ function ExpandedModal({ session, onClose }) {
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-slate-800">
-              {session.session_id}
+              {camera.display_name || camera.camera_id}
+            </span>
+            <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500">
+              {camera.camera_id}
             </span>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${
-                session.active
+                camera.active
                   ? "bg-emerald-50 text-emerald-600"
                   : "bg-slate-100 text-slate-500"
               }`}
             >
-              {session.active ? "Live" : "Idle"}
+              {camera.active ? "Live" : "Idle"}
             </span>
-            {session.face_count > 0 && (
+            {camera.face_count > 0 && (
               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
-                {session.face_count} khuôn mặt
+                {camera.face_count} khuôn mặt
               </span>
             )}
           </div>
@@ -122,8 +154,8 @@ function ExpandedModal({ session, onClose }) {
         </div>
 
         <div className="h-[calc(82dvh-49px)] min-h-[320px] bg-slate-950">
-          {session.active ? (
-            <CameraViewer sessionId={session.session_id} refreshInterval={300} />
+          {camera.active ? (
+            <CameraViewer cameraId={camera.camera_id} />
           ) : (
             <div className="flex h-full items-center justify-center">
               <span className="text-base font-medium text-white/60">
@@ -162,7 +194,7 @@ export default function CameraPage() {
   const router = useRouter();
   const [filter, setFilter] = useState("all");
   const [role, setRole] = useState(null);
-  const [sessions, setSessions] = useState([]);
+  const [cameras, setCameras] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -176,12 +208,11 @@ export default function CameraPage() {
     setRole(savedRole);
   }, [router]);
 
-  // Poll active sessions
-  const loadSessions = useCallback(async () => {
+  const loadCameras = useCallback(async () => {
     try {
-      const data = await fetchActiveSessions();
+      const data = await fetchCameras();
       if (data.status === "success") {
-        setSessions(data.sessions || []);
+        setCameras(data.cameras || []);
       }
     } catch (_) {}
     setIsLoading(false);
@@ -189,16 +220,16 @@ export default function CameraPage() {
 
   useEffect(() => {
     if (!role) return;
-    loadSessions();
-    const interval = setInterval(loadSessions, 3000);
+    loadCameras();
+    const interval = setInterval(loadCameras, 3000);
     return () => clearInterval(interval);
-  }, [role, loadSessions]);
+  }, [role, loadCameras]);
 
   // Counts
   const counts = useMemo(() => {
-    const active = sessions.filter((s) => s.active).length;
-    return { all: sessions.length, active, idle: sessions.length - active };
-  }, [sessions]);
+    const active = cameras.filter((camera) => camera.active).length;
+    return { all: cameras.length, active, idle: cameras.length - active };
+  }, [cameras]);
 
   const filters = useMemo(
     () => [
@@ -221,13 +252,39 @@ export default function CameraPage() {
   // Filter
   const shown =
     filter === "all"
-      ? sessions
+      ? cameras
       : filter === "active"
-        ? sessions.filter((s) => s.active)
-        : sessions.filter((s) => !s.active);
+        ? cameras.filter((camera) => camera.active)
+        : cameras.filter((camera) => !camera.active);
 
-  const expandedSession =
-    shown.find((s) => s.session_id === expandedId) || null;
+  const expandedCamera =
+    shown.find((camera) => camera.camera_id === expandedId) || null;
+
+  const handleCreatePairingCode = async (camera) => {
+    try {
+      const result = await createDeviceEnrollment(camera.camera_id);
+      alert(
+        `Mã ghép nối cho ${camera.display_name || camera.camera_id}: ${result.code}\nMã hết hạn sau ${Math.round(result.expires_in / 60)} phút.`,
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Không thể tạo mã ghép nối");
+    }
+  };
+
+  const handleRenameCamera = async (camera) => {
+    const displayName = window.prompt(
+      "Nhập tên hiển thị mới cho camera:",
+      camera.display_name || "",
+    );
+    if (displayName === null || !displayName.trim()) return;
+
+    try {
+      await renameCamera(camera.camera_id, displayName.trim());
+      await loadCameras();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Không thể đổi tên camera");
+    }
+  };
 
   // Dynamic grid columns based on session count
   const gridCols =
@@ -269,7 +326,7 @@ export default function CameraPage() {
             </div>
 
             <button
-              onClick={loadSessions}
+              onClick={loadCameras}
               className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
               title="Làm mới"
             >
@@ -290,11 +347,14 @@ export default function CameraPage() {
             <div
               className={`grid flex-1 min-h-0 auto-rows-fr gap-2 overflow-auto p-2 ${gridCols}`}
             >
-              {shown.map((session) => (
+              {shown.map((camera) => (
                 <CameraTile
-                  key={session.session_id}
-                  session={session}
-                  onExpand={() => setExpandedId(session.session_id)}
+                  key={camera.camera_id}
+                  camera={camera}
+                  onExpand={() => setExpandedId(camera.camera_id)}
+                  onPair={() => handleCreatePairingCode(camera)}
+                  onRename={() => handleRenameCamera(camera)}
+                  canManage={role === "admin"}
                 />
               ))}
             </div>
@@ -302,9 +362,9 @@ export default function CameraPage() {
         </div>
       </div>
 
-      {expandedSession ? (
+      {expandedCamera ? (
         <ExpandedModal
-          session={expandedSession}
+          camera={expandedCamera}
           onClose={() => setExpandedId(null)}
         />
       ) : null}

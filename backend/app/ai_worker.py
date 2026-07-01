@@ -66,9 +66,12 @@ def main():
                 
             opeid = data.get("opeid")
             camera_id = data.get("camera_id")
+            connection_id = data.get("connection_id")
             
-            if not camera_id:
-                logger.warning("Received frame without camera_id. Skipping.")
+            if not camera_id or not connection_id:
+                logger.warning(
+                    "Received frame without camera_id or connection_id. Skipping."
+                )
                 continue
             
             try:
@@ -118,11 +121,12 @@ def main():
                     logger.warning(f"Batch extraction error: {e}")
             
             # Publish back to Master
-            pubsub_channel = f"worker_results_{camera_id}"
+            pubsub_channel = f"worker_results_{connection_id}"
             
             payload = {
                 "opeid": opeid,
                 "camera_id": camera_id,
+                "connection_id": connection_id,
                 "timestamp": data.get("timestamp"),
                 "face_records": face_records,
                 "frame_size": {"width": frame.shape[1], "height": frame.shape[0]}

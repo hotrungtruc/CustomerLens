@@ -1,5 +1,8 @@
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : "http://localhost:8000");
 
 function getAuthHeaders() {
   const headers = {};
@@ -25,6 +28,28 @@ export async function postLogin(username, password) {
     throw new Error(data.detail || "Login failed");
   }
   return response.json();
+}
+
+let identityRequest = null;
+
+export function resolveDeviceIdentity() {
+  if (!identityRequest) {
+    identityRequest = fetch(`${API_BASE_URL}/api/device/identity`, {
+      method: "POST",
+      credentials: "include",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.detail || "Không thể nhận diện thiết bị");
+        }
+        return response.json();
+      })
+      .finally(() => {
+        identityRequest = null;
+      });
+  }
+  return identityRequest;
 }
 
 export async function fetchCustomerInfo(cameraId = null) {
@@ -115,10 +140,126 @@ export async function fetchCustomerProfileById(customerId) {
   return response.json();
 }
 
-export async function fetchActiveSessions() {
-  const response = await fetch(`${API_BASE_URL}/api/active_sessions`);
+export async function fetchCameras() {
+  const response = await fetch(`${API_BASE_URL}/api/cameras`, {
+    headers: getAuthHeaders(),
+    credentials: "include",
+  });
   if (!response.ok) {
-    throw new Error("Network error");
+    throw new Error("Không thể tải danh sách camera");
+  }
+  return response.json();
+}
+
+export async function renameCamera(cameraId, displayName) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/cameras/${encodeURIComponent(cameraId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ display_name: displayName }),
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể đổi tên camera");
+  }
+  return response.json();
+}
+
+export async function fetchUsers() {
+  const response = await fetch(`${API_BASE_URL}/api/users`, {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error("Không thể tải danh sách tài khoản");
+  }
+  return response.json();
+}
+
+export async function createModerator(username, password) {
+  const response = await fetch(`${API_BASE_URL}/api/users`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể tạo moderator");
+  }
+  return response.json();
+}
+
+export async function updateModerator(username, payload) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/users/${encodeURIComponent(username)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể cập nhật moderator");
+  }
+  return response.json();
+}
+
+export async function deleteModerator(username) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/users/${encodeURIComponent(username)}`,
+    { method: "DELETE", headers: getAuthHeaders() },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể xóa moderator");
+  }
+  return response.json();
+}
+
+export async function updateCameraPermissions(username, cameraIds) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/users/${encodeURIComponent(username)}/camera_permissions`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify({ camera_ids: cameraIds }),
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail?.message || data.detail || "Không thể lưu phân quyền");
+  }
+  return response.json();
+}
+
+export async function claimDeviceEnrollment(code) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/device/enrollments/claim`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Mã ghép nối không hợp lệ");
+  }
+  return response.json();
+}
+
+export async function createDeviceEnrollment(cameraId) {
+  const response = await fetch(`${API_BASE_URL}/api/device/enrollments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify({ camera_id: cameraId, revoke_existing: true }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể tạo mã ghép nối");
   }
   return response.json();
 }

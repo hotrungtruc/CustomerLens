@@ -8,10 +8,10 @@ const MAX_UPLOAD_WIDTH = 640;
 const MAX_UPLOAD_HEIGHT = 360;
 const RECONNECT_DELAY_MS = 2000;
 
-function getWsUrl(sessionId) {
+function getWsUrl(cameraId, takeover = false) {
   // Derive WS URL from the API base URL so it works in any environment
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  let host = "localhost:8000";
+  let host = `${window.location.hostname}:8000`;
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_HOST;
   if (baseUrl) {
     try {
@@ -22,7 +22,8 @@ function getWsUrl(sessionId) {
       host = baseUrl.replace(/^https?:\/\//, "");
     }
   }
-  return `${protocol}//${host}/ws/${encodeURIComponent(sessionId)}`;
+  const query = takeover ? "?takeover=1" : "";
+  return `${protocol}//${host}/ws/${encodeURIComponent(cameraId)}${query}`;
 }
 
 /**
@@ -38,7 +39,7 @@ function getWsUrl(sessionId) {
  *   devices, selectedDeviceId, setSelectedDeviceId — camera selector
  *   cameraError               — getUserMedia error message
  */
-export function useCamera(sessionId) {
+export function useCamera(cameraId) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -47,6 +48,9 @@ export function useCamera(sessionId) {
   const mountedRef = useRef(true);
   const sendingRef = useRef(false);
   const reconnectRef = useRef(null);
+  const takeoverNextRef = useRef(false);
+  const suppressedCloseRef = useRef(null);
+  const serverReadyRef = useRef(false);
   const skipNextDeviceStartRef = useRef(false);
   const peerConnectionsRef = useRef({});
 
@@ -56,23 +60,31 @@ export function useCamera(sessionId) {
   const [customers, setCustomers] = useState([]);
   const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
   const [cameraError, setCameraError] = useState("");
+  const [connectionId, setConnectionId] = useState(null);
 
   // ── WebSocket lifecycle ───────────────────────────────────────────────────
   const connectWs = useCallback(() => {
     if (!mountedRef.current) return;
 
-    const ws = new WebSocket(getWsUrl(sessionId));
+    const takeover = takeoverNextRef.current;
+    takeoverNextRef.current = false;
+    const ws = new WebSocket(getWsUrl(cameraId, takeover));
     wsRef.current = ws;
+    serverReadyRef.current = false;
+    setConnectionId(null);
     setWsStatus("connecting");
 
-    ws.onopen = () => {
-      if (mountedRef.current) setWsStatus("live");
-    };
-
     ws.onmessage = async (event) => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || wsRef.current !== ws) return;
       try {
         const data = JSON.parse(event.data);
+
+        if (data.type === "ready") {
+          serverReadyRef.current = true;
+          setConnectionId(data.connection_id);
+          setWsStatus("live");
+          return;
+        }
         
         // Handle AI Tracking Data
         if (data.customers) {
@@ -126,28 +138,53 @@ export function useCamera(sessionId) {
     };
 
     ws.onerror = () => {
-      if (mountedRef.current) setWsStatus("error");
+      if (mountedRef.current && wsRef.current === ws) setWsStatus("error");
     };
 
-    ws.onclose = () => {
-      if (!mountedRef.current) return;
+    ws.onclose = (event) => {
+      if (!mountedRef.current || wsRef.current !== ws) return;
+      if (suppressedCloseRef.current === ws) {
+        suppressedCloseRef.current = null;
+        return;
+      }
+      wsRef.current = null;
+      serverReadyRef.current = false;
+      setConnectionId(null);
+      if (event.code === 4008) {
+        setWsStatus("taken_over");
+        return;
+      }
       setWsStatus("disconnected");
       reconnectRef.current = setTimeout(connectWs, RECONNECT_DELAY_MS);
     };
-  }, [sessionId]);
+  }, [cameraId]);
 
   useEffect(() => {
     mountedRef.current = true;
     connectWs();
     return () => {
       mountedRef.current = false;
-      wsRef.current?.close();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      ws?.close();
       clearTimeout(reconnectRef.current);
     };
   }, [connectWs]);
 
+  const takeOver = useCallback(() => {
+    clearTimeout(reconnectRef.current);
+    takeoverNextRef.current = true;
+    const currentWs = wsRef.current;
+    if (currentWs && currentWs.readyState < WebSocket.CLOSING) {
+      suppressedCloseRef.current = currentWs;
+      currentWs.close();
+    }
+    setTimeout(connectWs, 0);
+  }, [connectWs]);
+
   // ── Frame capture ─────────────────────────────────────────────────────────
   const sendFrame = useCallback(() => {
+    if (!serverReadyRef.current) return;
     if (sendingRef.current) return;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -172,8 +209,13 @@ export function useCamera(sessionId) {
 
       canvas.toBlob(
         (blob) => {
-          if (wsRef.current?.readyState === WebSocket.OPEN && blob) {
-            wsRef.current.send(blob);
+          if (
+            serverReadyRef.current &&
+            wsRef.current === ws &&
+            ws.readyState === WebSocket.OPEN &&
+            blob
+          ) {
+            ws.send(blob);
           }
           sendingRef.current = false;
         },
@@ -282,6 +324,8 @@ export function useCamera(sessionId) {
     selectedDeviceId,
     setSelectedDeviceId,
     wsStatus,
+    connectionId,
+    takeOver,
     customers,
     frameSize,
     cameraError,

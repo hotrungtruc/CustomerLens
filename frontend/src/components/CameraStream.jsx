@@ -22,14 +22,14 @@ function calculateIoU(boxA, boxB) {
  * CameraStream — live webcam feed with bounding-box overlays.
  *
  * Props:
- *   sessionId         — unique ID for this camera session (backend creates its own CameraState)
+ *   cameraId          — stable camera identity resolved by the backend
  *   highlightedTrackId — track_id to highlight with a white ring
  *   framed            — wrap in a card border/shadow
  *   fullHeight        — force container to full height
  *   onCustomersChange — optional callback(customers, frameSize) for parent state lifting
  */
 export default function CameraStream({
-  sessionId,
+  cameraId,
   highlightedTrackId = null,
   framed = true,
   compact = false,
@@ -43,10 +43,11 @@ export default function CameraStream({
     selectedDeviceId,
     setSelectedDeviceId,
     wsStatus,
+    takeOver,
     customers,
     frameSize,
     cameraError,
-  } = useCamera(sessionId);
+  } = useCamera(cameraId);
 
   const localFaces = useLocalFaceDetector(videoRef);
 
@@ -127,6 +128,8 @@ export default function CameraStream({
       ? "Camera live"
       : wsStatus === "connecting"
         ? "Connecting…"
+        : wsStatus === "taken_over"
+          ? "Opened elsewhere"
         : wsStatus === "error"
           ? "Connection error"
           : "Reconnecting…";
@@ -157,6 +160,18 @@ export default function CameraStream({
                 {statusLabel}
               </span>
             </span>
+
+            {(wsStatus === "disconnected" ||
+              wsStatus === "error" ||
+              wsStatus === "taken_over") && (
+              <button
+                type="button"
+                onClick={takeOver}
+                className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+              >
+                Tiếp quản camera
+              </button>
+            )}
 
             {/* Camera selector */}
             <select

@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import Sidebar from "../../components/Sidebar";
-import PageHeader from "../../components/PageHeader";
 import {
   Camera,
   KeyRound,
+  Lock,
   Pencil,
   Plus,
   Save,
@@ -17,69 +16,28 @@ import {
   Users,
   X,
 } from "lucide-react";
+import Sidebar from "../../components/Sidebar";
+import PageHeader from "../../components/PageHeader";
+import {
+  createModerator,
+  deleteModerator,
+  fetchCameras,
+  fetchUsers,
+  updateCameraPermissions,
+  updateModerator,
+} from "../../services/api";
 
-const STORAGE_KEY = "frontdesk_permission_mock_users";
-
-const CAMERA_OPTIONS = [
-  { id: "default", name: "Camera mặc định", area: "Quầy lễ tân" },
-  { id: "DSLR-001", name: "DSLR-001", area: "Sảnh chính" },
-  { id: "DSLR-002", name: "DSLR-002", area: "Cổng vào" },
-  { id: "DSLR-003", name: "DSLR-003", area: "Khu dịch vụ" },
-  { id: "CAM-VIP", name: "CAM-VIP", area: "Khu khách VIP" },
-];
-
-const DEFAULT_USERS = [
-  {
-    id: "mock-moderator-main",
-    username: "moderator",
-    password: "change_me_immediately",
-    role: "moderator",
-    cameras: ["DSLR-002", "DSLR-003"],
-    updatedAt: "2026-06-26 09:00",
-  },
-  {
-    id: "mock-frontdesk-shift",
-    username: "frontdesk_shift",
-    password: "frontdesk123",
-    role: "moderator",
-    cameras: ["default", "DSLR-001"],
-    updatedAt: "2026-06-26 09:15",
-  },
-];
-
-const EMPTY_FORM = {
-  username: "",
-  password: "",
-  cameras: ["default"],
-};
-
-function makeId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return `mock-${Date.now()}`;
-}
-
-function getNowLabel() {
-  return new Date().toLocaleString("vi-VN", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
+const EMPTY_FORM = { username: "", password: "", cameraIds: [] };
 
 function StatBox({ Icon, label, value }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
           <Icon className="h-4 w-4" />
         </div>
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-slate-500">{label}</p>
+        <div>
+          <p className="text-xs font-medium text-slate-500">{label}</p>
           <p className="text-xl font-semibold text-slate-900">{value}</p>
         </div>
       </div>
@@ -98,29 +56,29 @@ function CameraCheckbox({ camera, checked, onToggle }) {
       />
       <span className="min-w-0">
         <span className="block truncate text-sm font-semibold text-slate-800">
-          {camera.name}
+          {camera.display_name}
         </span>
-        <span className="block truncate text-xs text-slate-500">
-          {camera.area}
+        <span className="block truncate font-mono text-[10px] text-slate-500">
+          {camera.camera_id}
         </span>
       </span>
     </label>
   );
 }
 
-function CameraBadges({ cameraIds }) {
+function CameraBadges({ cameraIds, cameraMap }) {
   if (!cameraIds.length) {
     return <span className="text-xs text-slate-400">Chưa phân quyền</span>;
   }
-
   return (
     <div className="flex flex-wrap gap-1.5">
       {cameraIds.map((cameraId) => (
         <span
           key={cameraId}
+          title={cameraId}
           className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
         >
-          {cameraId}
+          {cameraMap.get(cameraId)?.display_name || cameraId}
         </span>
       ))}
     </div>
@@ -131,10 +89,14 @@ export default function PermissionsPage() {
   const router = useRouter();
   const [role, setRole] = useState(null);
   const [users, setUsers] = useState([]);
+  const [cameras, setCameras] = useState([]);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [editingId, setEditingId] = useState(null);
+  const [editingUsername, setEditingUsername] = useState(null);
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const savedRole = localStorage.getItem("role") || "guest";
@@ -142,154 +104,156 @@ export default function PermissionsPage() {
       router.push("/");
       return;
     }
-
     setRole(savedRole);
-    try {
-      const savedUsers = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      setUsers(Array.isArray(savedUsers) ? savedUsers : DEFAULT_USERS);
-    } catch {
-      setUsers(DEFAULT_USERS);
-    }
   }, [router]);
 
-  useEffect(() => {
-    if (role === "admin") {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [userData, cameraData] = await Promise.all([
+        fetchUsers(),
+        fetchCameras(),
+      ]);
+      setUsers(
+        (userData.users || []).filter((user) => user.role === "moderator"),
+      );
+      setCameras(cameraData.cameras || []);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : "Không thể tải dữ liệu",
+      );
+    } finally {
+      setLoading(false);
     }
-  }, [role, users]);
+  }, []);
+
+  useEffect(() => {
+    if (role === "admin") loadData();
+  }, [role, loadData]);
 
   const editingUser = useMemo(
-    () => users.find((user) => user.id === editingId) || null,
-    [editingId, users],
+    () => users.find((user) => user.username === editingUsername) || null,
+    [editingUsername, users],
   );
-
+  const cameraMap = useMemo(
+    () => new Map(cameras.map((camera) => [camera.camera_id, camera])),
+    [cameras],
+  );
   const filteredUsers = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     if (!keyword) return users;
-
-    return users.filter((user) => {
-      const cameras = user.cameras.join(" ").toLowerCase();
-      return (
-        user.username.toLowerCase().includes(keyword) ||
-        cameras.includes(keyword)
-      );
-    });
+    return users.filter((user) =>
+      `${user.username} ${(user.camera_ids || []).join(" ")}`
+        .toLowerCase()
+        .includes(keyword),
+    );
   }, [query, users]);
-
-  const assignedCameraCount = useMemo(() => {
-    const unique = new Set();
-    users.forEach((user) => user.cameras.forEach((camera) => unique.add(camera)));
-    return unique.size;
-  }, [users]);
+  const assignedCameraCount = useMemo(
+    () => new Set(users.flatMap((user) => user.camera_ids || [])).size,
+    [users],
+  );
 
   const resetForm = () => {
-    setEditingId(null);
+    setEditingUsername(null);
     setForm(EMPTY_FORM);
     setMessage("");
-  };
-
-  const toggleCamera = (cameraId) => {
-    setForm((current) => {
-      const exists = current.cameras.includes(cameraId);
-      return {
-        ...current,
-        cameras: exists
-          ? current.cameras.filter((item) => item !== cameraId)
-          : [...current.cameras, cameraId],
-      };
-    });
+    setError("");
   };
 
   const startEdit = (user) => {
-    setEditingId(user.id);
+    setEditingUsername(user.username);
     setForm({
       username: user.username,
       password: "",
-      cameras: user.cameras,
+      cameraIds: (user.camera_ids || []).filter((cameraId) =>
+        cameraMap.has(cameraId),
+      ),
     });
     setMessage("");
+    setError("");
   };
 
-  const handleSubmit = (event) => {
+  const toggleCamera = (cameraId) => {
+    setForm((current) => ({
+      ...current,
+      cameraIds: current.cameraIds.includes(cameraId)
+        ? current.cameraIds.filter((item) => item !== cameraId)
+        : [...current.cameraIds, cameraId],
+    }));
+  };
+
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const username = form.username.trim();
-    const password = form.password.trim();
-
-    if (!username) {
-      setMessage("Vui lòng nhập tên tài khoản moderator.");
-      return;
+    if (!username) return setError("Vui lòng nhập tên tài khoản moderator.");
+    if (!editingUser && form.password.length < 6) {
+      return setError("Mật khẩu phải có ít nhất 6 ký tự.");
     }
-    if (!editingUser && !password) {
-      setMessage("Vui lòng nhập mật khẩu cho tài khoản mới.");
-      return;
-    }
-    if (!editingUser && password.length < 6) {
-      setMessage("Mật khẩu nên có ít nhất 6 ký tự.");
-      return;
-    }
-    if (form.cameras.length === 0) {
-      setMessage("Vui lòng chọn ít nhất một camera.");
-      return;
+    if (!form.cameraIds.length) {
+      return setError("Vui lòng chọn ít nhất một camera.");
     }
 
-    const duplicate = users.some(
-      (user) =>
-        user.username.toLowerCase() === username.toLowerCase() &&
-        user.id !== editingId,
-    );
-    if (duplicate) {
-      setMessage("Tên tài khoản này đã tồn tại.");
-      return;
-    }
-
-    if (editingUser) {
-      setUsers((current) =>
-        current.map((user) =>
-          user.id === editingUser.id
-            ? {
-                ...user,
-                username,
-                password: password || user.password,
-                cameras: form.cameras,
-                updatedAt: getNowLabel(),
-              }
-            : user,
-        ),
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      if (editingUser) {
+        if (form.password) {
+          await updateModerator(editingUser.username, {
+            password: form.password,
+          });
+        }
+        await updateCameraPermissions(editingUser.username, form.cameraIds);
+        setMessage(`Đã cập nhật moderator ${editingUser.username}.`);
+      } else {
+        await createModerator(username, form.password);
+        await updateCameraPermissions(username, form.cameraIds);
+        setMessage(`Đã tạo moderator ${username}.`);
+      }
+      await loadData();
+      setEditingUsername(null);
+      setForm(EMPTY_FORM);
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error ? saveError.message : "Không thể lưu thay đổi",
       );
-      setMessage(`Đã cập nhật phân quyền cho ${username}.`);
-      setForm({ username, password: "", cameras: form.cameras });
-      return;
+    } finally {
+      setSaving(false);
     }
-
-    const nextUser = {
-      id: makeId(),
-      username,
-      password,
-      role: "moderator",
-      cameras: form.cameras,
-      updatedAt: getNowLabel(),
-    };
-
-    setUsers((current) => [nextUser, ...current]);
-    setMessage(`Đã thêm moderator ${username}.`);
-    setForm(EMPTY_FORM);
   };
 
-  const handleDelete = (user) => {
-    const ok = window.confirm(`Xóa moderator "${user.username}"?`);
-    if (!ok) return;
+  const handleStatus = async (user) => {
+    const nextStatus = user.status === "active" ? "disabled" : "active";
+    try {
+      await updateModerator(user.username, { status: nextStatus });
+      setMessage(
+        nextStatus === "active"
+          ? `Đã mở khóa ${user.username}.`
+          : `Đã khóa ${user.username}.`,
+      );
+      await loadData();
+    } catch (statusError) {
+      setError(statusError instanceof Error ? statusError.message : "Không thể đổi trạng thái");
+    }
+  };
 
-    setUsers((current) => current.filter((item) => item.id !== user.id));
-    if (editingId === user.id) resetForm();
-    setMessage(`Đã xóa moderator ${user.username}.`);
+  const handleDelete = async (user) => {
+    if (!window.confirm(`Xóa moderator "${user.username}"?`)) return;
+    try {
+      await deleteModerator(user.username);
+      if (editingUsername === user.username) resetForm();
+      setMessage(`Đã xóa moderator ${user.username}.`);
+      await loadData();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Không thể xóa tài khoản");
+    }
   };
 
   if (role !== "admin") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <p className="text-sm font-medium text-slate-500">
-          Đang kiểm tra quyền truy cập...
-        </p>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">
+        Đang kiểm tra quyền truy cập...
       </div>
     );
   }
@@ -298,50 +262,32 @@ export default function PermissionsPage() {
     <main className="h-dvh w-screen overflow-hidden bg-white">
       <div className="grid h-full w-full overflow-hidden lg:grid-cols-[64px_minmax(0,1fr)]">
         <Sidebar active="notifications" />
-
-        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 bg-slate-50">
-          <PageHeader
-            title="Phân quyền"
-            subtitle="Quản lý moderator và camera được phép theo dõi."
-          />
-
-          <div className="flex-1 min-h-0 overflow-auto p-4 sm:p-5 lg:p-6">
+        <div className="flex min-h-0 min-w-0 flex-col bg-slate-50">
+          <PageHeader title="Phân quyền" subtitle="Quản lý moderator và camera được phép theo dõi." />
+          <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-5 lg:p-6">
             <div className="grid gap-3 sm:grid-cols-3">
               <StatBox Icon={Users} label="Moderator" value={users.length} />
-              <StatBox
-                Icon={Camera}
-                label="Camera khả dụng"
-                value={CAMERA_OPTIONS.length}
-              />
-              <StatBox
-                Icon={Shield}
-                label="Camera đã gán"
-                value={assignedCameraCount}
-              />
+              <StatBox Icon={Camera} label="Camera khả dụng" value={cameras.length} />
+              <StatBox Icon={Shield} label="Camera đã gán" value={assignedCameraCount} />
             </div>
+
+            {error && !editingUser ? (
+              <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
+            ) : null}
 
             <div className="mt-4 grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
               <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
-                      {editingUser ? (
-                        <Pencil className="h-4 w-4" />
-                      ) : (
-                        <UserPlus className="h-4 w-4" />
-                      )}
+                      {editingUser ? <Pencil className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                     </div>
                     <h2 className="text-sm font-semibold text-slate-900">
                       {editingUser ? "Sửa moderator" : "Thêm moderator"}
                     </h2>
                   </div>
                   {editingUser ? (
-                    <button
-                      type="button"
-                      onClick={resetForm}
-                      title="Hủy sửa"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                    >
+                    <button type="button" onClick={resetForm} className="rounded-md border border-slate-200 p-1.5 text-slate-500">
                       <X className="h-4 w-4" />
                     </button>
                   ) : null}
@@ -349,85 +295,56 @@ export default function PermissionsPage() {
 
                 <form onSubmit={handleSubmit} className="mt-4 space-y-4">
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">
-                      Tên tài khoản
-                    </label>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Tên tài khoản</label>
                     <div className="relative">
                       <Users className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
                         value={form.username}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            username: event.target.value,
-                          }))
-                        }
+                        disabled={Boolean(editingUser)}
+                        onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))}
+                        className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none disabled:bg-slate-50"
                         placeholder="VD: moderator_sanh"
-                        className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
                       />
                     </div>
                   </div>
-
                   <div>
-                    <label className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">
-                      Mật khẩu
-                    </label>
+                    <label className="mb-1.5 block text-xs font-semibold uppercase text-slate-500">Mật khẩu</label>
                     <div className="relative">
                       <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <input
                         type="password"
                         value={form.password}
-                        onChange={(event) =>
-                          setForm((current) => ({
-                            ...current,
-                            password: event.target.value,
-                          }))
-                        }
-                        placeholder={
-                          editingUser ? "Để trống nếu không đổi" : "Nhập mật khẩu"
-                        }
-                        className="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
+                        onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                        className="w-full rounded-lg border border-slate-200 py-2.5 pl-9 pr-3 text-sm outline-none"
+                        placeholder={editingUser ? "Để trống nếu không đổi" : "Ít nhất 6 ký tự"}
                       />
                     </div>
                   </div>
-
                   <div>
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <label className="text-xs font-semibold uppercase text-slate-500">
-                        Camera được phép xem
-                      </label>
-                      <span className="text-xs text-slate-400">
-                        {form.cameras.length}/{CAMERA_OPTIONS.length}
-                      </span>
+                    <div className="mb-2 flex items-center justify-between">
+                      <label className="text-xs font-semibold uppercase text-slate-500">Camera được phép xem</label>
+                      <span className="text-xs text-slate-400">{form.cameraIds.length}/{cameras.length}</span>
                     </div>
-                    <div className="grid gap-2">
-                      {CAMERA_OPTIONS.map((camera) => (
+                    <div className="grid max-h-72 gap-2 overflow-auto">
+                      {cameras.map((camera) => (
                         <CameraCheckbox
-                          key={camera.id}
+                          key={camera.camera_id}
                           camera={camera}
-                          checked={form.cameras.includes(camera.id)}
-                          onToggle={() => toggleCamera(camera.id)}
+                          checked={form.cameraIds.includes(camera.camera_id)}
+                          onToggle={() => toggleCamera(camera.camera_id)}
                         />
                       ))}
                     </div>
                   </div>
-
-                  {message ? (
-                    <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                      {message}
-                    </div>
-                  ) : null}
-
+                  {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+                  {message ? <p className="text-sm text-blue-700">{message}</p> : null}
                   <button
                     type="submit"
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                    disabled={saving || loading}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                   >
-                    {editingUser ? (
-                      <Save className="h-4 w-4" />
-                    ) : (
-                      <Plus className="h-4 w-4" />
-                    )}
-                    {editingUser ? "Lưu thay đổi" : "Thêm moderator"}
+                    {editingUser ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                    {saving ? "Đang lưu..." : editingUser ? "Lưu thay đổi" : "Thêm moderator"}
                   </button>
                 </form>
               </section>
@@ -435,103 +352,53 @@ export default function PermissionsPage() {
               <section className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-sm font-semibold text-slate-900">
-                      Quản lý user
-                    </h2>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Danh sách tài khoản moderator và phạm vi camera.
-                    </p>
+                    <h2 className="text-sm font-semibold text-slate-900">Quản lý user</h2>
+                    <p className="mt-1 text-xs text-slate-500">Dữ liệu thật từ database và permission theo Camera ID.</p>
                   </div>
                   <div className="relative w-full sm:w-64">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Tìm user hoặc camera..."
-                      className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-400"
-                    />
+                    <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm user hoặc camera..." className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none" />
                   </div>
                 </div>
 
                 <div className="overflow-auto">
-                  <table className="w-full min-w-[720px] text-left">
+                  <table className="w-full min-w-[760px] text-left">
                     <thead>
                       <tr className="border-b border-slate-100 text-xs font-medium text-slate-400">
                         <th className="px-4 py-3">Tài khoản</th>
-                        <th className="px-4 py-3">Vai trò</th>
+                        <th className="px-4 py-3">Trạng thái</th>
                         <th className="px-4 py-3">Camera</th>
                         <th className="px-4 py-3">Cập nhật</th>
                         <th className="px-4 py-3 text-right">Thao tác</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {filteredUsers.length === 0 ? (
-                        <tr>
-                          <td
-                            colSpan={5}
-                            className="px-4 py-8 text-center text-sm text-slate-400"
-                          >
-                            Không tìm thấy moderator phù hợp.
+                      {loading ? (
+                        <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">Đang tải dữ liệu...</td></tr>
+                      ) : filteredUsers.length === 0 ? (
+                        <tr><td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-400">Chưa có moderator.</td></tr>
+                      ) : filteredUsers.map((user) => (
+                        <tr key={user.id} className={editingUsername === user.username ? "bg-blue-50/50" : "bg-white"}>
+                          <td className="px-4 py-4">
+                            <p className="text-sm font-semibold text-slate-900">{user.username}</p>
+                            <p className="text-xs text-slate-400">Moderator</p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${user.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                              {user.status === "active" ? "Hoạt động" : "Đã khóa"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4"><CameraBadges cameraIds={user.camera_ids || []} cameraMap={cameraMap} /></td>
+                          <td className="px-4 py-4 text-xs text-slate-500">{user.updated_at || "-"}</td>
+                          <td className="px-4 py-4">
+                            <div className="flex justify-end gap-2">
+                              <button type="button" onClick={() => startEdit(user)} title="Sửa" className="rounded-md border border-slate-200 p-1.5 text-slate-500"><Pencil className="h-4 w-4" /></button>
+                              <button type="button" onClick={() => handleStatus(user)} title={user.status === "active" ? "Khóa" : "Mở khóa"} className="rounded-md border border-amber-100 p-1.5 text-amber-600"><Lock className="h-4 w-4" /></button>
+                              <button type="button" onClick={() => handleDelete(user)} title="Xóa" className="rounded-md border border-rose-100 p-1.5 text-rose-500"><Trash2 className="h-4 w-4" /></button>
+                            </div>
                           </td>
                         </tr>
-                      ) : (
-                        filteredUsers.map((user) => (
-                          <tr
-                            key={user.id}
-                            className={
-                              editingId === user.id ? "bg-blue-50/50" : "bg-white"
-                            }
-                          >
-                            <td className="px-4 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
-                                  {user.username.charAt(0).toUpperCase()}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-slate-900">
-                                    {user.username}
-                                  </p>
-                                  <p className="truncate text-xs text-slate-400">
-                                    Tài khoản moderator
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-4 py-4">
-                              <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                                <Shield className="h-3.5 w-3.5" />
-                                Moderator
-                              </span>
-                            </td>
-                            <td className="px-4 py-4">
-                              <CameraBadges cameraIds={user.cameras} />
-                            </td>
-                            <td className="px-4 py-4 text-sm text-slate-500">
-                              {user.updatedAt}
-                            </td>
-                            <td className="px-4 py-4">
-                              <div className="flex justify-end gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => startEdit(user)}
-                                  title="Sửa user"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDelete(user)}
-                                  title="Xóa user"
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-100 text-rose-500 hover:bg-rose-50"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
+                      ))}
                     </tbody>
                   </table>
                 </div>
