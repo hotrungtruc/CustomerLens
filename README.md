@@ -48,55 +48,99 @@
 
 ---
 
-## Hướng Dẫn Cài Đặt Dưới Local (Local Development)
+## Hướng Dẫn Cài Đặt Nhanh (Dành cho Khách Hàng / End-user)
 
-Yêu cầu hệ thống: **Python 3.12+**, **Node.js 18+**, và **Docker** (để chạy Redis nội bộ).
+Để tự chạy hệ thống trên máy tính cá nhân (Windows, Mac, hoặc Linux), bạn vui lòng làm theo từng bước chi tiết dưới đây:
 
-### 1. Khởi động Redis
+### Bước 1: Yêu cầu phần mềm (Bắt buộc)
+Trước khi bắt đầu, hãy đảm bảo máy tính của bạn đã cài đặt các phần mềm sau:
+1. **[Git](https://git-scm.com/downloads)**: Dùng để tải mã nguồn.
+2. **[Python 3.12](https://www.python.org/downloads/)**: Khi cài đặt trên Windows, **BẮT BUỘC** tick vào ô *"Add Python 3.12 to PATH"* ở màn hình cài đặt đầu tiên.
+3. **[Node.js (Bản LTS 18 hoặc 20)](https://nodejs.org/)**: Dùng để chạy giao diện.
+4. **[Docker Desktop](https://www.docker.com/products/docker-desktop/)**: Bật phần mềm Docker Desktop lên và để nó chạy ngầm (Icon hình con cá voi ở khay hệ thống).
+
+### Bước 2: Tải Mã Nguồn & Bật Database (Redis)
+Mở cửa sổ dòng lệnh (Terminal trên Mac hoặc Command Prompt/PowerShell trên Windows) và gõ:
 ```bash
+# Tải mã nguồn về máy
+git clone https://gitlab.com/hotrungtruc1706/face-recognition-system.git
+cd face-recognition-system
+
+# Chạy Database Redis nội bộ bằng Docker
 docker run -d --name faceai-redis -p 6379:6379 redis:alpine
 ```
 
-### 2. Cấu Hình Biến Môi Trường (.env)
-Tại thư mục `backend/`, tạo file `.env` (hoặc copy từ `.env_example`) và thiết lập các biến sau:
-```env
-USE_SUPABASE=true
-SUPABASE_URL="postgresql://postgres.[YOUR_PROJECT_ID]:[YOUR_PASSWORD]@[REGION].pooler.supabase.com:6543/postgres"
-REDIS_URL="redis://localhost:6379/0"
-```
+### Bước 3: Cấu Hình Supabase (Đám mây)
+1. Truy cập [Supabase.com](https://supabase.com/), đăng nhập và tạo một Project mới.
+2. Vào phần **Project Settings -> Database**. Cuộn xuống mục **Connection string** (Chọn tab URI).
+3. Copy đoạn chuỗi kết nối đó (nhớ đảm bảo Port là `6543` và mật khẩu bạn đã tạo).
+4. Vào thư mục `backend/` trong máy tính của bạn, tạo một file tên là `.env` (hoặc copy file `.env_example` đổi tên lại) và điền nội dung sau:
+   ```env
+   USE_SUPABASE=true
+   SUPABASE_URL="Dán-chuỗi-kết-nối-của-bạn-vào-đây"
+   REDIS_URL="redis://127.0.0.1:6379/0"
+   ```
 
-Tại thư mục `frontend/`, tạo file `.env.local`:
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-```
+### Bước 4: Khởi Động Trí Tuệ Nhân Tạo (AI Backend)
+Bạn cần mở **2 cửa sổ Terminal độc lập** để chạy API và AI Worker.
 
-### 3. Cài Đặt & Chạy Backend
-Mở 2 Terminal riêng biệt cho Backend API và AI Worker.
-
-**Terminal 1 (Backend API):**
+**👉 Cửa sổ Terminal 1 (Chạy API Server):**
+Mở thư mục `backend` và chạy tuần tự:
 ```bash
+# Vào thư mục backend
 cd backend
+
+# Tạo môi trường ảo và kích hoạt (Windows)
 python -m venv .venv
-# Kích hoạt môi trường (Windows: .\.venv\Scripts\activate, Linux/Mac: source .venv/bin/activate)
+.\.venv\Scripts\activate
+
+# Nếu dùng Mac/Linux, câu lệnh kích hoạt là: source .venv/bin/activate
+
+# Cài đặt thư viện AI (Có thể mất 2-3 phút)
 pip install -r requirements.txt
+
+# Khởi tạo Database và tải Model AI (Chỉ cần chạy ở lần đầu tiên)
+python -m app.db.connection
+python -m app.utils.download_models
+python app/db/seed_data.py
+
+# Chạy API Server
 python run.py
 ```
+*(Giữ nguyên cửa sổ Terminal này để Server duy trì hoạt động).*
 
-**Terminal 2 (AI Worker):**
+**👉 Cửa sổ Terminal 2 (Chạy AI Worker):**
+Mở một cửa sổ mới, cũng vào thư mục `backend` và gõ:
 ```bash
-cd backend
-# Kích hoạt môi trường tương tự như trên
+# Kích hoạt lại môi trường ảo (Windows)
+.\.venv\Scripts\activate
+
+# Chạy Worker
 python app/ai_worker.py
 ```
+*(Giữ nguyên cửa sổ Terminal này).*
 
-### 4. Cài Đặt & Chạy Frontend
-**Terminal 3:**
+### Bước 5: Khởi Động Giao Diện Giao Tiếp (Frontend)
+**👉 Cửa sổ Terminal 3:**
+Mở thư mục `frontend` và chạy:
 ```bash
 cd frontend
+
+# Tạo file cấu hình nội bộ
+echo NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 > .env.local
+
+# Cài đặt thư viện và chạy giao diện
 npm install
 npm run dev
 ```
-Truy cập ứng dụng tại `http://localhost:3000`.
+
+### 🎉 Hoàn Tất & Trải Nghiệm
+Bây giờ, hãy mở trình duyệt Web (Chrome/Edge) và truy cập vào:
+👉 **[http://localhost:3000](http://localhost:3000)**
+
+* **Tài khoản mặc định:** `admin`
+* **Mật khẩu mặc định:** `change_me_immediately`
+*(Hệ thống sẽ yêu cầu cấp quyền sử dụng Camera, vui lòng nhấn "Cho Phép" / "Allow").*
 
 ---
 
