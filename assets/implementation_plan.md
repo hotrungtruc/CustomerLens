@@ -1,47 +1,27 @@
-# Kế hoạch triển khai Giải pháp 2 (Stateless Workers + Centralized Tracking)
+# Phân tích nguyên nhân và Giải pháp khắc phục lỗi mất ID Khách Mới
 
-Mục tiêu: Tách rời Tracking khỏi AI Worker. Worker chỉ nhận diện khuôn mặt và trích xuất đặc trưng (embedding), sau đó gửi về Master. Master sẽ đảm nhiệm việc Tracking (SORT) và giao tiếp với Cơ sở dữ liệu. Kiến trúc này giúp cân bằng tải hoàn hảo, mở rộng linh hoạt, và tránh tình trạng mất ID khách (GUEST_ID flickers).
+Chào bạn, tôi đã điều tra cặn kẽ hệ thống theo các hình ảnh và log bạn cung cấp. Có 2 nguyên nhân cốt lõi gây ra tình trạng tạo ID khách mới liên tục và không lưu được:
 
-## Đề nghị phản hồi (User Review Required)
+## 1. Nguyên nhân hệ thống không nhận ra khách cũ (dù đã có trên Supabase)
+Những khách được lưu trên Supabase (`GUEST_session-3782dmzf...`, `GUEST_session-f4k67xwg...`) đều được tạo vào ngày **28/06**. Ở thời điểm đó, hệ thống đang dùng model AI khác (ví dụ `w600k_mbf` hoặc `ghostface_int8`).
+Hiện tại (ngày **30/06**), hệ thống đã chuyển sang dùng siêu model **EdgeFace** (`edgeface_s_gamma_05.onnx`). 
+Do 2 model AI dùng thuật toán mã hóa khuôn mặt hoàn toàn khác nhau, nên dù là cùng 1 khuôn mặt của bạn, vector xuất ra không trùng khớp (độ tương đồng chỉ đạt tối đa `0.43`). Vì mức độ giống nhau này thấp hơn ngưỡng nhận diện (`0.50`), hệ thống xem bạn là một người hoàn toàn mới.
+> [!NOTE]
+> Khi thay đổi Model nhận diện, toàn bộ Vector khuôn mặt cũ sẽ bị mất tác dụng. Bạn nên xóa các khách rác cũ trong Supabase đi để dọn dẹp hệ thống.
 
-> [!WARNING]  
-> **Kiến trúc phân tán lớn:** Đây là một thay đổi lớn về kiến trúc (Major Architecture Shift). Việc triển khai sẽ yêu cầu:
-> 1. Sửa đổi luồng dữ liệu (Data Pipeline) giữa `routes.py` và `ai_worker.py`.
-> 2. Các EC2 AI Worker cũ sẽ cần được tải lại code mới.
-> Vui lòng xem kỹ phần "Các thay đổi đề xuất" trước khi phê duyệt.
+## 2. Nguyên nhân tại sao ID khách mới tạo ra lại KHÔNG được lưu vào DB
+Để tiết kiệm dung lượng lưu trữ trên Supabase, bảng `customer_embeddings` hiện tại của bạn chỉ còn giữ lại 3 cột thiết yếu: `customer_id`, `embedding`, `updated_at`. Các cột thừa như `face_embedding` (kiểu BYTEA rất nặng), `embedding_dim`, `model_name` đã bị loại bỏ.
+**Tuy nhiên**, mã nguồn Backend của chúng ta (hàm `insert_embedding_with_vector`) vẫn đang cố nhồi nhét dữ liệu vào các cột bị thiếu này, dẫn đến một lỗi Crash ngầm trên Supabase. Vì Crash ngầm, quá trình lưu DB thất bại hoàn toàn. Khách mới không được lưu, nên khi bạn tải lại trang (F5), hệ thống lại tiếp tục coi bạn là khách mới tinh và tạo ID mới!
 
-## Các câu hỏi mở (Open Questions)
-Không có. Luồng xử lý dữ liệu và cấu trúc Payload đã được tôi kiểm tra kỹ qua mã nguồn hiện tại của hệ thống.
+## Kế hoạch Cải tiến (Đề xuất)
 
----
+Tôi sẽ sửa lại hàm lưu trữ vào Supabase để:
+1. **Chỉ Insert vào đúng 3 cột đang có** (`customer_id`, `embedding`, `updated_at`), bỏ qua các cột BYTEA rườm rà. Điều này vừa giúp fix triệt để lỗi Crash, vừa giúp Supabase của bạn nhẹ gọn nhất có thể.
+2. **Sử dụng cú pháp `ON CONFLICT DO UPDATE`**: Nếu trong tương lai khuôn mặt của khách có sự thay đổi (đeo kính, đổi kiểu tóc), hệ thống sẽ cập nhật lại vector mới nhất vào Supabase thay vì báo lỗi trùng lặp.
 
-## Các thay đổi đề xuất (Proposed Changes)
+### [MODIFY] backend/app/db/vector_search.py
+Cập nhật hàm `insert_embedding_with_vector`:
+- Kiểm tra nếu là PostgreSQL thì chỉ chèn dữ liệu vào các cột `customer_id`, `embedding` (đã ép kiểu `halfvec`), và `updated_at`.
+- Thêm logic `ON CONFLICT` để tự động ghi đè vector nếu người dùng cập nhật lại khuôn mặt.
 
-### 1. `backend/app/ai_worker.py` (AI Worker)
-- **Hàng đợi chung:** Đổi hàng đợi lắng nghe thành chung một List `camera_frames` (thay vì `camera_frames_default`).
-- **Phi trạng thái (Stateless):** Gỡ bỏ hoàn toàn `GuestTrackManager`, `get_db_connection`, và `bulk_insert_recognize_logs`.
-- **Trích xuất Đặc trưng (Embedding):** Worker sẽ nhận diện (Detect) và tự động tính Embedding (trích xuất đặc trưng vector 512 chiều) cho tất cả các khuôn mặt đạt chuẩn trong khung hình.
-- **Phản hồi (Publish):** Trả kết quả (Bounding box + Landmark + Score + Embedding) về cho Master thông qua Pub/Sub channel `worker_results_{camera_id}`.
-
-### 2. `backend/app/api/routes.py` (FastAPI Master)
-- **Tạo Hàng đợi chung:** Thay vì đẩy ảnh vào `camera_frames_{session_id}`, Master sẽ đẩy mọi ảnh vào `camera_frames` chung, đính kèm `session_id` trong Metadata.
-- **Quản lý Tracker (Stateful Tracking):** Master sẽ khởi tạo và lưu trữ một phiên bản `GuestTrackManager` riêng biệt cho mỗi kết nối WebSocket (mỗi `session_id` có 1 tracker riêng). 
-- **Bắt kết quả & Tracking:** Master lắng nghe `worker_results_{session_id}`. Khi nhận kết quả từ các Worker, Master sẽ:
-  - Chạy `tracker.process_faces(records)` (Thuật toán SORT).
-  - Tra cứu DB (`get_customer_info`).
-  - Ghi Log vào DB (`bulk_insert_recognize_logs`).
-  - Đóng gói và gửi Payload qua WebSocket về Frontend.
-- **Bất đồng bộ (Async):** Tất cả các thao tác Tracking & Database sẽ được chạy thông qua `asyncio.to_thread` để đảm bảo luồng ASGI/FastAPI không bị treo (block).
-
-### 3. `backend/app/core/guest_tracking.py` (Tracking Engine)
-- Cập nhật nhẹ `process_faces` để xử lý mảng `embedding` (đã được tính toán sẵn từ Worker gửi về) thay vì tự trích xuất qua `embedder`.
-
----
-
-## Kế hoạch kiểm thử (Verification Plan)
-
-### Kiểm thử thủ công (Manual Verification)
-1. Tôi sẽ khởi động lại cả 2 máy AI Worker (Worker 1 & Worker 2).
-2. Yêu cầu bạn mở trang chủ `checkinface.me` để WebRTC gửi hình ảnh lên.
-3. Cùng theo dõi khung hình: Dù hệ thống có chia việc cho cả 2 máy Worker, ID khách (`GUEST_...`) sẽ luôn **đứng yên và liên tục**, không còn bị giật nháy qua lại giữa hai số ID khác nhau.
-4. Đóng kết nối / Tải lại trang sẽ khởi tạo GUEST ID mới, hoạt động đúng logic hệ thống.
+Nếu bạn đồng ý với kế hoạch và lời giải thích trên, hãy nhấn **Proceed** để tôi tiến hành vá lỗi ngay nhé!

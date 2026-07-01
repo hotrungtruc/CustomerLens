@@ -68,7 +68,6 @@ def insert_embedding_with_vector(
     the BYTEA column while enabling HNSW search on the vector column.
     """
     vec_str = _embedding_to_pgvector_literal(embedding_np)
-    from config import DB_TYPE
     if DB_TYPE == "postgresql":
         # On Supabase, the table is heavily truncated (no face_embedding, embedding_dim, etc.)
         # so we only insert the essential columns and use ON CONFLICT DO UPDATE
