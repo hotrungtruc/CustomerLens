@@ -235,7 +235,7 @@ class GuestTrackManager:
                                 blob,
                                 emb,
                                 dim=len(emb),
-                                model_name="w600k_mbf",
+                                model_name="edgeface_s_gamma_05",
                             )
                             conn.commit()
                         finally:
@@ -281,7 +281,7 @@ class GuestTrackManager:
                             blob,
                             embedding,
                             dim=len(embedding),
-                            model_name="w600k_mbf",
+                            model_name="edgeface_s_gamma_05",
                         )
                         conn.commit()
                         logger.info("Successfully inserted embedding for %s", guest_id)

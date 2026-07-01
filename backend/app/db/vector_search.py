@@ -60,7 +60,7 @@ def insert_embedding_with_vector(
     face_embedding_blob: bytes,
     embedding_np: np.ndarray,
     dim: int = 512,
-    model_name: str = "w600k_mbf",
+    model_name: str = "edgeface_s_gamma_05",
 ):
     """Insert a new embedding row with both BYTEA and pgvector representations.
 

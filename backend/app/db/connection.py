@@ -10,7 +10,7 @@ from config import ENCODE_FILE, PRODUCTION_DB_PATH
 from db_config import DATABASE_URL, DB_TYPE, USE_SUPABASE
 
 DEFAULT_TIME = "1970-01-01 00:00:00"
-DEFAULT_MODEL = "w600k_mbf"
+DEFAULT_MODEL = "edgeface_s_gamma_05"
 
 # --- Connection Pool (Supabase/PostgreSQL) ---
 # Lazily initialized on first get_db_connection() call.
@@ -189,7 +189,7 @@ def ensure_schema(conn):
                 customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
                 face_embedding BYTEA NOT NULL,
                 embedding_dim INTEGER NOT NULL DEFAULT 512,
-                model_name VARCHAR(100) NOT NULL DEFAULT 'w600k_mbf',
+                model_name VARCHAR(100) NOT NULL DEFAULT 'edgeface_s_gamma_05',
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
@@ -208,7 +208,7 @@ def ensure_schema(conn):
                 "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS embedding_dim INTEGER DEFAULT 512"
             )
             conn.execute(
-                "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS model_name VARCHAR(100) DEFAULT 'w600k_mbf'"
+                "ALTER TABLE customer_embeddings ADD COLUMN IF NOT EXISTS model_name VARCHAR(100) DEFAULT 'edgeface_s_gamma_05'"
             )
             conn.commit()
         except Exception:
@@ -388,7 +388,7 @@ def ensure_schema(conn):
             customer_id TEXT NOT NULL,
             face_embedding BLOB NOT NULL,
             embedding_dim INTEGER NOT NULL DEFAULT 512,
-            model_name TEXT NOT NULL DEFAULT 'w600k_mbf',
+            model_name TEXT NOT NULL DEFAULT 'edgeface_s_gamma_05',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
@@ -407,7 +407,7 @@ def ensure_schema(conn):
                 customer_id TEXT NOT NULL,
                 face_embedding BLOB NOT NULL,
                 embedding_dim INTEGER NOT NULL DEFAULT 512,
-                model_name TEXT NOT NULL DEFAULT 'w600k_mbf',
+                model_name TEXT NOT NULL DEFAULT 'edgeface_s_gamma_05',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
