@@ -168,10 +168,22 @@ class GuestTrackManager:
         self.guest_embeddings = []
         self.guest_ids = []
         self.use_pgvector = USE_SUPABASE  # Use HNSW index when Supabase is available
+        self._cached_conn = None  # Reusable DB connection for pgvector queries
+        self._ef_search_set = False  # Track if hnsw.ef_search has been set
 
         self.load_known_embeddings()
 
     def load_known_embeddings(self):
+        if self.use_pgvector:
+            # When pgvector is available, don't load all known embeddings into
+            # memory — they are queried via the HNSW index in Supabase.
+            # Only guest embeddings (not yet persisted to DB) are kept in-memory.
+            self.known_embeddings = []
+            self.known_ids = []
+            self.guest_embeddings = []
+            self.guest_ids = []
+            logger.info("pgvector mode: skipping bulk embedding load (HNSW index used)")
+            return
         try:
             from app.db.connection import get_db_connection
             from app.db.vector_search import fetch_all_embeddings_from_db
@@ -226,20 +238,17 @@ class GuestTrackManager:
                         from app.db.vector_search import \
                             insert_embedding_with_vector
 
-                        conn = get_db_connection()
-                        try:
-                            blob = np.asarray(emb, dtype=np.float32).tobytes()
-                            insert_embedding_with_vector(
-                                conn,
-                                new_id,
-                                blob,
-                                emb,
-                                dim=len(emb),
-                                model_name="edgeface_s_gamma_05",
-                            )
-                            conn.commit()
-                        finally:
-                            conn.close()
+                        conn = self._get_cached_conn()
+                        blob = np.asarray(emb, dtype=np.float32).tobytes()
+                        insert_embedding_with_vector(
+                            conn,
+                            new_id,
+                            blob,
+                            emb,
+                            dim=len(emb),
+                            model_name="edgeface_s_gamma_05",
+                        )
+                        conn.commit()
                     except Exception:
                         pass
 
@@ -299,6 +308,29 @@ class GuestTrackManager:
         thread = threading.Thread(target=worker, daemon=True)
         thread.start()
 
+    def _get_cached_conn(self):
+        """Return a reusable DB connection, creating one if needed."""
+        if self._cached_conn is None:
+            self._cached_conn = get_db_connection()
+            # Set HNSW search parameter for optimal performance
+            if not self._ef_search_set:
+                try:
+                    self._cached_conn.execute("SET hnsw.ef_search = 40")
+                    self._ef_search_set = True
+                except Exception:
+                    pass  # Non-critical, default ef_search is fine
+        return self._cached_conn
+
+    def _release_cached_conn(self):
+        """Release the cached connection (call on cleanup)."""
+        if self._cached_conn is not None:
+            try:
+                self._cached_conn.close()
+            except Exception:
+                pass
+            self._cached_conn = None
+            self._ef_search_set = False
+
     def _query_pgvector(self, embedding, top_k=3, threshold=0.45):
         """Query pgvector HNSW index for the closest matches.
 
@@ -308,16 +340,16 @@ class GuestTrackManager:
         try:
             from app.db.vector_search import search_similar_faces
 
-            conn = get_db_connection()
-            try:
-                results = search_similar_faces(
-                    conn, embedding, top_k=top_k, threshold=threshold
-                )
-                return results
-            finally:
-                conn.close()
+            conn = self._get_cached_conn()
+            results = search_similar_faces(
+                conn, embedding, top_k=top_k, threshold=threshold
+            )
+            return results
         except Exception as e:
             logger.error("pgvector query failed: %s", e, exc_info=True)
+            # Connection may be broken, discard it
+            self._cached_conn = None
+            self._ef_search_set = False
             return []
 
     def _recognize_face(self, track_state, record, now, frame=None, embedder=None):
@@ -446,8 +478,24 @@ class GuestTrackManager:
                             avg_g_emb = normalize_embedding(
                                 np.mean(track_state.guest_embeddings, axis=0)
                             )
-                            self.known_embeddings.append(avg_g_emb)
-                            self.known_ids.append(top_id)
+                            if self.use_pgvector:
+                                # Persist merged embedding to pgvector DB
+                                try:
+                                    from app.db.vector_search import \
+                                        insert_embedding_with_vector
+                                    conn = self._get_cached_conn()
+                                    blob = np.asarray(avg_g_emb, dtype=np.float32).tobytes()
+                                    insert_embedding_with_vector(
+                                        conn, top_id, blob, avg_g_emb,
+                                        dim=len(avg_g_emb),
+                                        model_name="edgeface_s_gamma_05",
+                                    )
+                                    conn.commit()
+                                except Exception as e:
+                                    logger.warning("Auto-merge pgvector insert failed: %s", e)
+                            else:
+                                self.known_embeddings.append(avg_g_emb)
+                                self.known_ids.append(top_id)
                             track_state.guest_embeddings.clear()
                             self.persist_known_embeddings()
 
@@ -494,7 +542,14 @@ class GuestTrackManager:
                 and len(track_state.guest_embeddings) >= self.guest_creation_buffer_size
             ):
                 known_similarity = 0.0
-                if self.known_embeddings:
+                if self.use_pgvector:
+                    # Use HNSW index instead of brute-force O(n) scan
+                    debounce_results = self._query_pgvector(
+                        avg_embedding, top_k=1, threshold=0.0
+                    )
+                    if debounce_results:
+                        known_similarity = debounce_results[0][1]
+                elif self.known_embeddings:
                     known_scores = cosine_similarities(
                         self.known_embeddings, avg_embedding
                     )

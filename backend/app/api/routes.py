@@ -1259,6 +1259,12 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
     finally:
         with CONNECTION_STATES_LOCK:
             CONNECTION_STATES.pop(connection_id, None)
+        # Release the cached DB connection used by pgvector queries
+        if track_manager is not None:
+            try:
+                track_manager._release_cached_conn()
+            except Exception:
+                pass
         connection_state.track_manager = None
         presence_task.cancel()
         try:
