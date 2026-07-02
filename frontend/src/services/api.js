@@ -1,3 +1,14 @@
+export async function apiFetch(url, options = {}) {
+  const response = await fetch(url, options);
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+  }
+  return response;
+}
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   (typeof window !== "undefined"
@@ -16,7 +27,7 @@ function getAuthHeaders() {
 }
 
 export async function postLogin(username, password) {
-  const response = await fetch(`${API_BASE_URL}/api/login`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -34,7 +45,7 @@ let identityRequest = null;
 
 export function resolveDeviceIdentity() {
   if (!identityRequest) {
-    identityRequest = fetch(`${API_BASE_URL}/api/device/identity`, {
+    identityRequest = apiFetch(`${API_BASE_URL}/api/device/identity`, {
       method: "POST",
       credentials: "include",
     })
@@ -56,7 +67,7 @@ export async function fetchCustomerInfo(cameraId = null) {
   const url = cameraId
     ? `${API_BASE_URL}/api/customer_info?camera_id=${encodeURIComponent(cameraId)}`
     : `${API_BASE_URL}/api/customer_info`;
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) {
     throw new Error("Network error");
   }
@@ -67,7 +78,7 @@ export async function fetchCustomersOverview(cameraId = null) {
   const url = cameraId
     ? `${API_BASE_URL}/api/customers_overview?camera_id=${encodeURIComponent(cameraId)}`
     : `${API_BASE_URL}/api/customers_overview`;
-  const response = await fetch(url);
+  const response = await apiFetch(url);
   if (!response.ok) {
     throw new Error("Network error");
   }
@@ -78,7 +89,7 @@ export async function postCheckIn(cameraId = null) {
   const url = cameraId
     ? `${API_BASE_URL}/api/check_in?camera_id=${encodeURIComponent(cameraId)}`
     : `${API_BASE_URL}/api/check_in`;
-  const response = await fetch(url, {
+  const response = await apiFetch(url, {
     method: "POST",
   });
   if (!response.ok) {
@@ -88,7 +99,7 @@ export async function postCheckIn(cameraId = null) {
 }
 
 export async function postCheckInById(customerId) {
-  const response = await fetch(`${API_BASE_URL}/api/check_in/${customerId}`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/check_in/${customerId}`, {
     method: "POST",
   });
   if (!response.ok) {
@@ -98,7 +109,7 @@ export async function postCheckInById(customerId) {
 }
 
 export async function putCustomerProfile(payload) {
-  const response = await fetch(`${API_BASE_URL}/api/customer_profile`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/customer_profile`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -114,7 +125,7 @@ export async function putCustomerProfile(payload) {
 }
 
 export async function fetchAllCustomers() {
-  const response = await fetch(`${API_BASE_URL}/api/customers`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/customers`, {
     headers: {
       ...getAuthHeaders(),
     },
@@ -126,7 +137,7 @@ export async function fetchAllCustomers() {
 }
 
 export async function fetchCustomerProfileById(customerId) {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/customer_profile_by_id/${encodeURIComponent(customerId)}`,
     {
       headers: {
@@ -141,7 +152,7 @@ export async function fetchCustomerProfileById(customerId) {
 }
 
 export async function fetchCameras() {
-  const response = await fetch(`${API_BASE_URL}/api/cameras`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/cameras`, {
     headers: getAuthHeaders(),
     credentials: "include",
   });
@@ -152,7 +163,7 @@ export async function fetchCameras() {
 }
 
 export async function renameCamera(cameraId, displayName) {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/cameras/${encodeURIComponent(cameraId)}`,
     {
       method: "PATCH",
@@ -168,7 +179,7 @@ export async function renameCamera(cameraId, displayName) {
 }
 
 export async function deleteCamera(cameraId) {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/cameras/${encodeURIComponent(cameraId)}`,
     {
       method: "DELETE",
@@ -183,7 +194,7 @@ export async function deleteCamera(cameraId) {
 }
 
 export async function fetchUsers() {
-  const response = await fetch(`${API_BASE_URL}/api/users`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/users`, {
     headers: getAuthHeaders(),
   });
   if (!response.ok) {
@@ -193,7 +204,7 @@ export async function fetchUsers() {
 }
 
 export async function createModerator(username, password) {
-  const response = await fetch(`${API_BASE_URL}/api/users`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ username, password }),
@@ -206,7 +217,7 @@ export async function createModerator(username, password) {
 }
 
 export async function updateModerator(username, payload) {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/users/${encodeURIComponent(username)}`,
     {
       method: "PATCH",
@@ -222,7 +233,7 @@ export async function updateModerator(username, payload) {
 }
 
 export async function deleteModerator(username) {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/users/${encodeURIComponent(username)}`,
     { method: "DELETE", headers: getAuthHeaders() },
   );
@@ -234,7 +245,7 @@ export async function deleteModerator(username) {
 }
 
 export async function updateCameraPermissions(username, cameraIds) {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/users/${encodeURIComponent(username)}/camera_permissions`,
     {
       method: "PUT",
@@ -250,7 +261,7 @@ export async function updateCameraPermissions(username, cameraIds) {
 }
 
 export async function claimDeviceEnrollment(code) {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/api/device/enrollments/claim`,
     {
       method: "POST",
@@ -267,7 +278,7 @@ export async function claimDeviceEnrollment(code) {
 }
 
 export async function createDeviceEnrollment(cameraId) {
-  const response = await fetch(`${API_BASE_URL}/api/device/enrollments`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/device/enrollments`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify({ camera_id: cameraId, revoke_existing: true }),
@@ -280,7 +291,7 @@ export async function createDeviceEnrollment(cameraId) {
 }
 
 export async function fetchSettings() {
-  const response = await fetch(`${API_BASE_URL}/api/settings`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/settings`, {
     headers: {
       ...getAuthHeaders(),
     },
@@ -292,7 +303,7 @@ export async function fetchSettings() {
 }
 
 export async function updateSettings(payload) {
-  const response = await fetch(`${API_BASE_URL}/api/settings`, {
+  const response = await apiFetch(`${API_BASE_URL}/api/settings`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
