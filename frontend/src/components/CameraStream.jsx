@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useCamera } from "../hooks/useCamera";
 import { useLocalFaceDetector } from "../hooks/useLocalFaceDetector";
+import { useVideoBbox } from "../hooks/useVideoBbox";
 import { getTrackBadge } from "../lib/trackBadge";
 
 // IoU matching (Intersection over Union)
@@ -49,6 +50,7 @@ export default function CameraStream({
     cameraError,
   } = useCamera(cameraId);
 
+  const mapBbox = useVideoBbox(videoRef, frameSize.width, frameSize.height);
   const localFaces = useLocalFaceDetector(videoRef);
 
   // Lift customers + frameSize to parent whenever they change
@@ -61,12 +63,13 @@ export default function CameraStream({
     .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
     .map((c) => {
       const [x1, y1, x2, y2] = c.bbox;
+      const mapped = mapBbox(x1, y1, x2 - x1, y2 - y1);
       return {
         ...c,
-        left: (x1 / frameSize.width) * 100,
-        top: (y1 / frameSize.height) * 100,
-        width: ((x2 - x1) / frameSize.width) * 100,
-        height: ((y2 - y1) / frameSize.height) * 100,
+        left: mapped.left,
+        top: mapped.top,
+        width: mapped.width,
+        height: mapped.height,
       };
     });
 
@@ -107,8 +110,17 @@ export default function CameraStream({
       matchedBackendIds.add(bestMatch.track_id);
     }
     
+    // localFace returns percentage of native video width, let's map it via mapBbox 
+    // by pretending it's an absolute coordinate.
+    const lx = (localFace.left / 100) * frameSize.width;
+    const ly = (localFace.top / 100) * frameSize.height;
+    const lw = (localFace.width / 100) * frameSize.width;
+    const lh = (localFace.height / 100) * frameSize.height;
+    const mappedLocal = mapBbox(lx, ly, lw, lh);
+
     return {
       ...localFace,
+      ...mappedLocal,
       id: bestMatch ? bestMatch.track_id : `local-${i}`,
       backendMatch: bestMatch,
     };

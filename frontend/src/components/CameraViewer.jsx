@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useCameraObserver } from "../hooks/useCameraObserver";
+import { useVideoBbox } from "../hooks/useVideoBbox";
 import { getTrackBadge, TRACK_BADGE_THEMES } from "../lib/trackBadge";
 
 /**
@@ -24,6 +25,8 @@ export default function CameraViewer({ cameraId, compact = false }) {
     }
   }, [videoStream]);
 
+  const mapBbox = useVideoBbox(videoRef, frameSize.width, frameSize.height);
+
   // Build bounding boxes from observer annotations
   const boxes = customers
     .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
@@ -31,12 +34,13 @@ export default function CameraViewer({ cameraId, compact = false }) {
       const [x1, y1, x2, y2] = c.bbox;
       const badge = getTrackBadge(c.track_id);
       const theme = badge.theme;
+      const mapped = mapBbox(x1, y1, x2 - x1, y2 - y1);
       return {
         ...c,
-        left: (x1 / frameSize.width) * 100,
-        top: (y1 / frameSize.height) * 100,
-        width: ((x2 - x1) / frameSize.width) * 100,
-        height: ((y2 - y1) / frameSize.height) * 100,
+        left: mapped.left,
+        top: mapped.top,
+        width: mapped.width,
+        height: mapped.height,
         symbol: badge.symbol,
         bgClass: theme.base,
       };
