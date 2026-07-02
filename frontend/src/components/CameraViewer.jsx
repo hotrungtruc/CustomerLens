@@ -65,7 +65,9 @@ export default function CameraViewer({ cameraId, compact = false }) {
           autoPlay
           playsInline
           muted
-          className="h-full w-full object-cover"
+          className={`h-full w-full object-cover transition-opacity duration-300 ${
+            videoStream ? "opacity-100" : "opacity-0"
+          }`}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center">
