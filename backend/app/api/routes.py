@@ -1056,6 +1056,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
 
         track_manager = GuestTrackManager(
             buffer_size=system_settings.get("track_buffer_size", TRACK_BUFFER_SIZE),
+            guest_creation_buffer_size=system_settings.get("guest_creation_buffer_size", GUEST_CREATION_BUFFER_SIZE),
             similarity_threshold=system_settings.get("similarity_threshold", SIMILARITY_THRESHOLD),
             iou_threshold=system_settings.get("track_iou_threshold", TRACK_IOU_THRESHOLD),
             min_bbox_size=system_settings.get("min_face_bbox_size", MIN_FACE_BBOX_SIZE),

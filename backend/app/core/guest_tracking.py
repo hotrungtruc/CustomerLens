@@ -29,6 +29,33 @@ def normalize_embedding(embedding):
         norm[norm == 0] = 1.0
         return embedding / norm
 
+def calculate_robust_mean_embedding(embeddings, similarity_threshold=0.6):
+    """
+    Calculate the mean embedding while rejecting outliers.
+    Outliers are embeddings that are too far from the median.
+    This prevents 'Frankenstein' embeddings when tracks swap between two people.
+    """
+    if len(embeddings) == 0:
+        return None
+    if len(embeddings) <= 2:
+        return normalize_embedding(np.mean(embeddings, axis=0))
+        
+    # Calculate pairwise similarities
+    embs = np.array(embeddings)
+    sim_matrix = np.dot(embs, embs.T)
+    
+    # Calculate median similarity for each embedding
+    median_sims = np.median(sim_matrix, axis=1)
+    
+    # Keep embeddings that are consistently similar to others
+    valid_indices = np.where(median_sims >= similarity_threshold)[0]
+    
+    if len(valid_indices) == 0:
+        # Fallback if all are dissimilar (should rarely happen)
+        return normalize_embedding(np.mean(embeddings, axis=0))
+        
+    return normalize_embedding(np.mean(embs[valid_indices], axis=0))
+
 
 def cosine_similarities(known_embeddings, embedding):
     if known_embeddings is None:
@@ -475,8 +502,8 @@ class GuestTrackManager:
                         if len(track_state.guest_embeddings) > 0 and not str(
                             top_id
                         ).startswith("GUEST_"):
-                            avg_g_emb = normalize_embedding(
-                                np.mean(track_state.guest_embeddings, axis=0)
+                            avg_g_emb = calculate_robust_mean_embedding(
+                                track_state.guest_embeddings
                             )
                             if self.use_pgvector:
                                 # Persist merged embedding to pgvector DB
@@ -506,8 +533,8 @@ class GuestTrackManager:
             resolved_customer_id is None
             and len(track_state.embeddings) >= self.buffer_size
         ):
-            avg_embedding = normalize_embedding(
-                np.mean(track_state.embeddings[-self.buffer_size :], axis=0)
+            avg_embedding = calculate_robust_mean_embedding(
+                track_state.embeddings[-self.buffer_size :]
             )
 
             # Try pgvector first for the fallback mean-embedding match
@@ -541,32 +568,36 @@ class GuestTrackManager:
                 resolved_customer_id is None
                 and len(track_state.guest_embeddings) >= self.guest_creation_buffer_size
             ):
-                known_similarity = 0.0
-                if self.use_pgvector:
-                    # Use HNSW index instead of brute-force O(n) scan
-                    debounce_results = self._query_pgvector(
-                        avg_embedding, top_k=1, threshold=0.0
-                    )
-                    if debounce_results:
-                        known_similarity = debounce_results[0][1]
-                elif self.known_embeddings:
-                    known_scores = cosine_similarities(
-                        self.known_embeddings, avg_embedding
-                    )
-                    if known_scores.size > 0:
-                        known_similarity = float(np.max(known_scores))
+                avg_guest_emb = calculate_robust_mean_embedding(
+                    track_state.guest_embeddings[-self.guest_creation_buffer_size :]
+                )
+                if avg_guest_emb is not None:
+                    known_similarity = 0.0
+                    if self.use_pgvector:
+                        # Use HNSW index instead of brute-force O(n) scan
+                        debounce_results = self._query_pgvector(
+                            avg_guest_emb, top_k=1, threshold=0.0
+                        )
+                        if debounce_results:
+                            known_similarity = debounce_results[0][1]
+                    elif self.known_embeddings:
+                        known_scores = cosine_similarities(
+                            self.known_embeddings, avg_guest_emb
+                        )
+                        if known_scores.size > 0:
+                            known_similarity = float(np.max(known_scores))
 
-                track_age_seconds = now - track_state.first_seen_at
-                debounce_sec = system_settings.get("new_guest_debounce_seconds", NEW_GUEST_DEBOUNCE_SECONDS)
-                debounce_sim = system_settings.get("new_guest_debounce_similarity", NEW_GUEST_DEBOUNCE_SIMILARITY)
-                if track_age_seconds < debounce_sec:
-                    resolved_customer_id = None
-                elif known_similarity >= debounce_sim:
-                    resolved_customer_id = None
-                else:
-                    resolved_customer_id = self._register_guest(
-                        avg_embedding, track_state
-                    )
+                    track_age_seconds = now - track_state.first_seen_at
+                    debounce_sec = system_settings.get("new_guest_debounce_seconds", NEW_GUEST_DEBOUNCE_SECONDS)
+                    debounce_sim = system_settings.get("new_guest_debounce_similarity", NEW_GUEST_DEBOUNCE_SIMILARITY)
+                    if track_age_seconds < debounce_sec:
+                        resolved_customer_id = None
+                    elif known_similarity >= debounce_sim:
+                        resolved_customer_id = None
+                    else:
+                        resolved_customer_id = self._register_guest(
+                            avg_guest_emb, track_state
+                        )
 
             if resolved_customer_id is None and not str(
                 existing_customer_id
@@ -694,12 +725,12 @@ class GuestTrackManager:
                 track.last_seen_frame = self.frame_index
                 track.last_seen_at = now
 
-                quality_ok = bool(det.get("quality_ok", True))
+                guest_quality_ok = bool(det.get("guest_quality_ok", True))
                 if (
                     track.resolved_customer_id is None
                     and len(track.embeddings) < target_len
                     and det.get("embedding") is None
-                    and quality_ok
+                    and guest_quality_ok
                     and "landmark" in det
                 ):
                     batch_landmarks.append(det["landmark"])
