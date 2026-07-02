@@ -166,18 +166,11 @@ def ensure_schema(conn):
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
-        _add_missing_columns(
-            conn,
-            "users",
-            {
-                "id": "SERIAL PRIMARY KEY",
-                "role": "VARCHAR(50) DEFAULT NULL",
-                "cameras": "TEXT DEFAULT NULL",
-                "status": "VARCHAR(32) NOT NULL DEFAULT 'active'",
-                "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-            },
-        )
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(50)")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS cameras TEXT")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'active'")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         conn.execute(
             "UPDATE users SET role = COALESCE(role, CASE WHEN LOWER(username) = 'admin' THEN 'admin' ELSE 'moderator' END)"
         )
@@ -191,15 +184,9 @@ def ensure_schema(conn):
                 last_seen_at TIMESTAMP DEFAULT NULL
             )
             """)
-        _add_missing_columns(
-            conn,
-            "cameras",
-            {
-                "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "last_seen_at": "TIMESTAMP DEFAULT NULL",
-            },
-        )
+        conn.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        conn.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        conn.execute("ALTER TABLE cameras ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP DEFAULT NULL")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS camera_device_credentials (
                 credential_id VARCHAR(64) PRIMARY KEY,
@@ -424,12 +411,12 @@ def ensure_schema(conn):
         conn,
         "users",
         {
-            "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
                 "role": "TEXT DEFAULT NULL",
                 "cameras": "TEXT DEFAULT NULL",
-            "status": "TEXT NOT NULL DEFAULT 'active'",
-            "created_at": "TEXT DEFAULT NULL",
-            "updated_at": "TEXT DEFAULT NULL",
+                "status": "TEXT NOT NULL DEFAULT 'active'",
+                "created_at": "TEXT DEFAULT NULL",
+                "updated_at": "TEXT DEFAULT NULL",
         },
     )
     conn.execute(
