@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
 import CameraViewer from "../../components/CameraViewer";
-import { Maximize2, Pencil, RefreshCw, X, Wifi, WifiOff } from "lucide-react";
+import { Maximize2, Pencil, RefreshCw, X, Wifi, WifiOff, Settings, MonitorPlay } from "lucide-react";
 import {
   createDeviceEnrollment,
   fetchCameras,
   renameCamera,
+  deleteCamera,
 } from "../../services/api";
 
 /* ── Session badge (top-left overlay) ───────────────────────────────────── */
@@ -19,15 +20,9 @@ function CameraBadge({ camera }) {
     <div className="min-w-0 text-white">
       <div className="flex min-w-0 items-center gap-1.5">
         <span className="truncate text-xs font-semibold sm:text-sm">
-          {camera.display_name || camera.camera_id}
+          {camera.computedName}
         </span>
       </div>
-      <span
-        className="mt-0.5 block truncate font-mono text-[9px] text-slate-300"
-        title={camera.camera_id}
-      >
-        {camera.camera_id}
-      </span>
       {isActive ? (
         <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-300">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -44,7 +39,20 @@ function CameraBadge({ camera }) {
 }
 
 /* ── Camera tile ────────────────────────────────────────────────────────── */
-function CameraTile({ camera, onExpand, onPair, onRename, canManage }) {
+function CameraTile({ camera, onExpand, onPair, onRename, onDelete, canManage }) {
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (settingsRef.current && !settingsRef.current.contains(e.target)) {
+        setShowSettings(false);
+      }
+    };
+    if (showSettings) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showSettings]);
+
   return (
     <div className="group relative h-full min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-950 shadow-sm">
       {/* Top overlay */}
@@ -79,25 +87,44 @@ function CameraTile({ camera, onExpand, onPair, onRename, canManage }) {
           </div>
         </div>
       )}
-      {canManage ? (
-        <div className="absolute bottom-2 left-2 z-10 flex gap-1.5">
+      {canManage && (
+        <div className="absolute bottom-2 left-2 z-20" ref={settingsRef}>
           <button
             type="button"
-            onClick={onRename}
-            className="flex items-center gap-1 rounded-md border border-white/20 bg-slate-950/60 px-2 py-1 text-[10px] font-semibold text-white/80 backdrop-blur hover:bg-slate-950/80"
+            onClick={() => setShowSettings((prev) => !prev)}
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-white/20 bg-slate-950/60 text-white/80 backdrop-blur hover:bg-slate-950/80 hover:text-white"
+            aria-label="Cài đặt camera"
           >
-            <Pencil className="h-3 w-3" />
-            Đổi tên
+            <Settings className="h-3.5 w-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={onPair}
-            className="rounded-md border border-white/20 bg-slate-950/60 px-2 py-1 text-[10px] font-semibold text-white/80 backdrop-blur hover:bg-slate-950/80"
-          >
-            Mã ghép nối
-          </button>
+          
+          {showSettings && (
+            <div className="absolute bottom-full left-0 mb-1 flex w-36 flex-col overflow-hidden rounded-md border border-slate-700 bg-slate-800 shadow-xl">
+              <button
+                type="button"
+                onClick={() => { setShowSettings(false); onRename(); }}
+                className="px-3 py-2 text-left text-[11px] font-medium text-white hover:bg-slate-700"
+              >
+                Đổi tên
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowSettings(false); onPair(); }}
+                className="px-3 py-2 text-left text-[11px] font-medium text-white hover:bg-slate-700 border-t border-slate-700/50"
+              >
+                Mã ghép nối
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowSettings(false); onDelete(); }}
+                className="px-3 py-2 text-left text-[11px] font-medium text-red-400 hover:bg-slate-700 hover:text-red-300 border-t border-slate-700/50"
+              >
+                Xóa camera
+              </button>
+            </div>
+          )}
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
@@ -123,10 +150,7 @@ function ExpandedModal({ camera, onClose }) {
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 sm:px-5">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-semibold text-slate-800">
-              {camera.display_name || camera.camera_id}
-            </span>
-            <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[10px] text-slate-500">
-              {camera.camera_id}
+              {camera.computedName}
             </span>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${
@@ -169,6 +193,68 @@ function ExpandedModal({ camera, onClose }) {
   );
 }
 
+/* ── Fullscreen Live Modal ──────────────────────────────────────────────── */
+function FullscreenLiveModal({ cameras, onClose }) {
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const activeCameras = cameras.filter(c => c.active);
+
+  const gridCols =
+    activeCameras.length <= 1
+      ? "grid-cols-1"
+      : activeCameras.length <= 4
+        ? "grid-cols-1 sm:grid-cols-2"
+        : activeCameras.length <= 9
+          ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+          : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
+
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col bg-black">
+      <div className="flex shrink-0 items-center justify-between p-3 bg-gradient-to-b from-black/80 to-transparent absolute top-0 inset-x-0 z-10 pointer-events-none">
+        <div className="flex items-center gap-2">
+          <div className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-sm font-semibold text-white shadow-black drop-shadow-md">
+            Live View ({activeCameras.length})
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="pointer-events-auto rounded-full bg-black/50 p-2 text-white/80 hover:bg-white/20 hover:text-white backdrop-blur transition"
+          aria-label="Thoát toàn màn hình"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className={`flex-1 grid gap-1 p-1 ${gridCols}`}>
+        {activeCameras.length === 0 ? (
+          <div className="col-span-full flex h-full items-center justify-center text-white/50 font-medium">
+            Không có camera nào đang Live
+          </div>
+        ) : (
+          activeCameras.map((camera) => (
+            <div key={camera.camera_id} className="relative h-full min-h-0 overflow-hidden bg-slate-900 rounded border border-white/10">
+              <div className="absolute top-2 left-2 z-10 pointer-events-none">
+                <span className="rounded bg-black/60 px-2 py-1 text-xs font-semibold text-white backdrop-blur">
+                  {camera.computedName}
+                </span>
+              </div>
+              <CameraViewer cameraId={camera.camera_id} compact />
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Empty state ────────────────────────────────────────────────────────── */
 function EmptyState() {
   return (
@@ -196,6 +282,7 @@ export default function CameraPage() {
   const [role, setRole] = useState(null);
   const [cameras, setCameras] = useState([]);
   const [expandedId, setExpandedId] = useState(null);
+  const [isFullscreenAll, setIsFullscreenAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Auth check
@@ -212,7 +299,12 @@ export default function CameraPage() {
     try {
       const data = await fetchCameras();
       if (data.status === "success") {
-        setCameras(data.cameras || []);
+        const rawCameras = data.cameras || [];
+        const camerasWithNames = rawCameras.map((camera, idx) => ({
+          ...camera,
+          computedName: camera.display_name || `CAM${String(idx + 1).padStart(2, "0")}`
+        }));
+        setCameras(camerasWithNames);
       }
     } catch (_) {}
     setIsLoading(false);
@@ -286,6 +378,19 @@ export default function CameraPage() {
     }
   };
 
+  const handleDeleteCamera = async (camera) => {
+    if (!window.confirm(`Bạn có chắc chắn muốn xóa camera ${camera.computedName}? Thao tác này không thể hoàn tác.`)) {
+      return;
+    }
+
+    try {
+      await deleteCamera(camera.camera_id);
+      await loadCameras();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Không thể xóa camera");
+    }
+  };
+
   // Dynamic grid columns based on session count
   const gridCols =
     shown.length <= 1
@@ -325,13 +430,22 @@ export default function CameraPage() {
               ))}
             </div>
 
-            <button
-              onClick={loadCameras}
-              className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
-              title="Làm mới"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsFullscreenAll(true)}
+                className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+                title="Xem tất cả Camera Live"
+              >
+                <MonitorPlay className="h-4 w-4" />
+              </button>
+              <button
+                onClick={loadCameras}
+                className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
+                title="Làm mới"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </div>
           </div>
 
           {/* Grid or empty state */}
@@ -354,6 +468,7 @@ export default function CameraPage() {
                   onExpand={() => setExpandedId(camera.camera_id)}
                   onPair={() => handleCreatePairingCode(camera)}
                   onRename={() => handleRenameCamera(camera)}
+                  onDelete={() => handleDeleteCamera(camera)}
                   canManage={role === "admin"}
                 />
               ))}
@@ -368,6 +483,13 @@ export default function CameraPage() {
           onClose={() => setExpandedId(null)}
         />
       ) : null}
+
+      {isFullscreenAll && (
+        <FullscreenLiveModal
+          cameras={cameras}
+          onClose={() => setIsFullscreenAll(false)}
+        />
+      )}
     </main>
   );
 }

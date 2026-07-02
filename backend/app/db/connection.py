@@ -753,6 +753,27 @@ def update_camera_display_name(conn, camera_id, display_name):
     return cursor.rowcount > 0
 
 
+def delete_camera(conn, camera_id):
+    now = datetime.now().isoformat(timespec="seconds")
+    cursor = conn.execute(
+        """
+        UPDATE cameras
+        SET status = 'deleted', updated_at = ?
+        WHERE camera_id = ?
+        """,
+        (now, camera_id),
+    )
+    conn.execute(
+        """
+        UPDATE camera_device_credentials
+        SET revoked_at = ?
+        WHERE camera_id = ? AND revoked_at IS NULL
+        """,
+        (now, camera_id),
+    )
+    return cursor.rowcount > 0
+
+
 def list_users_with_permissions(conn):
     active_camera_ids = {
         row["camera_id"] for row in list_active_cameras(conn)

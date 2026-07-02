@@ -167,6 +167,21 @@ export async function renameCamera(cameraId, displayName) {
   return response.json();
 }
 
+export async function deleteCamera(cameraId) {
+  const response = await fetch(
+    `${API_BASE_URL}/api/cameras/${encodeURIComponent(cameraId)}`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể xóa camera");
+  }
+  return response.json();
+}
+
 export async function fetchUsers() {
   const response = await fetch(`${API_BASE_URL}/api/users`, {
     headers: getAuthHeaders(),

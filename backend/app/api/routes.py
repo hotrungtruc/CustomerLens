@@ -1382,6 +1382,29 @@ async def rename_camera(
         conn.close()
 
 
+@router.delete("/api/cameras/{camera_id}")
+async def remove_camera(
+    camera_id: str,
+    authorization: str | None = Header(default=None),
+):
+    require_admin(authorization)
+    conn = get_db_connection()
+    try:
+        from app.db.connection import delete_camera
+        if not delete_camera(conn, camera_id):
+            raise HTTPException(status_code=404, detail="Camera not found")
+        conn.commit()
+        return {
+            "status": "success",
+            "message": "Camera deleted successfully",
+        }
+    except HTTPException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 @router.get("/api/users")
 def api_users(authorization: str | None = Header(default=None)):
     require_admin(authorization)
