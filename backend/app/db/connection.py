@@ -181,11 +181,20 @@ def ensure_schema(conn):
                 camera_id VARCHAR(64) PRIMARY KEY,
                 display_name VARCHAR(255) NOT NULL,
                 status VARCHAR(32) NOT NULL DEFAULT 'active',
-                created_at TIMESTAMP NOT NULL,
-                updated_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 last_seen_at TIMESTAMP DEFAULT NULL
             )
             """)
+        _add_missing_columns(
+            conn,
+            "cameras",
+            {
+                "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "last_seen_at": "TIMESTAMP DEFAULT NULL",
+            },
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS camera_device_credentials (
                 credential_id VARCHAR(64) PRIMARY KEY,
@@ -235,6 +244,14 @@ def ensure_schema(conn):
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        _add_missing_columns(
+            conn,
+            "customers",
+            {
+                "created_at": "VARCHAR(255) DEFAULT CURRENT_TIMESTAMP",
+                "updated_at": "VARCHAR(255) DEFAULT CURRENT_TIMESTAMP",
+            },
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS customer_embeddings (
                 id SERIAL PRIMARY KEY,
@@ -246,6 +263,14 @@ def ensure_schema(conn):
                 updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        _add_missing_columns(
+            conn,
+            "customer_embeddings",
+            {
+                "created_at": "VARCHAR(255) DEFAULT CURRENT_TIMESTAMP",
+                "updated_at": "VARCHAR(255) DEFAULT CURRENT_TIMESTAMP",
+            },
+        )
         conn.commit()
         # Add pgvector column (idempotent — does nothing if it already exists)
         try:
