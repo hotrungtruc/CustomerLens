@@ -36,11 +36,11 @@ export default function CameraViewer({ cameraId, compact = false }) {
       const h = y2 - y1;
       
       // InsightFace returns a tight bbox. Expand it to match MediaPipe visually.
-      // Top gets more padding for forehead/hair.
-      const px1 = x1 - w * 0.15;
-      const py1 = y1 - h * 0.4;
-      const pw = w * 1.3;
-      const ph = h * 1.6;
+      // Top gets padding for forehead/hair, bottom for mouth/chin.
+      const px1 = x1 - w * 0.25;
+      const py1 = y1 - h * 0.5;
+      const pw = w * 1.5;
+      const ph = h * 2.0;
 
       const badge = getTrackBadge(c.track_id);
       const theme = badge.theme;
