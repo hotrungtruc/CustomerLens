@@ -590,6 +590,7 @@ async def api_login(request: Request):
 
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT id, username, password_hash, role, cameras, status FROM users WHERE username = ?",
@@ -1345,6 +1346,11 @@ async def _list_camera_presence(user):
 
 @router.get("/api/cameras")
 async def api_cameras(authorization: str | None = Header(default=None)):
+    conn = get_db_connection()
+    try:
+        ensure_schema(conn)
+    finally:
+        conn.close()
     user = get_user_from_token(authorization)
     cameras = await _list_camera_presence(user)
     return {"status": "success", "cameras": cameras}
@@ -1367,6 +1373,7 @@ async def rename_camera(
 
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         if not update_camera_display_name(conn, camera_id, display_name):
             raise HTTPException(status_code=404, detail="Camera not found")
         conn.commit()
@@ -1390,6 +1397,7 @@ async def remove_camera(
     require_admin(authorization)
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         from app.db.connection import delete_camera
         if not delete_camera(conn, camera_id):
             raise HTTPException(status_code=404, detail="Camera not found")
@@ -1410,6 +1418,7 @@ def api_users(authorization: str | None = Header(default=None)):
     require_admin(authorization)
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         return {"status": "success", "users": list_users_with_permissions(conn)}
     finally:
         conn.close()
@@ -1431,6 +1440,7 @@ async def create_user(
 
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         if conn.execute(
             "SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)", (username,)
         ).fetchone():
@@ -1477,6 +1487,7 @@ async def update_user(
 
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         user = conn.execute(
             "SELECT id, role FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -1514,6 +1525,7 @@ def delete_user(
     require_admin(authorization)
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         user = conn.execute(
             "SELECT id, role FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -1551,6 +1563,7 @@ async def update_camera_permissions(
 
     conn = get_db_connection()
     try:
+        ensure_schema(conn)
         user_row = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()

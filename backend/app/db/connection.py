@@ -171,10 +171,15 @@ def ensure_schema(conn):
             "users",
             {
                 "id": "SERIAL PRIMARY KEY",
+                "role": "VARCHAR(50) DEFAULT NULL",
+                "cameras": "TEXT DEFAULT NULL",
                 "status": "VARCHAR(32) NOT NULL DEFAULT 'active'",
                 "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
                 "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             },
+        )
+        conn.execute(
+            "UPDATE users SET role = COALESCE(role, CASE WHEN LOWER(username) = 'admin' THEN 'admin' ELSE 'moderator' END)"
         )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS cameras (
@@ -420,10 +425,15 @@ def ensure_schema(conn):
         "users",
         {
             "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+                "role": "TEXT DEFAULT NULL",
+                "cameras": "TEXT DEFAULT NULL",
             "status": "TEXT NOT NULL DEFAULT 'active'",
             "created_at": "TEXT DEFAULT NULL",
             "updated_at": "TEXT DEFAULT NULL",
         },
+    )
+    conn.execute(
+        "UPDATE users SET role = COALESCE(role, CASE WHEN LOWER(username) = 'admin' THEN 'admin' ELSE 'moderator' END)"
     )
     conn.execute(
         "UPDATE users SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP)"
