@@ -33,3 +33,6 @@ deploy_production:
         sudo docker compose ps
         echo "=== Deploy successful ==="
       ENDSSH
+
+    - echo "=== Triggering Vercel Frontend Build ==="
+    - curl -X POST "https://api.vercel.com/v1/integrations/deploy/prj_Vmv6iLCAw6ZytseXSJWfnc9lQuUh/gb78OB9lIG"
