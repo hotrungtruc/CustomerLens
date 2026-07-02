@@ -39,13 +39,30 @@ def main():
     
     while True:
         try:
-            # BRPOP blocks until an item is available.
-            result = redis_client.brpop([frame_queue], timeout=1)
+            # BLPOP blocks until an item is available (LIFO: getting the most recently lpush'd item)
+            result = redis_client.blpop([frame_queue], timeout=1)
             
             if not result:
                 continue
                 
             queue_name, item = result
+            
+            # Unpack 4-byte length
+            meta_len = int.from_bytes(item[:4], byteorder="big")
+            meta_json = item[4:4+meta_len].decode("utf-8")
+            data = json.loads(meta_json)
+            
+            # Drop frame if delayed > 500ms (realtime constraint)
+            timestamp_str = data.get("timestamp")
+            if timestamp_str:
+                try:
+                    frame_time = datetime.fromisoformat(timestamp_str).timestamp()
+                    delay = time.time() - frame_time
+                    if delay > 0.5:
+                        logger.warning(f"Dropping stale frame (delay: {delay:.3f}s)")
+                        continue
+                except Exception:
+                    pass
             
             # It's a frame (Binary Packed)
             frame_count += 1
@@ -58,10 +75,6 @@ def main():
             if frame_count % current_n_frames != 0:
                 continue
                 
-            # Unpack 4-byte length
-            meta_len = int.from_bytes(item[:4], byteorder="big")
-            meta_json = item[4:4+meta_len].decode("utf-8")
-            data = json.loads(meta_json)
             raw_image_bytes = item[4+meta_len:]
                 
             opeid = data.get("opeid")
