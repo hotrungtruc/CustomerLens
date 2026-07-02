@@ -357,7 +357,9 @@ class InsightEmbedder:
         if input_shape[-1] == 3 or input_shape[-1] == "3":
             # NHWC format (e.g. GhostFaceNet)
             aligned_rgb = cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)
-            aligned_norm = (aligned_rgb.astype(np.float32) - 127.5) / 127.5
+            aligned_norm = aligned_rgb.astype(np.float32)
+            aligned_norm -= 127.5
+            aligned_norm *= 0.00784313725  # Equivalent to / 127.5
             blob = np.expand_dims(aligned_norm, axis=0)
         else:
             # NCHW format (e.g. MobileFaceNet, AdaFace)
