@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
 
 /**
- * Maps bounding boxes from original video coordinates to an object-cover container.
+ * Maps bounding boxes from original backend frame coordinates to an object-cover container.
+ * It uses the actual <video> intrinsic dimensions for CSS object-cover math.
  */
-export function useVideoBbox(containerRef, videoWidth, videoHeight) {
+export function useVideoBbox(containerRef, frameWidth, frameHeight) {
   const [containerSize, setContainerSize] = useState({ cw: 0, ch: 0 });
+  const [videoSize, setVideoSize] = useState({ vw: 0, vh: 0 });
 
+  // Watch container dimensions
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
@@ -20,33 +23,67 @@ export function useVideoBbox(containerRef, videoWidth, videoHeight) {
     return () => observer.disconnect();
   }, [containerRef]);
 
-  // Map absolute video coordinates (px) to percentage coordinates (%) of the container
+  // Watch intrinsic video dimensions
+  useEffect(() => {
+    const video = containerRef.current;
+    if (!video) return;
+
+    const updateVideoSize = () => {
+      if (video.videoWidth && video.videoHeight) {
+        setVideoSize({ vw: video.videoWidth, vh: video.videoHeight });
+      }
+    };
+
+    video.addEventListener("loadedmetadata", updateVideoSize);
+    video.addEventListener("resize", updateVideoSize);
+    
+    // Poll to catch any silent WebRTC track resolution changes
+    const interval = setInterval(updateVideoSize, 1000);
+    updateVideoSize();
+
+    return () => {
+      video.removeEventListener("loadedmetadata", updateVideoSize);
+      video.removeEventListener("resize", updateVideoSize);
+      clearInterval(interval);
+    };
+  }, [containerRef]);
+
+  // Map absolute backend coordinates (px) to percentage coordinates (%) of the container
   function mapBbox(x, y, w, h) {
     const { cw, ch } = containerSize;
-    if (!cw || !ch || !videoWidth || !videoHeight) {
+    const { vw, vh } = videoSize;
+
+    const fw = frameWidth || 640;
+    const fh = frameHeight || 360;
+    
+    // Position of bbox in percentages relative to the source image
+    const pctX = x / fw;
+    const pctY = y / fh;
+    const pctW = w / fw;
+    const pctH = h / fh;
+
+    if (!cw || !ch || !vw || !vh) {
       // Fallback: simple percentage if size not available
-      const fw = videoWidth || 640;
-      const fh = videoHeight || 360;
       return {
-        left: (x / fw) * 100,
-        top: (y / fh) * 100,
-        width: (w / fw) * 100,
-        height: (h / fh) * 100,
+        left: pctX * 100,
+        top: pctY * 100,
+        width: pctW * 100,
+        height: pctH * 100,
       };
     }
 
-    // object-cover math
-    const scale = Math.max(cw / videoWidth, ch / videoHeight);
-    const renderedW = videoWidth * scale;
-    const renderedH = videoHeight * scale;
+    // Calculate object-cover math using the ACTUAL video intrinsic dimensions
+    const scale = Math.max(cw / vw, ch / vh);
+    const renderedW = vw * scale;
+    const renderedH = vh * scale;
     const offsetX = (cw - renderedW) / 2;
     const offsetY = (ch - renderedH) / 2;
 
     return {
-      left: ((offsetX + x * scale) / cw) * 100,
-      top: ((offsetY + y * scale) / ch) * 100,
-      width: ((w * scale) / cw) * 100,
-      height: ((h * scale) / ch) * 100,
+      left: ((offsetX + pctX * renderedW) / cw) * 100,
+      top: ((offsetY + pctY * renderedH) / ch) * 100,
+      width: ((pctW * renderedW) / cw) * 100,
+      height: ((pctH * renderedH) / ch) * 100,
     };
   }
 
