@@ -1145,7 +1145,7 @@ def get_customer_info(conn, customer_id):
             c.status,
             c.created_at,
             c.updated_at,
-            CASE WHEN e.face_embedding IS NULL THEN 0 ELSE 1 END AS has_face_embedding,
+            CASE WHEN e.customer_id IS NULL THEN 0 ELSE 1 END AS has_face_embedding,
             e.embedding_dim AS face_embedding_dim,
             e.model_name AS face_embedding_model,
             e.updated_at AS face_embedding_updated_at
