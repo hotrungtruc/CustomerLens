@@ -32,9 +32,19 @@ export default function CameraViewer({ cameraId, compact = false }) {
     .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
     .map((c) => {
       const [x1, y1, x2, y2] = c.bbox;
+      const w = x2 - x1;
+      const h = y2 - y1;
+      
+      // InsightFace returns a tight bbox. Expand it to match MediaPipe visually.
+      // Top gets more padding for forehead/hair.
+      const px1 = x1 - w * 0.15;
+      const py1 = y1 - h * 0.4;
+      const pw = w * 1.3;
+      const ph = h * 1.6;
+
       const badge = getTrackBadge(c.track_id);
       const theme = badge.theme;
-      const mapped = mapBbox(x1, y1, x2 - x1, y2 - y1);
+      const mapped = mapBbox(px1, py1, pw, ph);
       return {
         ...c,
         left: mapped.left,
