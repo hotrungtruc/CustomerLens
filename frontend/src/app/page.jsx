@@ -17,6 +17,9 @@ import { useProfilePrefetch } from "../hooks/useProfilePrefetch";
 
 // Phân biệt khách cũ vs khách mới
 function isKnownCustomer(c) {
+  // A customer is "known" if they have a numeric ID (registered) OR
+  // if backend explicitly marked them as registered customer type
+  if (c.customer_type === "registered") return true;
   return c.id && /^\d{1,3}$/.test(String(c.id));
 }
 

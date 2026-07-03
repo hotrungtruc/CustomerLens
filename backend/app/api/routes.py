@@ -706,17 +706,19 @@ async def api_customer_profile(
     source_id = (payload.get("source_id") or selected_id or "").strip()
     name = payload.get("name")
     phone = payload.get("phone")
+    email = payload.get("email")
     note = payload.get("note")
     service_category = payload.get("service_category")
     service_start_year = payload.get("service_start_year")
     customer_tenure_years = payload.get("customer_tenure_years")
-    loyalty_tier = payload.get("loyalty_tier")
+    loyalty_tier = payload.get("loyalty_tier") or payload.get("rank")
 
     conn = get_db_connection()
 
     try:
         writable_id = selected_id
-        if writable_id.startswith("T") or writable_id.startswith("GUEST_"):
+        # Treat temporary IDs as new customers requiring a generated numeric ID
+        if writable_id.startswith("T") or writable_id.startswith("GUEST_") or writable_id.startswith("test_"):
             writable_id = None
 
         try:
@@ -726,6 +728,7 @@ async def api_customer_profile(
                 source_id=source_id,
                 name=name,
                 phone=phone,
+                email=email,
                 note=note,
                 service_category=service_category,
                 service_start_year=service_start_year,
@@ -735,7 +738,7 @@ async def api_customer_profile(
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
 
-        if source_id.startswith("GUEST_") and final_id != source_id:
+        if (source_id.startswith("GUEST_") or source_id.startswith("test_")) and final_id != source_id:
             camera_id = "default"
             parts = source_id.split("_")
             if len(parts) >= 3:

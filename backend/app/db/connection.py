@@ -1182,7 +1182,7 @@ def create_or_update_customer_profile(
     occupation = occupation if occupation is not None else service_category
     registered_at = registered_at if registered_at is not None else service_start_year
     tenure = tenure if tenure is not None else customer_tenure_years
-    if clean_id.startswith("T") or clean_id.startswith("GUEST_"):
+    if clean_id.startswith("T") or clean_id.startswith("GUEST_") or clean_id.startswith("test_"):
         clean_id = ""
 
     existing = get_customer_info(conn, clean_id) if clean_id else None
