@@ -207,6 +207,13 @@ def ensure_schema(conn):
                 PRIMARY KEY (user_id, camera_id, permission)
             )
             """)
+        _add_missing_columns(
+            conn,
+            "user_camera_permissions",
+            {
+                "permission": "VARCHAR(32) NOT NULL DEFAULT 'view'",
+            },
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS camera_connections (
                 connection_id VARCHAR(64) PRIMARY KEY,
@@ -464,6 +471,13 @@ def ensure_schema(conn):
             FOREIGN KEY (camera_id) REFERENCES cameras(camera_id)
         )
         """)
+    _add_missing_columns(
+        conn,
+        "user_camera_permissions",
+        {
+            "permission": "TEXT NOT NULL DEFAULT 'view'",
+        },
+    )
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS camera_connections (
