@@ -216,7 +216,7 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
             disabled={saving}
             className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
           >
-            {saving ? "Đang lưu..." : "Lưu & Xem hồ sơ"}
+            {saving ? "Đang lưu..." : "Lưu thông tin"}
           </button>
         </div>
       </div>
@@ -390,18 +390,13 @@ export default function DashboardPage() {
     [router, getProfile],
   );
 
-  // Sau khi lưu thành công → navigate đến trang hồ sơ mới
+  // Sau khi lưu thành công, chỉ đóng popup
   const handleSaved = useCallback(
     (result) => {
       setModalCustomer(null);
-      const newId = result?.customer_id || result?.id;
-      if (newId) {
-        router.push(`/customers/${newId}`);
-      } else {
-        router.push("/customers");
-      }
+      // Removed redirect to customer profile page to allow immediate view on camera
     },
-    [router],
+    [],
   );
 
   return (
