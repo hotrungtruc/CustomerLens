@@ -300,7 +300,6 @@ class GuestTrackManager:
             try:
                 logger.info("Attempting to insert guest %s into DB", guest_id)
                 conn = get_db_connection()
-                ensure_schema(conn)
                 insert_guest_record(conn, guest_id)
                 logger.info("Successfully inserted guest record for %s", guest_id)
 

@@ -354,7 +354,6 @@ def test():
 def resolve_device_identity(request: Request, response: Response):
     raw_token = request.cookies.get(DEVICE_COOKIE_NAME)
     conn = get_db_connection()
-    ensure_schema(conn)
 
     try:
         if raw_token:
@@ -590,7 +589,6 @@ async def api_login(request: Request):
 
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT id, username, password_hash, role, cameras, status FROM users WHERE username = ?",
@@ -637,7 +635,6 @@ def api_customer_info(camera_id: str | None = None):
         return {"status": "no_detection"}
 
     conn = get_db_connection()
-    ensure_schema(conn)
 
     try:
         customer_info = get_customer_info(conn, detected_customer_id)
@@ -716,7 +713,6 @@ async def api_customer_profile(
     loyalty_tier = payload.get("loyalty_tier")
 
     conn = get_db_connection()
-    ensure_schema(conn)
 
     try:
         writable_id = selected_id
@@ -819,7 +815,6 @@ def api_check_in(camera_id: str | None = None):
         return {"success": False, "message": "No face detected"}
 
     conn = get_db_connection()
-    ensure_schema(conn)
     try:
         customer_info = get_customer_info(conn, detected_customer_id)
         if not customer_info:
@@ -852,7 +847,6 @@ def api_check_in(camera_id: str | None = None):
 @router.post("/api/check_in/{customer_id}")
 def api_check_in_by_id(customer_id: str):
     conn = get_db_connection()
-    ensure_schema(conn)
     try:
         customer_info = get_customer_info(conn, customer_id)
         if not customer_info:
@@ -952,7 +946,6 @@ async def api_promote_guest(request: Request, authorization: str | None = Header
 def api_get_all_customers(authorization: str | None = Header(None)):
     require_admin(authorization)
     conn = get_db_connection()
-    ensure_schema(conn)
     try:
         cursor = conn.cursor()
         cursor.execute("""
@@ -969,7 +962,6 @@ def api_get_all_customers(authorization: str | None = Header(None)):
 def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(None)):
     require_admin(authorization)
     conn = get_db_connection()
-    ensure_schema(conn)
     try:
         customer_info = get_customer_info(conn, customer_id)
         if not customer_info:
@@ -1355,7 +1347,6 @@ async def _list_camera_presence(user):
 async def api_cameras(authorization: str | None = Header(default=None)):
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
     finally:
         conn.close()
     user = get_user_from_token(authorization)
@@ -1380,7 +1371,6 @@ async def rename_camera(
 
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         if not update_camera_display_name(conn, camera_id, display_name):
             raise HTTPException(status_code=404, detail="Camera not found")
         conn.commit()
@@ -1404,7 +1394,6 @@ async def remove_camera(
     require_admin(authorization)
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         from app.db.connection import delete_camera
         if not delete_camera(conn, camera_id):
             raise HTTPException(status_code=404, detail="Camera not found")
@@ -1425,7 +1414,6 @@ def api_users(authorization: str | None = Header(default=None)):
     require_admin(authorization)
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         return {"status": "success", "users": list_users_with_permissions(conn)}
     finally:
         conn.close()
@@ -1447,7 +1435,6 @@ async def create_user(
 
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         if conn.execute(
             "SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)", (username,)
         ).fetchone():
@@ -1494,7 +1481,6 @@ async def update_user(
 
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         user = conn.execute(
             "SELECT id, role FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -1532,7 +1518,6 @@ def delete_user(
     require_admin(authorization)
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         user = conn.execute(
             "SELECT id, role FROM users WHERE username = ?", (username,)
         ).fetchone()
@@ -1570,7 +1555,6 @@ async def update_camera_permissions(
 
     conn = get_db_connection()
     try:
-        ensure_schema(conn)
         user_row = conn.execute(
             "SELECT id FROM users WHERE username = ?", (username,)
         ).fetchone()
