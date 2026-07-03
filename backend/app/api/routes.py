@@ -717,6 +717,8 @@ async def api_customer_profile(
 
     try:
         writable_id = selected_id
+        final_id = selected_id  # fallback value
+        created = False
         # Treat temporary IDs as new customers requiring a generated numeric ID
         if writable_id.startswith("T") or writable_id.startswith("GUEST_") or writable_id.startswith("test_"):
             writable_id = None
@@ -795,15 +797,21 @@ async def api_customer_profile(
             },
         }
     finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
         # Invalidate cache command to workers
-        r = await get_redis()
-        with CAMERA_STATES_LOCK:
-            for cid in CAMERA_STATES.keys():
-                await r.publish(f"camera_control:{cid}", json.dumps({
-                    "action": "invalidate_cache",
-                    "customer_id": final_id
-                }))
-        conn.close()
+        try:
+            r = await get_redis()
+            with CAMERA_STATES_LOCK:
+                for cid in CAMERA_STATES.keys():
+                    await r.publish(f"camera_control:{cid}", json.dumps({
+                        "action": "invalidate_cache",
+                        "customer_id": final_id
+                    }))
+        except Exception:
+            pass
 
 @router.post("/api/check_in")
 def api_check_in(camera_id: str | None = None):

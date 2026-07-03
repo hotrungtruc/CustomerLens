@@ -142,7 +142,7 @@ def _generate_next_customer_id(conn):
     rows = conn.execute("SELECT customer_id FROM customers").fetchall()
     max_numeric = -1
     for row in rows:
-        value = str(row[0] or "")
+        value = str(row["customer_id"] or "")
         if re.fullmatch(r"\d+", value):
             max_numeric = max(max_numeric, int(value))
     return f"{max_numeric + 1:03d}"
