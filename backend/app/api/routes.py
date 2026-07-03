@@ -1347,6 +1347,9 @@ async def _list_camera_presence(user):
 async def api_cameras(authorization: str | None = Header(default=None)):
     conn = get_db_connection()
     try:
+
+        pass
+
     finally:
         conn.close()
     user = get_user_from_token(authorization)
