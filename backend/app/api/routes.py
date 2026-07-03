@@ -745,7 +745,7 @@ async def api_customer_profile(
             
             # Send control message to AI worker to promote guest
             r = await get_redis()
-            await r.lpush(f"camera_control_{camera_id}", json.dumps({
+            await r.publish(f"camera_control:{camera_id}", json.dumps({
                 "action": "promote_guest",
                 "guest_id": source_id,
                 "new_id": final_id
@@ -754,7 +754,7 @@ async def api_customer_profile(
             # Send reload encodings command to all cameras
             with CAMERA_STATES_LOCK:
                 for cid in CAMERA_STATES.keys():
-                    await r.lpush(f"camera_control_{cid}", json.dumps({
+                    await r.publish(f"camera_control:{cid}", json.dumps({
                         "action": "reload_embeddings"
                     }))
 
@@ -796,7 +796,7 @@ async def api_customer_profile(
         r = await get_redis()
         with CAMERA_STATES_LOCK:
             for cid in CAMERA_STATES.keys():
-                await r.lpush(f"camera_control_{cid}", json.dumps({
+                await r.publish(f"camera_control:{cid}", json.dumps({
                     "action": "invalidate_cache",
                     "customer_id": final_id
                 }))
@@ -927,7 +927,7 @@ async def api_promote_guest(request: Request, authorization: str | None = Header
                 camera_id = prefix[len("GUEST_") :]
 
     r = await get_redis()
-    await r.lpush(f"camera_control_{camera_id}", json.dumps({
+    await r.publish(f"camera_control:{camera_id}", json.dumps({
         "action": "promote_guest",
         "guest_id": guest_id,
         "new_id": new_id
@@ -936,7 +936,7 @@ async def api_promote_guest(request: Request, authorization: str | None = Header
     # Send reload encodings command to all cameras
     with CAMERA_STATES_LOCK:
         for cid in CAMERA_STATES.keys():
-            await r.lpush(f"camera_control_{cid}", json.dumps({
+            await r.publish(f"camera_control:{cid}", json.dumps({
                 "action": "reload_embeddings"
             }))
             
@@ -1034,6 +1034,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         # Observer migration is a later phase, so signaling stays camera-scoped.
         await pubsub.subscribe(f"webrtc_signaling_{camera_id}")
         await pubsub.subscribe(f"connection_control:{connection_id}")
+        await pubsub.subscribe(f"camera_control:{camera_id}")
 
         if previous_connection_id and previous_connection_id != connection_id:
             await r.publish(
@@ -1187,6 +1188,27 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                                 code=4008, reason="Camera opened elsewhere"
                             )
                             return
+                    elif channel == f"camera_control:{camera_id}":
+                        action = data.get("action")
+                        if action == "promote_guest":
+                            guest_id = data.get("guest_id")
+                            new_id = data.get("new_id")
+                            if guest_id and new_id:
+                                track_manager.promote_guest(guest_id, new_id)
+                                for track in track_manager.tracks.values():
+                                    if track.resolved_customer_id in (guest_id, new_id):
+                                        track.cached_profile = None
+                                        track.resolved_customer_id = new_id
+                        elif action == "invalidate_cache":
+                            cid_to_invalidate = data.get("customer_id")
+                            if cid_to_invalidate:
+                                for track in track_manager.tracks.values():
+                                    if track.resolved_customer_id == cid_to_invalidate:
+                                        track.cached_profile = None
+                        elif action == "reload_embeddings":
+                            await asyncio.to_thread(track_manager.load_known_embeddings)
+                            for track in track_manager.tracks.values():
+                                track.cached_profile = None
                 except Exception as e:
                     import logging
                     logging.error(f"WebSocket reader error: {e}", exc_info=True)
