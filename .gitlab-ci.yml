@@ -29,11 +29,10 @@ deploy_production:
         git fetch origin main
         git reset --hard origin/main
 
-        echo "--- Rebuilding and restarting container ---"
-        sudo docker compose down --timeout 30
-        sudo docker compose up --build -d
-        sudo docker image prune -f
-      ENDSSH
+          sudo docker compose down --timeout 30
+          sudo docker compose up --build -d
+          sudo docker image prune -f
+ENDSSH
 
     - echo "=== Deploying to Workers ==="
     - |
@@ -47,11 +46,10 @@ deploy_production:
           git fetch origin main
           git reset --hard origin/main
 
-          echo "--- Rebuilding and restarting container ---"
           sudo docker compose down --timeout 30
           sudo docker compose up --build -d
           sudo docker image prune -f
-        ENDSSH
+ENDSSH
       done
 
     - echo "=== Triggering Vercel Frontend Build ==="
