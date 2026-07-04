@@ -324,6 +324,10 @@ class GuestTrackManager:
                             dim=len(emb),
                             model_name="edgeface_s_gamma_05",
                         )
+                        # Remove the old guest record and embedding, and update logs
+                        conn.execute("UPDATE recognize_logs SET customer_id = ? WHERE customer_id = ?", (new_id, guest_id))
+                        conn.execute("DELETE FROM customer_embeddings WHERE customer_id = ?", (guest_id,))
+                        conn.execute("DELETE FROM customers WHERE customer_id = ?", (guest_id,))
                         conn.commit()
                     except Exception:
                         pass
