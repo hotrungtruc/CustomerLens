@@ -241,7 +241,8 @@ def ensure_schema(conn):
                 customer_type VARCHAR(50) NOT NULL DEFAULT 'registered',
                 status VARCHAR(50) NOT NULL DEFAULT 'active',
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_deleted BOOLEAN DEFAULT FALSE
             )
             """)
         _add_missing_columns(
@@ -260,7 +261,8 @@ def ensure_schema(conn):
                 embedding_dim INTEGER NOT NULL DEFAULT 512,
                 model_name VARCHAR(100) NOT NULL DEFAULT 'edgeface_s_gamma_05',
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_deleted BOOLEAN DEFAULT FALSE
             )
             """)
         _add_missing_columns(
@@ -352,13 +354,17 @@ def ensure_schema(conn):
                 track_id INTEGER DEFAULT NULL,
                 bbox JSONB DEFAULT NULL,
                 connection_id VARCHAR(64) DEFAULT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                moderator_username VARCHAR(255) DEFAULT NULL
             )
             """)
         _add_missing_columns(
             conn,
             "recognize_logs",
-            {"connection_id": "VARCHAR(64) DEFAULT NULL"},
+            {
+                "connection_id": "VARCHAR(64) DEFAULT NULL",
+                "moderator_username": "VARCHAR(255) DEFAULT NULL"
+            },
         )
         _add_missing_columns(
             conn,
@@ -378,6 +384,14 @@ def ensure_schema(conn):
                 "status": "VARCHAR(50) NOT NULL DEFAULT 'active'",
                 "created_at": "VARCHAR(255) DEFAULT NULL",
                 "updated_at": "VARCHAR(255) DEFAULT NULL",
+                "is_deleted": "BOOLEAN DEFAULT FALSE",
+            },
+        )
+        _add_missing_columns(
+            conn,
+            "customer_embeddings",
+            {
+                "is_deleted": "BOOLEAN DEFAULT FALSE",
             },
         )
         conn.commit()
@@ -1167,7 +1181,7 @@ def get_customer_info(conn, customer_id):
             e.updated_at AS face_embedding_updated_at
         FROM customers c
         LEFT JOIN customer_embeddings e ON e.customer_id = c.customer_id
-        WHERE c.customer_id = ?
+        WHERE c.customer_id = ? AND c.is_deleted = FALSE
         """,
         (customer_id,),
     )
@@ -1273,9 +1287,12 @@ def bulk_insert_recognize_logs(conn, logs):
     if DB_TYPE == "postgresql":
         # Ensure we have the underlying psycopg2 connection
         pg_conn = conn.conn
-        cursor = pg_conn.cursor()
+        # Fetch camera -> moderator mapping to assign partition key
+        cursor.execute("SELECT u.username, p.camera_id FROM user_camera_permissions p JOIN users u ON p.user_id = u.id")
+        cam_to_mod = {row["camera_id"]: row["username"] for row in cursor.fetchall()}
+
         query = """
-            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp)
+            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp, moderator_username)
             VALUES %s
         """
         values = []
@@ -1292,6 +1309,7 @@ def bulk_insert_recognize_logs(conn, logs):
                     int(log["track_id"]) if log.get("track_id") is not None else None,
                     bbox_val,
                     ts,
+                    cam_to_mod.get(str(log["camera_id"]), "admin"),
                 )
             )
         try:
@@ -1304,9 +1322,13 @@ def bulk_insert_recognize_logs(conn, logs):
             cursor.close()
     else:
         # SQLite
+        cursor = conn.cursor()
+        cursor.execute("SELECT u.username, p.camera_id FROM user_camera_permissions p JOIN users u ON p.user_id = u.id")
+        cam_to_mod = {row["camera_id"]: row["username"] for row in cursor.fetchall()}
+        
         query = """
-            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp, moderator_username)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         values = []
         for log in logs:
@@ -1324,10 +1346,10 @@ def bulk_insert_recognize_logs(conn, logs):
                     int(log["track_id"]) if log.get("track_id") is not None else None,
                     bbox_val,
                     ts,
+                    cam_to_mod.get(str(log["camera_id"]), "admin"),
                 )
             )
         try:
-            cursor = conn.cursor()
             cursor.executemany(query, values)
             conn.commit()
         except Exception as e:

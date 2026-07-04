@@ -6,12 +6,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ===== Environment Variables (create a .env file) =====
-# SUPABASE_URL=postgresql://postgres:PASSWORD@project.supabase.co:5432/postgres
+# SUPABASE_URL=postgresql://postgres:PASSWORD@project.pooler.supabase.com:6543/postgres
 # Or set individual variables:
-# SUPABASE_HOST=project.supabase.co
+# SUPABASE_HOST=project.pooler.supabase.com
 # SUPABASE_USER=postgres
 # SUPABASE_PASSWORD=your-password
-# SUPABASE_PORT=5432
+# SUPABASE_PORT=6543
 # SUPABASE_DB=postgres
 
 # ===== Choose your database =====
