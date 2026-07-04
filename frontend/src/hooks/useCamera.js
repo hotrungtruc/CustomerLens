@@ -253,9 +253,22 @@ export function useCamera(cameraId) {
             blob
           ) {
             blob.arrayBuffer().then(blobBuffer => {
+               let mappedKeypoints = null;
+               if (face.keypoints && face.keypoints.length > 0) {
+                 mappedKeypoints = face.keypoints.map(kp => {
+                    const absX = kp.x * video.videoWidth;
+                    const absY = kp.y * video.videoHeight;
+                    return {
+                      x: (absX - sx) * scale,
+                      y: (absY - sy) * scale
+                    };
+                 });
+               }
+               
                const metaJson = JSON.stringify({
                    local_track_id: face.local_track_id,
-                   bbox: [sx, sy, sx + sWidth, sy + sHeight]
+                   bbox: [sx, sy, sx + sWidth, sy + sHeight],
+                   keypoints: mappedKeypoints
                });
                const metaBytes = new TextEncoder().encode(metaJson);
                

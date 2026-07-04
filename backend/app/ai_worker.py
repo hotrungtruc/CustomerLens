@@ -110,16 +110,41 @@ def main():
             if is_edge_crop:
                 # Bypass detection entirely for edge crops, rely on frontend's tight bounding box
                 h, w = frame.shape[:2]
+                
+                edge_landmarks = None
+                if "keypoints" in rec_data and rec_data["keypoints"] and len(rec_data["keypoints"]) >= 4:
+                    kps = rec_data["keypoints"]
+                    # MediaPipe keypoints: 0: Right Eye, 1: Left Eye, 2: Nose Tip, 3: Mouth Center
+                    le_x, le_y = kps[0]['x'], kps[0]['y'] # Person's right eye
+                    re_x, re_y = kps[1]['x'], kps[1]['y'] # Person's left eye
+                    n_x, n_y = kps[2]['x'], kps[2]['y']
+                    m_x, m_y = kps[3]['x'], kps[3]['y']
+                    
+                    # Estimate mouth corners
+                    d = np.sqrt((re_x - le_x)**2 + (re_y - le_y)**2)
+                    lm_x = m_x - d/4
+                    lm_y = m_y
+                    rm_x = m_x + d/4
+                    rm_y = m_y
+                    
+                    edge_landmarks = np.array([
+                        [le_x, le_y],
+                        [re_x, re_y],
+                        [n_x, n_y],
+                        [lm_x, lm_y],
+                        [rm_x, rm_y]
+                    ], dtype=np.float32)
+
                 record = {
                     "bbox": (0, 0, w, h), # Full crop
-                    "landmark": None,
+                    "landmark": edge_landmarks,
                     "score": 1.0,
                     "quality_ok": True,
                     "guest_quality_ok": True,
                     "embedding": None,
                 }
                 face_records.append(record)
-                batch_landmarks.append(None)
+                batch_landmarks.append(edge_landmarks)
                 batch_records.append(record)
             else:
                 detections = embedder.detect(frame)
