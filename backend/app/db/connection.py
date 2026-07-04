@@ -1287,9 +1287,13 @@ def bulk_insert_recognize_logs(conn, logs):
     if DB_TYPE == "postgresql":
         # Ensure we have the underlying psycopg2 connection
         pg_conn = conn.conn
+        cursor = pg_conn.cursor()
         # Fetch camera -> moderator mapping to assign partition key
-        cursor.execute("SELECT u.username, p.camera_id FROM user_camera_permissions p JOIN users u ON p.user_id = u.id")
-        cam_to_mod = {row["camera_id"]: row["username"] for row in cursor.fetchall()}
+        try:
+            cursor.execute("SELECT u.username, p.camera_id FROM user_camera_permissions p JOIN users u ON p.user_id = u.id")
+            cam_to_mod = {row[1]: row[0] for row in cursor.fetchall()}
+        except Exception:
+            cam_to_mod = {}
 
         query = """
             INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp, moderator_username)

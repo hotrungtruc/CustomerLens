@@ -1213,7 +1213,11 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     })
             
             if logs:
-                bulk_insert_recognize_logs(conn, logs)
+                try:
+                    bulk_insert_recognize_logs(conn, logs)
+                except Exception as e:
+                    import logging
+                    logging.error(f"bulk_insert_recognize_logs failed (non-fatal): {e}")
                 
             return customers
         finally:
