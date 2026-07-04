@@ -89,7 +89,7 @@ export function useLocalFaceDetector(videoRef) {
                          width: (width / sw) * 100,
                          height: (height / sh) * 100,
                          pixelBox: { originX, originY, width, height },
-                         keypoints: d.keypoints || [],
+                         keypoints: d.keypoints || []
                      };
                  });
 

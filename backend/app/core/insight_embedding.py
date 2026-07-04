@@ -39,6 +39,16 @@ ARC_FACE_TEMPLATE = np.array(
     dtype=np.float32,
 )
 
+EDGE_CROP_TEMPLATE = np.array(
+    [
+        [38.2946, 51.6963],
+        [73.5318, 51.5014],
+        [56.0252, 71.7366],
+        [56.1396, 92.2848],
+    ],
+    dtype=np.float32,
+)
+
 
 class InsightEmbedder:
     def __init__(
@@ -340,18 +350,20 @@ class InsightEmbedder:
         return boxes_arr, landmarks_arr, scores_arr
 
     def get_embedding(self, image_bgr, landmarks=None):
-        if landmarks is None:
+        if landmarks is None or len(landmarks) == 0:
             aligned = cv2.resize(image_bgr, FACE_SIZE)
         else:
+            landmarks_arr = np.array(landmarks, dtype=np.float32)
+            template = EDGE_CROP_TEMPLATE if len(landmarks_arr) == 4 else ARC_FACE_TEMPLATE
             matrix, _ = cv2.estimateAffinePartial2D(
-                landmarks.astype(np.float32),
-                ARC_FACE_TEMPLATE,
+                landmarks_arr,
+                template,
                 method=cv2.LMEDS,
             )
             if matrix is None:
-                return None
-
-            aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
+                aligned = cv2.resize(image_bgr, FACE_SIZE)
+            else:
+                aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
 
         # Check input shape of the model to support NCHW vs NHWC dynamically
         input_shape = self.recognizer.get_inputs()[0].shape

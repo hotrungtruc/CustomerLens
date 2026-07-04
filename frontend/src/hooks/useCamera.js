@@ -253,22 +253,26 @@ export function useCamera(cameraId) {
             blob
           ) {
             blob.arrayBuffer().then(blobBuffer => {
-               let mappedKeypoints = null;
-               if (face.keypoints && face.keypoints.length > 0) {
-                 mappedKeypoints = face.keypoints.map(kp => {
-                    const absX = kp.x * video.videoWidth;
-                    const absY = kp.y * video.videoHeight;
-                    return {
-                      x: (absX - sx) * scale,
-                      y: (absY - sy) * scale
-                    };
-                 });
+               const transformed_landmarks = [];
+               if (face.keypoints && face.keypoints.length >= 4) {
+                   // MediaPipe returns normalized coordinates [0..1]
+                   // Indices: 0: Right Eye, 1: Left Eye, 2: Nose Tip, 3: Mouth Center
+                   const indices = [1, 0, 2, 3]; // Map to: Left Eye, Right Eye, Nose, Mouth
+                   for (const idx of indices) {
+                       if (face.keypoints[idx]) {
+                           const px = face.keypoints[idx].x * video.videoWidth;
+                           const py = face.keypoints[idx].y * video.videoHeight;
+                           const cropX = (px - sx) * scale;
+                           const cropY = (py - sy) * scale;
+                           transformed_landmarks.push([cropX, cropY]);
+                       }
+                   }
                }
                
                const metaJson = JSON.stringify({
                    local_track_id: face.local_track_id,
                    bbox: [sx, sy, sx + sWidth, sy + sHeight],
-                   keypoints: mappedKeypoints
+                   landmarks: transformed_landmarks.length === 4 ? transformed_landmarks : null
                });
                const metaBytes = new TextEncoder().encode(metaJson);
                
