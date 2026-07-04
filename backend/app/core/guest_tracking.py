@@ -295,44 +295,39 @@ class GuestTrackManager:
         """
         with self.lock:
             try:
-                if guest_id not in self.guest_ids:
-                    return False
-                idx = int(self.guest_ids.index(guest_id))
-                emb = self.guest_embeddings.pop(idx)
-                self.guest_ids.pop(idx)
-
-                # append to known embeddings/ids
-                self.known_embeddings.append(emb)
-                self.known_ids.append(new_id)
-
-                # Persist to local .p files is removed (stateless backend)
-
-
-                # Also write promoted embedding to pgvector
                 if self.use_pgvector:
                     try:
-                        from app.db.vector_search import \
-                            insert_embedding_with_vector
-
                         conn = self._get_cached_conn()
-                        blob = np.asarray(emb, dtype=np.float32).tobytes()
-                        insert_embedding_with_vector(
-                            conn,
-                            new_id,
-                            blob,
-                            emb,
-                            dim=len(emb),
-                            model_name="edgeface_s_gamma_05",
-                        )
-                        # Remove the old guest record and embedding, and update logs
+                        # Update all embeddings for this guest to the new ID
+                        conn.execute("UPDATE customer_embeddings SET customer_id = ? WHERE customer_id = ?", (new_id, guest_id))
+                        # Update logs
                         conn.execute("UPDATE recognize_logs SET customer_id = ? WHERE customer_id = ?", (new_id, guest_id))
-                        conn.execute("DELETE FROM customer_embeddings WHERE customer_id = ?", (guest_id,))
+                        # Remove the old guest record
                         conn.execute("DELETE FROM customers WHERE customer_id = ?", (guest_id,))
                         conn.commit()
-                    except Exception:
-                        pass
+                        
+                        # Remove from memory if it happens to be there
+                        if guest_id in self.guest_ids:
+                            idx = int(self.guest_ids.index(guest_id))
+                            self.guest_embeddings.pop(idx)
+                            self.guest_ids.pop(idx)
+                            
+                        return True
+                    except Exception as e:
+                        logger.error("Error promoting guest in pgvector: %s", e, exc_info=True)
+                        return False
+                else:
+                    if guest_id not in self.guest_ids:
+                        return False
+                    idx = int(self.guest_ids.index(guest_id))
+                    emb = self.guest_embeddings.pop(idx)
+                    self.guest_ids.pop(idx)
 
-                return True
+                    # append to known embeddings/ids
+                    self.known_embeddings.append(emb)
+                    self.known_ids.append(new_id)
+
+                    return True
             except Exception:
                 return False
 
