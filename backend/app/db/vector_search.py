@@ -75,10 +75,10 @@ def insert_embedding_with_vector(
         conn.execute(
             """
             INSERT INTO customer_embeddings (
-                customer_id, embedding, model_name, embedding_dim, updated_at
-            ) VALUES (%s, %s::vector, %s, %s, CURRENT_TIMESTAMP)
+                customer_id, embedding, updated_at
+            ) VALUES (%s, %s::vector, CURRENT_TIMESTAMP)
             """,
-            (customer_id, vec_str, model_name, dim),
+            (customer_id, vec_str),
         )
     else:
         conn.execute(

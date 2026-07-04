@@ -9,14 +9,13 @@ Tầng Backend của Front Door AI được xây dựng dựa trên FastAPI (`ba
 - **Chức năng:** Sử dụng bởi thiết bị Camera (Edge Device hoặc Trình duyệt) để truyền liên tục Binary Frames về máy chủ.
 - **Xác thực:** Dựa trên Cookie HTTPOnly (`device_token`) được ký phát thông qua tiến trình Enrollment. Máy chủ sẽ xác thực tính hợp lệ của Device Credential thông qua DB trước khi chấp nhận kết nối.
 - **Keep-alive & Lease:** Để tránh tình trạng một luồng bị chiếm dụng sai, máy chủ quản lý "Lease" (Phiên thuê) qua Redis (`_maintain_camera_lease`). Các lệnh Redis LUA Script được sử dụng để Renew, Takeover, và Release Lease. Máy chủ sẽ ngắt các WebSocket có ping trễ hoặc hết hạn Lease (`code 4009`).
-- **Data Payload:** Frames được nén dạng JPEG, gửi lên theo định dạng nhị phân với Metadata (JSON chiều dài 4 bytes header) kèm theo hình ảnh thô. Máy chủ đẩy payload thẳng vào Kafka topic `camera_frames_v2` (thông qua Redpanda).
-- **Reply-to Routing:** API Gateway sẽ sinh ra một định danh duy nhất và gửi kèm vào frame thông tin `reply_to: results_gateway_UUID`.
+- **Data Payload:** Frames được nén dạng JPEG, gửi lên theo định dạng nhị phân với Metadata (JSON chiều dài 4 bytes header) kèm theo hình ảnh thô. Máy chủ đẩy payload thẳng vào Redis list `camera_frames_v2`.
 
 ### 1.2 Luồng Observer (Dashboard Client)
 - **Endpoint:** `WS /ws/observe/{camera_id}`
 - **Chức năng:** Sử dụng bởi Quản trị viên trên UI (Next.js) để xem luồng Camera và Bounding Box (khuôn mặt được AI đánh dấu).
 - **Xác thực:** Dựa trên Sub-protocol. Client khởi tạo với mảng `sec-websocket-protocol`: `["camera-observer", "<Authorization_Token>"]`.
-- **Hoạt động:** Server đăng ký (Consume) vào kênh Kafka `results_gateway_{GATEWAY_UUID}` để lắng nghe kết quả trả về từ AI Worker và forward (chuyển tiếp) chúng tới UI (Client) dạng JSON.
+- **Hoạt động:** Server đăng ký (Subscribe) vào kênh Redis `worker_results_{connection_id}` để lắng nghe kết quả trả về từ AI Worker và forward (chuyển tiếp) chúng tới UI (Client) dạng JSON.
 
 ## 2. Các RESTful APIs Chính
 

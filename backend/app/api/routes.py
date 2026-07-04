@@ -57,8 +57,7 @@ from app.db.connection import (create_or_update_customer_profile,
                                retire_replaced_camera, revoke_camera_credentials,
                                touch_device_credential, update_camera_display_name,
                                user_can_view_camera,
-                               update_attendance, bulk_insert_recognize_logs,
-                               fetch_recognition_history)
+                               update_attendance, bulk_insert_recognize_logs)
 from config import (CHECKIN_COOLDOWN_SECONDS, FRAME_HEIGHT, FRAME_WIDTH,
                     GUEST_CREATION_BUFFER_SIZE, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD)
 from app.core.settings import system_settings
@@ -918,8 +917,8 @@ async def api_process_frame(request: Request):
     meta_len = len(meta_json).to_bytes(4, byteorder="big")
     packed_payload = meta_len + meta_json + raw_bytes
 
-    from app.api.kafka_manager import send_frame
-    await send_frame(camera_id, packed_payload)
+    await r.lpush(f"camera_frames_{camera_id}", packed_payload)
+    await r.ltrim(f"camera_frames_{camera_id}", 0, 10)
     return {"success": True}
 
 @router.post("/api/promote_guest")
@@ -1041,14 +1040,10 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
     )
 
     pubsub = None
-    kafka_queue = None
     try:
-        from app.api.kafka_manager import WEBSOCKET_QUEUES
-        kafka_queue = asyncio.Queue()
-        WEBSOCKET_QUEUES[connection_id] = kafka_queue
-
         pubsub = r.pubsub()
-        # Kafka handles worker_results now
+        await pubsub.subscribe(f"worker_results_{connection_id}")
+        # Observer migration is a later phase, so signaling stays camera-scoped.
         await pubsub.subscribe(f"webrtc_signaling_{camera_id}")
         await pubsub.subscribe(f"connection_control:{connection_id}")
         await pubsub.subscribe(f"camera_control:{camera_id}")
@@ -1085,11 +1080,6 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
     except Exception:
         with CONNECTION_STATES_LOCK:
             CONNECTION_STATES.pop(connection_id, None)
-        try:
-            from app.api.kafka_manager import WEBSOCKET_QUEUES
-            WEBSOCKET_QUEUES.pop(connection_id, None)
-        except Exception:
-            pass
         presence_task.cancel()
         try:
             await presence_task
@@ -1213,92 +1203,74 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     })
             
             if logs:
-                try:
-                    bulk_insert_recognize_logs(conn, logs)
-                except Exception as e:
-                    import logging
-                    logging.error(f"bulk_insert_recognize_logs failed (non-fatal): {e}")
+                bulk_insert_recognize_logs(conn, logs)
                 
             return customers
         finally:
             conn.close()
 
     async def reader():
-        async def listen_redis():
-            async for message in pubsub.listen():
-                if message["type"] == "message":
-                    try:
-                        channel = message["channel"].decode("utf-8")
-                        data = json.loads(message["data"])
-                        if channel == f"webrtc_signaling_{camera_id}":
-                            if data.get("sender") == "admin":
-                                await websocket.send_json(data)
-                        elif channel == f"connection_control:{connection_id}":
-                            if data.get("type") == "connection_taken_over":
-                                connection_state.disconnect_reason = "taken_over"
-                                await websocket.close(
-                                    code=4008, reason="Camera opened elsewhere"
-                                )
-                                return
-                        elif channel == f"camera_control:{camera_id}":
-                            action = data.get("action")
-                            if action == "promote_guest":
-                                guest_id = data.get("guest_id")
-                                new_id = data.get("new_id")
-                                if guest_id and new_id:
-                                    track_manager.promote_guest(guest_id, new_id)
-                                    for track in track_manager.tracks.values():
-                                        if track.resolved_customer_id in (guest_id, new_id):
-                                            track.cached_profile = None
-                                            track.resolved_customer_id = new_id
-                            elif action == "invalidate_cache":
-                                cid_to_invalidate = data.get("customer_id")
-                                if cid_to_invalidate:
-                                    for track in track_manager.tracks.values():
-                                        if track.resolved_customer_id == cid_to_invalidate:
-                                            track.cached_profile = None
-                            elif action == "reload_embeddings":
-                                await asyncio.to_thread(track_manager.load_known_embeddings)
-                                for track in track_manager.tracks.values():
-                                    track.cached_profile = None
-                    except Exception as e:
-                        import logging
-                        logging.error(f"Redis reader error: {e}", exc_info=True)
-
-        async def listen_kafka():
-            while True:
+        async for message in pubsub.listen():
+            if message["type"] == "message":
                 try:
-                    data = await kafka_queue.get()
-                    if (
-                        data.get("camera_id") != camera_id
-                        or data.get("connection_id") != connection_id
-                        or not await _connection_owns_camera_lease(
-                            r, camera_id, connection_id
-                        )
-                    ):
-                        continue
-                    # Process in thread to avoid blocking asyncio loop
-                    customers = await asyncio.to_thread(process_tracking_and_db, data)
-                    state.latest_customers_payload = customers
-                    frame_size = data.get("frame_size", {"width": FRAME_WIDTH, "height": FRAME_HEIGHT})
-                    pubsub_message = {
-                        "type": "camera_update",
-                        "customers": customers,
-                        "frame_size": frame_size,
-                        "camera_id": camera_id,
-                        "connection_id": connection_id,
-                    }
-                    await websocket.send_json(pubsub_message)
-                    await r.publish(f"camera_updates:{camera_id}", json.dumps(pubsub_message))
-                except asyncio.CancelledError:
-                    break
+                    channel = message["channel"].decode("utf-8")
+                    data = json.loads(message["data"])
+                    if channel == f"worker_results_{connection_id}":
+                        if (
+                            data.get("camera_id") != camera_id
+                            or data.get("connection_id") != connection_id
+                            or not await _connection_owns_camera_lease(
+                                r, camera_id, connection_id
+                            )
+                        ):
+                            continue
+                        # Process in thread to avoid blocking asyncio loop
+                        customers = await asyncio.to_thread(process_tracking_and_db, data)
+                        state.latest_customers_payload = customers
+                        frame_size = data.get("frame_size", {"width": FRAME_WIDTH, "height": FRAME_HEIGHT})
+                        pubsub_message = {
+                            "type": "camera_update",
+                            "customers": customers,
+                            "frame_size": frame_size,
+                            "camera_id": camera_id,
+                            "connection_id": connection_id,
+                        }
+                        await websocket.send_json(pubsub_message)
+                        await r.publish(f"camera_updates:{camera_id}", json.dumps(pubsub_message))
+                    elif channel == f"webrtc_signaling_{camera_id}":
+                        if data.get("sender") == "admin":
+                            await websocket.send_json(data)
+                    elif channel == f"connection_control:{connection_id}":
+                        if data.get("type") == "connection_taken_over":
+                            connection_state.disconnect_reason = "taken_over"
+                            await websocket.close(
+                                code=4008, reason="Camera opened elsewhere"
+                            )
+                            return
+                    elif channel == f"camera_control:{camera_id}":
+                        action = data.get("action")
+                        if action == "promote_guest":
+                            guest_id = data.get("guest_id")
+                            new_id = data.get("new_id")
+                            if guest_id and new_id:
+                                track_manager.promote_guest(guest_id, new_id)
+                                for track in track_manager.tracks.values():
+                                    if track.resolved_customer_id in (guest_id, new_id):
+                                        track.cached_profile = None
+                                        track.resolved_customer_id = new_id
+                        elif action == "invalidate_cache":
+                            cid_to_invalidate = data.get("customer_id")
+                            if cid_to_invalidate:
+                                for track in track_manager.tracks.values():
+                                    if track.resolved_customer_id == cid_to_invalidate:
+                                        track.cached_profile = None
+                        elif action == "reload_embeddings":
+                            await asyncio.to_thread(track_manager.load_known_embeddings)
+                            for track in track_manager.tracks.values():
+                                track.cached_profile = None
                 except Exception as e:
                     import logging
-                    logging.error(f"Kafka reader error: {e}", exc_info=True)
-
-        redis_task = asyncio.create_task(listen_redis())
-        kafka_task = asyncio.create_task(listen_kafka())
-        await asyncio.gather(redis_task, kafka_task)
+                    logging.error(f"WebSocket reader error: {e}", exc_info=True)
 
     reader_task = asyncio.create_task(reader())
 
@@ -1307,10 +1279,6 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             "type": "ready",
             "camera_id": camera_id,
             "connection_id": connection_id,
-            "track_buffer_size": track_manager.buffer_size,
-            "guest_creation_buffer_size": track_manager.guest_creation_buffer_size,
-            "similarity_threshold": track_manager.similarity_threshold,
-            "message": "WebSocket connected. Send frames with JSON metadata.",
         })
         await r.publish(
             f"camera_updates:{camera_id}",
@@ -1354,12 +1322,10 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     state.last_frame_time = time.time()
                     
                     opeid = str(uuid.uuid4())
-                    from app.api.kafka_manager import GATEWAY_UUID
                     meta_dict = {
                         "opeid": opeid,
                         "camera_id": camera_id,
                         "connection_id": connection_id,
-                        "reply_to": f"results_gateway_{GATEWAY_UUID}",
                         "timestamp": datetime.now().isoformat()
                     }
                     meta_dict.update(client_meta)
@@ -1369,9 +1335,9 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     
                     packed_payload = meta_len_out + meta_json + raw_image_bytes
                     
-                    # Push to global camera_frames Kafka topic
-                    from app.api.kafka_manager import send_frame
-                    await send_frame(camera_id, packed_payload)
+                    # Push to global camera_frames queue
+                    await r.lpush("camera_frames_v2", packed_payload)
+                    await r.ltrim("camera_frames_v2", 0, 49)
             elif "text" in msg:
                 try:
                     text_data = msg["text"]
@@ -1383,11 +1349,6 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
-        try:
-            from app.api.kafka_manager import WEBSOCKET_QUEUES
-            WEBSOCKET_QUEUES.pop(connection_id, None)
-        except Exception:
-            pass
         with CONNECTION_STATES_LOCK:
             CONNECTION_STATES.pop(connection_id, None)
         # Release the cached DB connection used by pgvector queries
@@ -1814,42 +1775,3 @@ async def websocket_observe(websocket: WebSocket, camera_id: str):
         await pubsub.unsubscribe()
         await pubsub.aclose()
         await r.aclose()
-
-@router.get("/history")
-def get_history(
-    request: Request,
-    page: int = 1,
-    limit: int = 50,
-    query: str = "",
-    camera_id: str = None,
-    start_date: str = None,
-    end_date: str = None,
-    authorization: str = Header(None)
-):
-    user = get_user_from_token(authorization)
-    conn = get_db_connection()
-    try:
-        if user["role"] == "admin":
-            moderator_username = None
-        else:
-            moderator_username = user["username"]
-            
-        logs, total_count = fetch_recognition_history(
-            conn=conn,
-            page=page,
-            limit=limit,
-            query=query,
-            camera_id=camera_id,
-            start_date=start_date,
-            end_date=end_date,
-            moderator_username=moderator_username
-        )
-        return {
-            "status": "success",
-            "data": logs,
-            "total": total_count,
-            "page": page,
-            "limit": limit
-        }
-    finally:
-        conn.close()

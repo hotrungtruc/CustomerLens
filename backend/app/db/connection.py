@@ -241,8 +241,7 @@ def ensure_schema(conn):
                 customer_type VARCHAR(50) NOT NULL DEFAULT 'registered',
                 status VARCHAR(50) NOT NULL DEFAULT 'active',
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                is_deleted BOOLEAN DEFAULT FALSE
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
         _add_missing_columns(
@@ -261,8 +260,7 @@ def ensure_schema(conn):
                 embedding_dim INTEGER NOT NULL DEFAULT 512,
                 model_name VARCHAR(100) NOT NULL DEFAULT 'edgeface_s_gamma_05',
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                is_deleted BOOLEAN DEFAULT FALSE
+                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
         _add_missing_columns(
@@ -354,17 +352,13 @@ def ensure_schema(conn):
                 track_id INTEGER DEFAULT NULL,
                 bbox JSONB DEFAULT NULL,
                 connection_id VARCHAR(64) DEFAULT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                moderator_username VARCHAR(255) DEFAULT NULL
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """)
         _add_missing_columns(
             conn,
             "recognize_logs",
-            {
-                "connection_id": "VARCHAR(64) DEFAULT NULL",
-                "moderator_username": "VARCHAR(255) DEFAULT NULL"
-            },
+            {"connection_id": "VARCHAR(64) DEFAULT NULL"},
         )
         _add_missing_columns(
             conn,
@@ -384,14 +378,6 @@ def ensure_schema(conn):
                 "status": "VARCHAR(50) NOT NULL DEFAULT 'active'",
                 "created_at": "VARCHAR(255) DEFAULT NULL",
                 "updated_at": "VARCHAR(255) DEFAULT NULL",
-                "is_deleted": "BOOLEAN DEFAULT FALSE",
-            },
-        )
-        _add_missing_columns(
-            conn,
-            "customer_embeddings",
-            {
-                "is_deleted": "BOOLEAN DEFAULT FALSE",
             },
         )
         conn.commit()
@@ -1181,7 +1167,7 @@ def get_customer_info(conn, customer_id):
             e.updated_at AS face_embedding_updated_at
         FROM customers c
         LEFT JOIN customer_embeddings e ON e.customer_id = c.customer_id
-        WHERE c.customer_id = ? AND c.is_deleted = FALSE
+        WHERE c.customer_id = ?
         """,
         (customer_id,),
     )
@@ -1288,15 +1274,8 @@ def bulk_insert_recognize_logs(conn, logs):
         # Ensure we have the underlying psycopg2 connection
         pg_conn = conn.conn
         cursor = pg_conn.cursor()
-        # Fetch camera -> moderator mapping to assign partition key
-        try:
-            cursor.execute("SELECT u.username, p.camera_id FROM user_camera_permissions p JOIN users u ON p.user_id = u.id")
-            cam_to_mod = {row[1]: row[0] for row in cursor.fetchall()}
-        except Exception:
-            cam_to_mod = {}
-
         query = """
-            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp, moderator_username)
+            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp)
             VALUES %s
         """
         values = []
@@ -1313,7 +1292,6 @@ def bulk_insert_recognize_logs(conn, logs):
                     int(log["track_id"]) if log.get("track_id") is not None else None,
                     bbox_val,
                     ts,
-                    cam_to_mod.get(str(log["camera_id"]), "admin"),
                 )
             )
         try:
@@ -1326,16 +1304,9 @@ def bulk_insert_recognize_logs(conn, logs):
             cursor.close()
     else:
         # SQLite
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT u.username, p.camera_id FROM user_camera_permissions p JOIN users u ON p.user_id = u.id")
-            cam_to_mod = {row[1]: row[0] for row in cursor.fetchall()}
-        except Exception:
-            cam_to_mod = {}
-        
         query = """
-            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp, moderator_username)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO recognize_logs (id, opeid, camera_id, connection_id, customer_id, track_id, bbox, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """
         values = []
         for log in logs:
@@ -1353,133 +1324,17 @@ def bulk_insert_recognize_logs(conn, logs):
                     int(log["track_id"]) if log.get("track_id") is not None else None,
                     bbox_val,
                     ts,
-                    cam_to_mod.get(str(log["camera_id"]), "admin"),
                 )
             )
         try:
+            cursor = conn.cursor()
             cursor.executemany(query, values)
             conn.commit()
         except Exception as e:
             conn.rollback()
             print(f"Bulk insert recognize logs failed: {e}")
 
-def fetch_recognition_history(conn, page=1, limit=50, query="", camera_id=None, start_date=None, end_date=None, moderator_username=None):
-    if DB_TYPE == "postgresql":
-        pg_conn = get_pg_connection(conn)
-        cursor = pg_conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        
-        where_clauses = ["1=1"]
-        params = []
-        
-        if query:
-            where_clauses.append("(c.name ILIKE %s OR r.customer_id ILIKE %s)")
-            params.extend([f"%{query}%", f"%{query}%"])
-            
-        if camera_id:
-            where_clauses.append("r.camera_id = %s")
-            params.append(camera_id)
-            
-        if start_date:
-            where_clauses.append("r.timestamp >= %s")
-            params.append(start_date)
-            
-        if end_date:
-            where_clauses.append("r.timestamp <= %s")
-            params.append(end_date)
-            
-        if moderator_username and moderator_username != "admin":
-            where_clauses.append("r.moderator_username = %s")
-            params.append(moderator_username)
 
-        where_sql = " AND ".join(where_clauses)
-        
-        count_sql = f"""
-            SELECT COUNT(*) as total 
-            FROM recognize_logs r
-            LEFT JOIN customers c ON r.customer_id = c.customer_id
-            WHERE {where_sql}
-        """
-        cursor.execute(count_sql, tuple(params))
-        total_count = cursor.fetchone()["total"]
-        
-        offset = (page - 1) * limit
-        sql = f"""
-            SELECT r.id, r.timestamp, r.camera_id, r.customer_id, 
-                   c.name as customer_name, c.customer_type, c.loyalty_tier,
-                   cam.display_name as camera_name
-            FROM recognize_logs r
-            LEFT JOIN customers c ON r.customer_id = c.customer_id
-            LEFT JOIN cameras cam ON r.camera_id = cam.camera_id
-            WHERE {where_sql}
-            ORDER BY r.timestamp DESC
-            LIMIT %s OFFSET %s
-        """
-        params.extend([limit, offset])
-        cursor.execute(sql, tuple(params))
-        data = [dict(row) for row in cursor.fetchall()]
-        
-        cursor.close()
-        
-        # Format timestamps
-        for row in data:
-            if row.get("timestamp"):
-                row["timestamp"] = row["timestamp"].isoformat()
-                
-        return data, total_count
-    else:
-        # SQLite fallback
-        cursor = conn.cursor()
-        where_clauses = ["1=1"]
-        params = []
-        
-        if query:
-            where_clauses.append("(c.name LIKE ? OR r.customer_id LIKE ?)")
-            params.extend([f"%{query}%", f"%{query}%"])
-            
-        if camera_id:
-            where_clauses.append("r.camera_id = ?")
-            params.append(camera_id)
-            
-        if start_date:
-            where_clauses.append("r.timestamp >= ?")
-            params.append(start_date)
-            
-        if end_date:
-            where_clauses.append("r.timestamp <= ?")
-            params.append(end_date)
-            
-        if moderator_username and moderator_username != "admin":
-            where_clauses.append("r.moderator_username = ?")
-            params.append(moderator_username)
-            
-        where_sql = " AND ".join(where_clauses)
-        
-        count_sql = f"""
-            SELECT COUNT(*) as total 
-            FROM recognize_logs r
-            LEFT JOIN customers c ON r.customer_id = c.customer_id
-            WHERE {where_sql}
-        """
-        cursor.execute(count_sql, tuple(params))
-        total_count = cursor.fetchone()["total"]
-        
-        offset = (page - 1) * limit
-        sql = f"""
-            SELECT r.id, r.timestamp, r.camera_id, r.customer_id, 
-                   c.name as customer_name, c.customer_type, c.loyalty_tier,
-                   cam.display_name as camera_name
-            FROM recognize_logs r
-            LEFT JOIN customers c ON r.customer_id = c.customer_id
-            LEFT JOIN cameras cam ON r.camera_id = cam.camera_id
-            WHERE {where_sql}
-            ORDER BY r.timestamp DESC
-            LIMIT ? OFFSET ?
-        """
-        params.extend([limit, offset])
-        cursor.execute(sql, tuple(params))
-        data = [dict(row) for row in cursor.fetchall()]
-        
-        return data, total_count
 def upsert_customer(
     conn,
     customer_id,

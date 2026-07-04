@@ -1,99 +1,82 @@
-# Kiến trúc Hệ thống (System Architecture) - Front Door AI
+# Kiến trúc Hệ thống (System Architecture)
 
-Dự án Front Door AI được thiết kế với kiến trúc **Event-driven, Asynchronous & Distributed** (Hướng sự kiện, Bất đồng bộ & Phân tán). Hệ thống áp dụng triết lý phân tách hoàn toàn giữa Frontend (Edge), API Gateway (Master) và AI Worker (Stateless Nodes) để đảm bảo FPS cao, khả năng mở rộng (Horizontal Scaling) mượt mà và tối ưu hóa Disk I/O trên cơ sở dữ liệu.
+Dự án Front Door AI được thiết kế với kiến trúc **Event-driven, Asynchronous & Distributed**. Sự tách biệt hoàn toàn giữa Frontend, Backend API Gateway và các AI Worker Stateless giúp hệ thống đảm bảo FPS (Frames Per Second) cao ngay cả khi lượng người dùng tăng đột biến.
 
----
+## 1. Cấu trúc Tổng thể (High-level Architecture)
 
-## 1. Cấu trúc Các Tầng (Multi-Tier Architecture)
+Hệ thống bao gồm 4 tầng (tiers) chính:
 
-Hệ thống được chia làm 4 tầng riêng biệt, hoạt động độc lập và giao tiếp thông qua mạng:
-
-### 1.1. Client Tier (Frontend & Edge Computing)
-- **Công nghệ:** Next.js 14 (App Router), Tailwind CSS, Lucide React.
-- **Edge AI:** Tích hợp mô hình **MediaPipe Vision** thông qua WebAssembly. Thay vì gửi video liên tục làm nghẽn băng thông, trình duyệt sẽ chủ động nhận diện khuôn mặt (30-60 FPS), cấp phát `local_track_id`, và chỉ cắt (crop) phần khuôn mặt thành ảnh JPEG nhỏ (10-20KB).
-- **Truyền dẫn:** Gửi ảnh crop lên Server qua **WebSocket** (Subprotocol: `camera-observer`) với tần suất định kỳ (VD: 1 ảnh/giây/người). Giao diện Bounding Box được vẽ trực tiếp bằng Canvas Overlay tại Edge mà không cần đợi Server trả về để tránh lag.
-
-### 1.2. Gateway Tier (FastAPI Master Node)
-- **Hạ tầng:** EC2 Master Node (IP: `15.134.121.250`).
-- **Nhiệm vụ chính:**
-  - Nhận luồng nhị phân (Binary Protocol) từ WebSocket.
-  - Phân tích siêu dữ liệu, đính kèm thông tin định tuyến (Ví dụ: `"reply_to": "results_gateway_UUID"`).
-  - Đẩy vào Message Broker để hàng đợi AI xử lý.
-- **Message Brokers:**
-  - **Redpanda (Kafka API):** Chịu tải luồng dữ liệu (Data Pipeline) khổng lồ cho ảnh Camera (`camera_frames_v2`) và luồng trả kết quả (`results_gateway_...`).
-  - **Redis:** Quản lý WebRTC Signaling, Camera Presence/Lease Management, và các tín hiệu điều khiển (Control signals) thời gian thực có tần suất thấp.
-
-### 1.3. Worker Tier (AI Processing Cluster)
-- **Hạ tầng:** Các EC2 Worker Nodes độc lập (IP: `3.26.147.158`, `3.107.239.168`).
-- **Công nghệ:** Python, InsightFace (ArcFace / RetinaFace), ONNX Runtime.
-- **Stateless Consumer:** Chạy như các tiến trình độc lập, chung một Kafka Consumer Group (`ai_workers_group`). Khi hệ thống tải cao, chỉ cần bật thêm Worker, Kafka sẽ tự động Rebalance tải đều cho tất cả các node.
-- **Luồng xử lý:** Kéo Frame từ Kafka -> Trích xuất Landmark / Vector (Embedding) -> So khớp Vector (HNSW) trong DB hoặc Cache -> Trả kết quả về Kafka Topic `reply_to` được chỉ định.
-
-### 1.4. Data Tier (Database & Storage)
-- **Công nghệ:** Supabase PostgreSQL & Supabase Storage (S3-compatible).
-- **Vector Search:** Cài đặt extension `pgvector` tạo chỉ mục HNSW trên bảng `customer_embeddings` và `guest_embeddings` giúp tìm kiếm siêu tốc (L2 Distance hoặc Cosine Similarity).
+1. **Client Tier (Frontend):** 
+   - Xây dựng bằng **Next.js 14** (App Router).
+   - Truy cập Camera thiết bị thông qua WebRTC / `getUserMedia`.
+   - Tích hợp mô hình AI nhẹ **MediaPipe** trực tiếp trên trình duyệt để thực hiện **Edge Tracking** (theo dõi khuôn mặt liên tục).
+   - Tự động cắt mặt (crop) và chỉ stream phần ảnh khuôn mặt (kèm `local_track_id`) qua **WebSocket** (Subprotocol: `camera-observer`) với tần suất tối ưu (vd: 1 lần/giây).
+2. **Gateway Tier (FastAPI Backend):**
+   - Đóng vai trò là điểm cuối (endpoint) giao tiếp với người dùng (`routes.py`).
+   - Tiếp nhận luồng WebSocket, bóc tách protocol nhị phân (chứa siêu dữ liệu Edge Crop + ảnh JPEG) và đẩy vào hàng đợi thông qua **Redis** (`camera_frames_v2`).
+   - Xử lý gán nhãn thông tin hồ sơ bằng cách mapping `local_track_id` từ Worker trả về.
+   - Chờ nhận kết quả từ Redis (qua cơ chế Pub/Sub) và truyền lại cho Frontend.
+3. **Worker Tier (AI Processing):**
+   - Là các tiến trình (containers) độc lập, hoàn toàn **Stateless** (không lưu trạng thái - `ai_worker.py`).
+   - Lắng nghe hàng đợi từ Redis, kéo frame về, xử lý phát hiện (Detection), theo dõi (Tracking) và trích xuất vector (Embedding).
+   - Đẩy kết quả trở lại một kênh (channel) đặc thù của `connection_id` tương ứng trên Redis (Channel name: `worker_results_{connection_id}`).
+4. **Data Tier (Database & Cloud Storage):**
+   - **PostgreSQL (Supabase):** Kết hợp `pgvector` cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer. Dual-write fallback với SQLite.
+   - **Supabase Storage:** Lưu trữ ảnh đại diện của khách hàng trên Cloud CDN.
 
 ---
 
-## 2. Sơ đồ Kiến trúc Mạng & Xử lý (Network Diagram)
+## 2. Luồng Dữ liệu (Data Flow) & Scalability
+
+### 2.1. Phân phối tác vụ qua Redis Pub/Sub
+Hệ thống sử dụng Redis làm Message Broker trung tâm:
+- API Server nhận frame từ WebSocket và đẩy vào Redis list/queue (định dạng nhị phân với 4 byte header để chỉ định metadata).
+- Bất kỳ AI Worker nào đang rảnh (Idle) sẽ block (`BLPOP`) trên queue này để xử lý ngay lập tức khi có frame mới.
+- Cơ chế này cho phép **Horizontal Scaling** vô hạn: API Server không bao giờ bị nghẽn CPU dù số lượng Camera tăng lên, các Worker cũng không bị gán chặt với bất kỳ Camera cụ thể nào.
+
+### 2.2. Edge Tracking & Caching
+Thay vì gửi liên tục 30 FPS lên Server gây quá tải mạng, Front Door AI sử dụng kiến trúc Edge Tracking:
+- **Xử lý tại biên (Edge):** MediaPipe trên trình duyệt nhận diện và cấp phát một mã theo dõi duy nhất (`local_track_id`) cho từng người. Bounding Box trên giao diện được vẽ trực tiếp ở tần số 60 FPS mà không cần đợi Server.
+- **Tối ưu băng thông:** Frontend chỉ cắt (crop) khung mặt và gửi ảnh nhỏ gọn (10-20KB) lên Server theo một tần suất cố định (ví dụ: 1 ảnh/giây). 
+- **Session Isolation:** Mỗi Tab Trình duyệt kết nối sinh ra một `connection_id` ngẫu nhiên. Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng (`worker_results_{connection_id}`). API Server nhận kết quả và forward về Client, Client sẽ tự động ánh xạ thông tin cá nhân vào `local_track_id` đang hiển thị.
+
+---
+
+## 3. Sơ đồ Kiến trúc (Architecture Diagram)
 
 ```mermaid
 graph TD
-    subgraph Edge [Client / Trình duyệt]
-        A[Next.js Camera UI] -->|1. Edge Crop (MediaPipe)| B(Crop JPEG 20KB)
-        B <-->|2. WebSocket (Binary Protocol)| C[FastAPI Gateway]
+    subgraph Client [Client / Browser]
+        A[Next.js UI] -->|getUserMedia| B(Canvas Frame)
+        B <-->|WebSocket| C[FastAPI Gateway]
     end
 
-    subgraph MasterNode [EC2 Master Node - 15.134.121.250]
-        C -->|3. Produce Frame (camera_frames_v2)| D[(Redpanda Kafka Broker)]
-        C <-->|WebRTC Signaling & Leases| R[(Redis)]
-        E[(Redpanda Kafka Broker)] -->|6. Consume (results_gateway_UUID)| C
+    subgraph Backend [Master Node / Gateway]
+        C -->|1. Push Frame (camera_frames_v2)| D[(Redis Queue)]
+        E[(Redis Pub/Sub)] -->|4. Subscribe (worker_results_...)| C
     end
 
-    subgraph WorkerNodes [EC2 Worker Nodes - 3.x.x.x]
-        F[AI Worker 1 (Consumer Group)]
-        G[AI Worker 2 (Consumer Group)]
+    subgraph Workers [Worker Nodes / AI Cluster]
+        F[AI Worker 1 (Stateless)]
+        G[AI Worker 2 (Stateless)]
         
-        D -->|4. Pull Frame| F
-        D -->|4. Pull Frame| G
+        D -->|2. Pop Frame BLPOP| F
+        D -->|2. Pop Frame BLPOP| G
         
-        F -->|5. Produce Reply-To| E
-        G -->|5. Produce Reply-To| E
+        F -->|3. Publish Result| E
+        G -->|3. Publish Result| E
     end
 
-    subgraph Database [Supabase Cloud]
-        F -->|Vector HNSW Search| I[(PostgreSQL)]
-        G -->|Vector HNSW Search| I
+    subgraph Database [Cloud Database & Storage]
+        F -->|HNSW Search / Dual-write| I[(PostgreSQL / Supabase)]
+        G -->|HNSW Search / Dual-write| I
         C -->|CRUD & Permissions| I
     end
 ```
 
----
+## 4. Tối ưu hóa Hiệu năng & Vận hành
 
-## 3. Các Tối ưu hóa Kiến trúc Nâng cao (Advanced Optimizations)
-
-Hệ thống được tối ưu hóa ở mức Database và Routing để phù hợp với quy mô Enterprise:
-
-### 3.1. Kafka Reply-To Routing (Cách 1)
-- Vấn đề: Với nhiều API Server chạy song song (Master Node Load Balancing), nếu trả kết quả bừa bãi sẽ khiến các Gateway nhận nhầm kết quả của nhau.
-- Giải pháp: Khi API Gateway bật lên, nó cấp phát một UUID duy nhất (VD: `GATEWAY_A`). Nó báo với Worker: *"Hãy gửi kết quả cho frame này về topic `results_gateway_GATEWAY_A`"*. Kafka đảm bảo thông tin luôn được trả về chính xác máy chủ đang mở WebSocket.
-
-### 3.2. Database Connection Pooling (Supavisor)
-- Việc AI Worker và Gateway liên tục mở connection tới Database có thể gây kiệt quệ tài nguyên (lỗi "Too many connections").
-- Hệ thống sử dụng `ThreadedConnectionPool` của `psycopg2` kết nối qua **Supavisor (Transaction Mode - Cổng 6543)** của Supabase thay vì cổng mặc định 5432. Supavisor gom hàng nghìn Request ảo thành một vài Connection thực tế tới DB.
-
-### 3.3. Tối ưu Ghi log bằng Partitioning & Bulk Insert
-- Bảng `recognize_logs` sinh ra hàng chục nghìn dòng mỗi ngày. Thay vì `INSERT` từng dòng, Worker lưu trữ vào biến tạm và sử dụng **Bulk Insert** (`execute_values`) lên PostgreSQL mỗi chu kỳ.
-- Bảng `recognize_logs` được cấu hình **List Partitioning theo `moderator_username`**. Dữ liệu của quán cà phê A sẽ hoàn toàn độc lập với quán B ở mức đĩa cứng (Disk), giúp các truy vấn lịch sử hoặc tính toán thống kê (Analytics) của quán nào chỉ quét đúng phân vùng của quán đó, tốc độ tăng gấp hàng chục lần.
-
-### 3.4. Cấu trúc Soft Delete (Xóa mềm) & Autovacuum
-- Khách hàng (Customers) khi bị xóa sẽ không dùng lệnh `DELETE` gây "thủng" HNSW Index dẫn tới làm chậm hệ thống. Thay vào đó, áp dụng cơ chế **Soft Delete** (cập nhật cờ `is_deleted = TRUE`).
-- Để PostgreSQL không bị phình (bloat) vì thao tác UPDATE, hệ thống thiết lập **Autovacuum Tuning** cực nhạy trên bảng này (Trigger khi lượng rác đạt 5% `autovacuum_vacuum_scale_factor = 0.05`).
-
-### 3.5. Guest Lifecycle Caching (Cache Khách vãng lai)
-- Dữ liệu định danh khuôn mặt được AI Worker cache trên RAM thông qua `GuestTrackManager`. Khi một khách hàng (hoặc Guest) xuất hiện liên tục trong khung hình (có cùng `local_track_id`), Worker chỉ tìm kiếm trong Database ở **Frame đầu tiên**, các frame sau đó chỉ lấy kết quả từ bộ nhớ đệm.
-
----
-
-## 4. Tổng Kết
-Với kiến trúc Kafka/Redpanda Event-Driven kết hợp Edge Computing (MediaPipe) và Database Partitioning, hệ thống có khả năng đáp ứng lượng truy cập và xử lý hình ảnh liên tục cho hàng chục chi nhánh cùng lúc mà không xảy ra tình trạng "Nghẽn cổ chai" (Bottleneck) ở bất kì điểm nào. Mọi thao tác đều có thể Scale Out dễ dàng bằng cách mua thêm EC2 Server.
+- **Connection Pool:** Cả API Server và AI Worker đều sử dụng `ThreadedConnectionPool` của `psycopg2` để tái sử dụng kết nối Database, tránh Overhead khi khởi tạo Connection mới liên tục.
+- **Track Lifecycle Caching:** Dữ liệu hồ sơ khách hàng chỉ truy vấn **1 lần duy nhất** khi khuôn mặt xuất hiện. Cache in-RAM qua `GuestTrackManager`.
+- **Throttling & Lazy Execution:** Embedding chỉ được thực thi với các frame đủ điều kiện. Worker chủ động drop các frame đã "quá hạn" (`delay > 0.5s`) trên hàng đợi để đảm bảo tính Real-time.
+- **Centralized Logging:** Module `logger.py` chuẩn hóa toàn bộ log trên backend, hỗ trợ tốt cho việc Debug trên Docker.

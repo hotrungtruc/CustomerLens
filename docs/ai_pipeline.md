@@ -5,7 +5,7 @@ Luồng xử lý AI của Front Door AI được thiết kế để giải quy�
 ## 1. Phân Phối Tác Vụ Cơ Sở (Message Broker)
 
 Thay vì tích hợp chung luồng AI với API Server, hệ thống tách rời hoàn toàn:
-- API Server (FastAPI) nhận các frames liên tục từ WebSocket và đẩy chúng vào Kafka Topic (`camera_frames_v2`) do Redpanda quản lý.
+- API Server (FastAPI) nhận các frames liên tục từ WebSocket và đẩy chúng vào Redis Queue (`camera_frames_v2`).
 - Một nhóm các **AI Worker (Stateless)** lắng nghe queue này (`BLPOP`), kéo frame về để phân tích. Sự tách biệt này giúp mở rộng năng lực xử lý (Horizontal Scaling) vô hạn bằng cách chạy nhiều AI Worker song song.
 - Worker sẽ tự động **Drop (bỏ qua)** các frame bị trễ (delay > 0.5s) để tránh tình trạng thắt nút cổ chai (bottleneck) tích tụ trên hàng đợi.
 
@@ -49,12 +49,12 @@ Việc trích xuất và nhận diện đặc trưng khuôn mặt liên tục tr
 ```mermaid
 sequenceDiagram
     participant API as API Server (Gateway)
-    participant Kafka as Redpanda (Kafka API)
-    participant Worker as AI Worker (Stateless)
+    participant Redis as Redis Queue
+    participant Worker as AI Worker
+    participant DB as PostgreSQL (Supabase)
 
-    Camera->>API: Gửi WebSocket Frame (Edge Crop)
-    API->>Kafka: Produce Frame (topic: camera_frames_v2, reply_to: results_gateway_UUID)
-    Kafka->>Worker: Consume Frame
+    API->>Redis: Publish Frame
+    Redis->>Worker: Pop Frame (BLPOP)
     Worker->>Worker: MediaPipe Face Detection
     Worker->>Worker: Kalman Filter & IOU Tracking
     
@@ -66,7 +66,7 @@ sequenceDiagram
         Worker->>Worker: Cập nhật Voting Buffer
     end
     
-    Worker->>Kafka: Produce Result (topic: results_gateway_UUID)
-    Kafka-->>API: Consume Result
+    Worker->>Redis: Publish Result (Bounding Box, ID)
+    Redis-->>API: Subscribe Result
     API-->>Client: WebSocket Response
 ```

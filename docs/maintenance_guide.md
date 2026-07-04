@@ -57,8 +57,8 @@ Mọi file trong thư mục `data/images/` sẽ được upload lên Supabase St
 - **Khắc phục:** Quản lý có thể chọn GUEST đó trên giao diện và bấm `Promote` để gộp vào đúng khách cũ. Hệ thống có cơ chế **Auto Merge**, tự động lấy trung bình (Average) vector mới vào hồ sơ cũ để hệ thống "học" và nhận diện chuẩn hơn ở những lần sau.
 
 ### 3.3. Camera Bị Lag / Khung hình trễ (Latency)
-- **Dấu hiệu:** Hình ảnh truyền về rất mượt, nhưng Bounding Box cập nhật rất chậm hoặc thỉnh thoảng biến mất. Số lượng người trên giao diện không cập nhật kịp thời.
-- **Nguyên nhân:** Có thể số lượng AI Worker hiện tại không đủ đáp ứng số lượng người trong khung hình, dẫn đến tình trạng thắt cổ chai ở hàng đợi Redpanda (`camera_frames_v2`).
-- **Cách khắc phục:**
-  - Kiểm tra CPU usage của các Worker bằng lệnh `docker stats` hoặc `htop`.
-  - Bật thêm các AI Worker (Thêm server Worker mới hoặc tăng số container trên các máy Worker hiện tại) để xử lý lượng tải lớn hơn. Hệ thống sẽ tự động cân bằng tải qua Kafka Consumer Group.
+- **Dấu hiệu:** Người đi qua cửa nhưng vài giây sau khung xanh Tracking mới hiện lên.
+- **Nguyên nhân:** Có thể số lượng AI Worker hiện tại không đủ đáp ứng số lượng người trong khung hình, dẫn đến tình trạng thắt cổ chai ở hàng đợi Redis (`camera_frames_v2`).
+- **Khắc phục:** 
+  - Kiểm tra cấu hình thread của Docker (`OMP_NUM_THREADS=2`, v.v.).
+  - Bật thêm các AI Worker (Thêm server Worker mới hoặc tăng số container trên các máy Worker hiện tại) để xử lý lượng tải lớn hơn. Hệ thống sẽ tự động cân bằng tải qua Redis Queue.
