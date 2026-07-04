@@ -521,30 +521,7 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* CTA bottom */}
-          <div className="mt-auto border-t border-slate-100 p-4 xl:p-5">
-            <p className="text-sm font-semibold text-slate-800">
-              Thông tin khách hàng
-            </p>
-            <p className="mt-1 text-xs text-slate-500">
-              Theo dõi lịch sử và thông tin chi tiết từng lần ghé thăm.
-            </p>
-            <Link
-              href="/customers"
-              className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-4 w-4 fill-none stroke-current"
-                strokeWidth="2"
-              >
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              Xem chi tiết
-            </Link>
-          </div>
+
         </div>
       </div>
 

@@ -171,6 +171,7 @@ def ensure_schema(conn):
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'active'")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS send_bbox INTEGER DEFAULT 1")
         conn.execute(
             "UPDATE users SET role = COALESCE(role, CASE WHEN LOWER(username) = 'admin' THEN 'admin' ELSE 'moderator' END)"
         )
@@ -424,6 +425,7 @@ def ensure_schema(conn):
                 "status": "TEXT NOT NULL DEFAULT 'active'",
                 "created_at": "TEXT DEFAULT NULL",
                 "updated_at": "TEXT DEFAULT NULL",
+                "send_bbox": "INTEGER DEFAULT 1",
         },
     )
     conn.execute(
@@ -816,7 +818,7 @@ def list_users_with_permissions(conn):
     }
     users = conn.execute(
         """
-        SELECT id, username, role, cameras, status, created_at, updated_at
+        SELECT id, username, role, cameras, status, created_at, updated_at, send_bbox
         FROM users
         ORDER BY username ASC
         """

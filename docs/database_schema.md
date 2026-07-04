@@ -1,81 +1,64 @@
-# Cấu trúc Cơ sở dữ liệu (Database Schema)
+# Cấu trúc Cơ sở Dữ liệu (Database Schema)
 
-Hệ thống hoạt động mượt mà trên môi trường Production sử dụng **Supabase PostgreSQL**. Các bảng được thiết kế để chuẩn hóa thông tin khách hàng, nhật ký ra vào và bảo toàn các vector đặc trưng để tối ưu hóa việc định danh (Face Recognition).
+Hệ thống được thiết kế để hỗ trợ cả lưu trữ trên Đám mây qua PostgreSQL (Supabase) và lưu trữ nội bộ bằng SQLite nhằm mục đích dự phòng (Dual-write / Fallback). 
 
-Điểm nổi bật trong kiến trúc này là việc áp dụng **pgvector**, extension hỗ trợ lưu trữ vector nhúng của AI và truy vấn K-Nearest Neighbors (KNN) siêu tốc với chỉ mục HNSW.
-
----
-
-## 1. Bảng `users` (Tài khoản & Phân quyền)
-Lưu thông tin đăng nhập và Role-Based Access Control (RBAC).
-
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `id` | SERIAL / INTEGER | Khóa chính (Tự tăng) |
-| `username` | VARCHAR(255) | Tên đăng nhập (Unique) |
-| `password_hash`| VARCHAR(255) | Mật khẩu (SHA-256 Hash) |
-| `role` | VARCHAR(50) | Vai trò (`admin`, `moderator`, `guest`) |
-| `cameras` | TEXT | Danh sách ID camera được phép truy cập (VD: `cam_01,cam_02`) |
+## 1. Cơ sở Hạ tầng DB
+- **PostgreSQL / Supabase:** Là cơ sở dữ liệu mặc định. Nó được tối ưu hóa cho AI thông qua extension `pgvector` giúp hỗ trợ truy vấn vector độ chính xác siêu tốc.
+- **Connection Pooling:** Ứng dụng Backend cấu hình sử dụng `ThreadedConnectionPool` (qua thư viện `psycopg2`) với pool từ 2 đến 10 kết nối, giúp cải thiện băng thông truy vấn khi hệ thống phải chịu tải từ lượng khung hình lớn (Scale).
 
 ---
 
-## 2. Bảng `customers` (Hồ sơ Khách hàng)
-Trung tâm lưu trữ thông tin định danh của người dùng trong hệ thống (Khách hàng chính thức, Khách vãng lai).
+## 2. Các Bảng Dữ liệu Cốt lõi (Core Tables)
 
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `customer_id` | VARCHAR(255) | Khóa chính (Tự tạo hoặc sinh tự động với tiền tố `CUS_` / `GUEST_`) |
-| `name` | VARCHAR(255) | Tên khách hàng |
-| `phone` | VARCHAR(50) | Số điện thoại liên hệ |
-| `status` | VARCHAR(50) | Trạng thái (`active`, `temporary`) |
-| `customer_type`| VARCHAR(50) | Phân loại (`registered` - Đã đăng ký, `guest` - Khách vãng lai) |
-| `loyalty_tier` | VARCHAR(50) | Hạng thẻ (Standard, VIP, Platinum) |
-| `total_attendance`| INTEGER | Tổng số lượt ghé thăm (Tự tăng khi ghi nhận Check-in) |
-| `last_attendance_time`| VARCHAR | Timestamp lần cuối hệ thống nhận diện thành công |
-| `note` | TEXT | Ghi chú của nhân sự |
+### Bảng `users`
+Lưu trữ thông tin tài khoản dùng để đăng nhập vào trang quản trị (Admin Panel / Frontend).
+- `id` (SERIAL PRIMARY KEY)
+- `username` (VARCHAR)
+- `password_hash` (VARCHAR): Mật khẩu được mã hóa SHA-256.
+- `role` (VARCHAR): Phân quyền người dùng (`admin`, `moderator`).
+- `cameras` (TEXT): Danh sách ID camera người dùng có thể truy cập (nếu có).
+- `status` (VARCHAR): Trạng thái tài khoản (`active` / `disabled`).
 
-*(Hệ thống thiết kế theo hướng mở, hỗ trợ dễ dàng thêm các trường mở rộng phục vụ cho các domain nghiệp vụ khác nhau).*
+### Bảng `cameras` và Kết nối thiết bị
+Để đảm bảo một thiết bị camera Edge không bị đánh cắp luồng dữ liệu, hệ thống sử dụng Device Credentials.
+- **`cameras`**: Lưu ID, tên hiển thị, trạng thái và thời gian "last seen" của Camera.
+- **`camera_device_credentials`**: Chứa token (đã hash) lưu trên trình duyệt của Camera. Tokens này tự động được luân chuyển (rotate) khi đăng ký mới (Enrollment) hoặc tái kích hoạt.
+- **`user_camera_permissions`**: Ghi nhận quyền truy cập chi tiết (view/edit) của từng Người dùng (User) đối với từng Camera.
+- **`camera_connections`**: Ghi log lịch sử mở kết nối và ngắt kết nối của các Session Camera (cùng lý do ngắt).
 
----
+### Bảng `customers`
+Lưu trữ thông tin chi tiết của Khách Hàng và Khách Vãng Lai (Guest).
+- `customer_id` (VARCHAR PRIMARY KEY): ID khách hàng (Bắt đầu bằng `GUEST_...` đối với người lạ, hoặc chuỗi số đối với khách quen).
+- `name` (VARCHAR), `phone`, `email`
+- `customer_type` (VARCHAR): Định danh là `registered` hoặc `guest`.
+- `loyalty_tier` (VARCHAR): Hạng khách hàng (`Standard`, `VIP`, ...).
+- `total_visits`, `last_visit`, `total_spending`: Dữ liệu phân tích (Analytics) của khách.
 
-## 3. Bảng `customer_embeddings` (Vector Đặc Trưng Khuôn Mặt)
-Bảng kết nối 1-Nhiều với bảng `customers`. Một định danh có thể có nhiều góc mặt, điều kiện ánh sáng khác nhau để cải thiện độ chính xác (Face Bank). Bảng này lưu trữ vector cho CẢ Khách hàng đã đăng ký (Customer) và Khách vãng lai (Guest).
+### Bảng `customer_embeddings` (Bảng Vector)
+Lưu trữ Vector Đặc Trưng Sinh Trắc Học của khuôn mặt.
+- Bảng này sử dụng công nghệ **Dual-Write** để tương thích mọi cấu hình DB:
+  1. Trường `embedding` (Kiểu `vector(512)` của `pgvector`): Hỗ trợ đánh Index theo thuật toán **HNSW** (`halfvec_cosine_ops`), tốc độ tìm kiếm dưới <5ms.
+  2. Trường `face_embedding` (Kiểu `BYTEA` nhị phân): Định dạng dự phòng khi hệ thống chuyển sang dùng SQLite.
+- AI Pipeline chỉ cần 1 trong 2 trường này để có thể phân tích độ tương đồng.
 
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `id` | SERIAL / INTEGER | Khóa chính |
-| `customer_id` | VARCHAR(255) | Khóa ngoại (Foreign Key) trỏ về `customers(customer_id)`. Xóa Cascade. |
-| `embedding_dim`| INTEGER | Chiều của vector (Mặc định: 512) |
-| `model_name` | VARCHAR(100) | Tên mô hình tạo vector (Mặc định: `edgeface_s_gamma_05`) |
-| `face_embedding`| BYTEA | Bản sao nhị phân (Binary Blob) lưu giữ raw bytes. (Cơ chế Dual-write) |
-| **`embedding`** | **vector(512)** | Cột của `pgvector`. **Có Index HNSW**. Dùng để tính Cosine Similarity (`<=>`). |
-
-**Tối ưu Index HNSW:**
-```sql
-CREATE INDEX IF NOT EXISTS customer_embeddings_hnsw_idx 
-ON customer_embeddings USING hnsw (embedding vector_cosine_ops)
-WITH (m = 16, ef_construction = 64);
-```
-
-**Dual-write & Asynchronous Inserts:**
-Khi có vector mới (của Guest hoặc khi Customer cập nhật), hệ thống áp dụng cơ chế **Dual-write**: lưu đồng thời cả `BYTEA` (cho mục đích backup/fallback) và `vector(512)` (cho truy vấn pgvector). Việc Insert này được đẩy vào Thread phụ bất đồng bộ (`asyncio.create_task`), giúp hiệu năng của WebSocket không bị gián đoạn. Hơn nữa, việc cấu hình `ThreadedConnectionPool` đảm bảo có sẵn connection để Thread phụ sử dụng lập tức.
-
----
-
-## 4. Bảng `attendance` (Nhật ký Ra Vào)
-Ghi nhận mọi lượt check-in của hệ thống, hỗ trợ trích xuất báo cáo. Để tránh spam (nhiều bản ghi trong cùng một khoảnh khắc), hệ thống áp dụng cơ chế **Cooldown Caching** ở tầng Backend.
-
-| Column | Type | Description |
-| :--- | :--- | :--- |
-| `id` | SERIAL / INTEGER | Khóa chính |
-| `customer_id` | VARCHAR(255) | Khóa ngoại trỏ đến `customers` |
-| `timestamp` | VARCHAR(255) | Giờ check-in chính xác |
-| `visit_date` | VARCHAR(50) | Ngày check-in (Phục vụ truy vấn thống kê Group By) |
+### Bảng `recognize_logs`
+Bảng lưu trữ lịch sử nhận diện chi tiết (tới từng frame):
+- `id` (UUID PRIMARY KEY)
+- `opeid` (UUID): ID hoạt động để phân nhóm log.
+- `camera_id` (VARCHAR)
+- `customer_id` (VARCHAR): Khách hàng được nhận diện trong log.
+- `track_id` (INTEGER): Phiên track tĩnh của AI worker.
+- `bbox` (JSONB): Tọa độ khuôn mặt.
+- `connection_id` (VARCHAR): ID của session WebSocket.
 
 ---
 
-## 5. Kiến trúc Storage (Supabase Storage)
-Hình ảnh profile của người dùng được tải lên thông qua **Supabase Storage REST API** (hoặc client `supabase-js`).
-- **Bucket:** `customer-images` (Public).
-- **Quy tắc ghi:** Sử dụng `{customer_id}.jpg` để ghi đè (Upsert), tiết kiệm không gian lưu trữ và đảm bảo mỗi người dùng chỉ có 1 ảnh đại diện nhất quán.
-- Ảnh Upload dạng Base64 được xử lý bởi thư viện backend và trả về CDN URL (Public URL) cho Frontend. Trong trường hợp gián đoạn kết nối Cloud, hệ thống hỗ trợ chiến lược Fallback lưu ảnh tại ổ cứng Local (`data/images`).
+## 3. Kiến trúc Supabase Vector Search
+- Hệ thống tạo index HNSW trên trường `embedding` của bảng `customer_embeddings`:
+  ```sql
+  CREATE INDEX IF NOT EXISTS idx_customer_embeddings_hnsw_halfvec
+  ON customer_embeddings
+  USING hnsw ((embedding::halfvec) halfvec_cosine_ops)
+  WITH (m = 32, ef_construction = 128);
+  ```
+- Kỹ thuật ép kiểu `halfvec` (Float16) giúp cắt giảm 50% dung lượng bộ nhớ trên RAM của Database, qua đó duy trì hiệu năng siêu tốc ngay cả khi lượng khách hàng lên tới hàng trăm ngàn record mà không làm giảm độ chính xác của mô hình EdgeFace.

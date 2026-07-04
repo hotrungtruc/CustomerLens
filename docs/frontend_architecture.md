@@ -1,47 +1,35 @@
 # Kiến trúc Frontend (Frontend Architecture)
 
-Frontend của Front Door AI được xây dựng với các tiêu chí: **Hiển thị Thời gian thực (Real-time)**, **Bảo mật phân quyền (RBAC)**, và **Tối ưu hóa Trải nghiệm Người dùng (UX)** sử dụng ngôn ngữ thiết kế Glassmorphism hiện đại.
+Frontend của dự án Front Door AI được xây dựng hoàn toàn dựa trên **Next.js 14** (App Router), cung cấp giao diện trực quan cho cả Khách hàng và Quản trị viên để quản lý luồng Camera, Danh sách khách hàng, và Lịch sử nhận diện.
 
-## 1. Công nghệ Sử dụng
-- **Framework:** Next.js 14 (App Router)
-- **Styling:** Tailwind CSS (Tích hợp Glassmorphism, CSS Transitions)
-- **State Management:** React Hooks (`useState`, `useRef`, `useCallback`), `sessionStorage` (lưu trữ cache tạm thời).
-- **Giao tiếp Dữ liệu:** WebSocket (Realtime Video Streaming & Data), Fetch API (REST CRUD).
+## 1. Cấu trúc Thư mục (App Router)
 
----
+Toàn bộ Source Code Frontend nằm trong `frontend/src/app`. Dưới đây là các Route chính được thiết kế dựa trên kiến trúc file-based routing của Next.js:
 
-## 2. Quản lý Kết nối Camera (Camera Stream)
-**Hook `useCamera.js`**
-Đây là module cốt lõi chịu trách nhiệm giao tiếp giữa Trình duyệt (Browser) và API Gateway:
-- Truy xuất luồng ảnh từ thiết bị thông qua API WebRTC `navigator.mediaDevices.getUserMedia`.
-- Tự động thay đổi kích thước ảnh (tối đa 640x360) và nén chất lượng (JPEG) qua đối tượng `Canvas` ẩn.
-- Khởi tạo kết nối WebSocket với Server, định danh bằng `session_id`.
-- Đóng gói Frame ảnh thành luồng dữ liệu thô (Binary ArrayBuffer) và gửi lên Server liên tục để tiết kiệm băng thông mạng thay vì sử dụng Base64.
-- Lắng nghe phản hồi từ Server để cập nhật tọa độ Bounding Box và dữ liệu định danh khách hàng lên màn hình Camera.
+- **/login**: Giao diện đăng nhập cho hệ thống quản trị, lấy Token trả về từ Backend.
+- **/camera**: Cung cấp giao diện kết nối Webcam (hoặc các camera ngoại vi), xử lý nén luồng hình ảnh và truyền Stream qua WebSocket. Tại đây, luồng "Observer" cũng được tích hợp để vẽ lên canvas các bounding box (Khung nhận diện).
+- **/customers**: Giao diện CRM (Customer Relationship Management) quản lý thông tin các Khách hàng (Customers) và Khách vãng lai (Guests). Bao gồm tính năng Promote Guest (Chuyển khách vãng lai thành khách hàng chính thức).
+- **/history**: Danh sách lịch sử điểm danh (Recognize Logs) dựa trên dữ liệu Backend trả về.
+- **/reports**: Giao diện Phân tích số liệu (Analytics), báo cáo lượng Check-ins hàng ngày và thông kê các mức hạng khách (Loyalty Tiers).
+- **/notifications** & **/settings**: Tùy chỉnh thông số hệ thống, độ nhạy của AI và nhận thông báo lỗi từ thiết bị.
 
----
+## 2. Công nghệ Cốt lõi (Core Stack)
 
-## 3. Active Prefetching (Tải trước Dữ liệu Khách hàng)
-Nhằm giảm thiểu độ trễ truy xuất dữ liệu khi quản trị viên tương tác:
-- Ngay khi luồng WebSocket phát hiện một định danh khách hàng (ví dụ: `CUS_001`) xuất hiện trong khung hình.
-- Hook `useProfilePrefetch` ở cấp Root sẽ lập tức kích hoạt API chạy ngầm để lấy toàn bộ lịch sử giao dịch và thông tin chi tiết của `CUS_001`. (Lưu ý: Hook này có cơ chế guard, chỉ kích hoạt khi user có role `admin` để tránh bị lỗi 401 Unauthorized do quyền truy cập bị giới hạn).
-- Dữ liệu này được lưu trữ tạm thời vào `sessionStorage`.
-- Khi người quản lý click vào khuôn mặt trên màn hình, trang Chi tiết Khách hàng (`/customers/[id]`) sẽ được tải **ngay lập tức** nhờ đọc dữ liệu từ SessionStorage thay vì phải chờ phản hồi API lần nữa.
+- **UI & Styling:** Sử dụng **Tailwind CSS** để thiết kế giao diện (Utility-first) và **Lucide React** cho hệ thống Icon đồng nhất, nhẹ, sắc nét.
+- **State Management & Data Fetching:** Sử dụng hệ thống Hook của React kết hợp với WebSocket API tích hợp sẵn (Native `WebSocket`).
+- **Edge AI (MediaPipe Vision):** Frontend có tích hợp `@mediapipe/tasks-vision` để hỗ trợ một số logic tiện ích như vẽ Bounding Box / Landmark siêu nhẹ phía máy khách (Client-side Rendering), giảm tải quá trình Render từ ảnh nhận về thành lớp vẽ Canvas tĩnh để không làm gián đoạn UX.
 
----
+## 3. Quản lý Quyền Truy cập (RBAC)
 
-## 4. Role-Based Access Control (RBAC - Phân quyền)
-Ứng dụng áp dụng cơ chế Bảo vệ Route (Route Protection) tại phía Client thông qua Context (`UserProvider`). Mọi thao tác thay đổi dữ liệu từ Frontend đều phải trải qua bước xác thực JWT Token `require_admin` tại Backend.
+Frontend áp dụng Role-Based Access Control thông qua Wrapper Components (Layouts):
+- Trạng thái phiên (Session State) được duy trì bằng `JWT` (hoặc Session Token truyền thống) ở Local Storage / Cookies.
+- Nếu một User có role `moderator`, hệ thống sẽ chặn các hành động xóa thiết bị hoặc sửa đổi sâu vào cấu hình hệ thống (Settings), vốn chỉ dành cho quyền `admin`.
+- Các Route được bảo vệ (Protected Routes) thông qua Next.js Middleware hoặc logic Layout cấp cao: Bất kỳ ai không có Token hợp lệ đều bị điều hướng (Redirect) thẳng về route `/login`.
 
-**Các Vai trò (Roles):**
-1. **`guest` (Mặc định):** Chỉ có quyền xem trang Dashboard (Thống kê tổng quan), không được phép xem luồng Camera hoặc danh sách khách hàng.
-2. **`moderator` (Nhân viên Lễ tân):** Được phép truy cập Dashboard và xem luồng Camera. **Quản lý Camera:** Danh sách Camera được quyền truy cập sẽ bị giới hạn cứng dựa vào cấu hình phân quyền từ Backend. Khi tải catalog camera hoặc mở WebSocket observer, hệ thống sẽ lọc dữ liệu chỉ trả về các `camera_id` mà moderator này được cấp phép.
-3. **`admin` (Quản lý):** Toàn quyền hệ thống bao gồm xem, chỉnh sửa hồ sơ, tải ảnh, xóa dữ liệu khách hàng. Admin cũng có quyền truy cập màn hình **Phân quyền** để tạo tài khoản, đổi mật khẩu, khóa/mở khóa tài khoản moderator, và gán quyền xem cụ thể từng Camera ID cho các moderator.
+## 4. Tương tác với Luồng WebSocket
 
----
-
-## 5. UI & UX (Thiết kế Kính Mờ - Glassmorphism)
-Giao diện hệ thống được thiết kế theo hướng hiện đại, thân thiện:
-- **Nền Tương tác:** Sử dụng Background Gradient kết hợp hiệu ứng làm mờ (`backdrop-blur-md`, `bg-white/10`) tạo cảm giác chiều sâu.
-- **Smooth Bounding Boxes:** Các khung viền bao quanh khuôn mặt được áp dụng CSS Transition (`transition-all duration-100 ease-linear`). Kỹ thuật này giúp khung viền di chuyển mượt mà trên màn hình ngay cả khi tốc độ phản hồi từ Server bị trễ, loại bỏ hiện tượng giật lag (flickering).
-- **Thiết kế Đáp ứng (Responsive):** Tuân thủ nguyên tắc Mobile-First, menu điều hướng linh hoạt (Sidebar Toggle) đảm bảo tính tiện dụng trên các thiết bị máy tính bảng của nhân viên lễ tân.
+### Canvas Rendering
+Để tránh tình trạng "giật lag" (Jitter) khi luồng mạng yếu, Frontend áp dụng kỹ thuật sau:
+1. **Camera Frame:** Vẽ thẳng (Draw) ảnh thu được từ thiết bị vào thẻ `<canvas>`.
+2. **AI Results:** WebSocket Server trả về mảng Bounding Box + Metadata (Tên, ID). Lớp dữ liệu này được vẽ (Render) đè lên `<canvas>` dưới dạng lớp phủ (Overlay). 
+Kết quả: Tốc độ khung hình mượt mà, Bounding Box luôn đi liền với khuôn mặt.

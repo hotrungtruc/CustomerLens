@@ -7,20 +7,20 @@ Dự án Front Door AI được thiết kế với kiến trúc **Event-driven, 
 Hệ thống bao gồm 4 tầng (tiers) chính:
 
 1. **Client Tier (Frontend):** 
-   - Xây dựng bằng **Next.js 14**.
+   - Xây dựng bằng **Next.js 14** (App Router).
    - Truy cập Camera thiết bị thông qua WebRTC / `getUserMedia`.
-   - Nén ảnh và stream trực tiếp dữ liệu thô (Raw Binary) qua **WebSocket**.
+   - Nén ảnh và stream trực tiếp dữ liệu thô (Raw Binary) qua **WebSocket** (Subprotocol: `camera-observer`).
 2. **Gateway Tier (FastAPI Backend):**
-   - Đóng vai trò là điểm cuối (endpoint) giao tiếp với người dùng.
-   - Tiếp nhận luồng WebSocket, bóc tách frame và đẩy (publish) vào hàng đợi (queue) thông qua **Redis**.
+   - Đóng vai trò là điểm cuối (endpoint) giao tiếp với người dùng (`routes.py`).
+   - Tiếp nhận luồng WebSocket, bóc tách frame và đẩy (publish) vào hàng đợi (queue) thông qua **Redis** (Queue name: `camera_frames_v2`).
    - Chờ nhận kết quả từ Redis (qua cơ chế Pub/Sub) và truyền lại cho Frontend.
 3. **Worker Tier (AI Processing):**
-   - Là các tiến trình (containers) độc lập, hoàn toàn **Stateless** (không lưu trạng thái).
+   - Là các tiến trình (containers) độc lập, hoàn toàn **Stateless** (không lưu trạng thái - `ai_worker.py`).
    - Lắng nghe hàng đợi từ Redis, kéo frame về, xử lý phát hiện (Detection), theo dõi (Tracking) và trích xuất vector (Embedding).
-   - Đẩy kết quả trở lại một kênh (channel) đặc thù của `connection_id` tương ứng trên Redis.
+   - Đẩy kết quả trở lại một kênh (channel) đặc thù của `connection_id` tương ứng trên Redis (Channel name: `worker_results_{connection_id}`).
 4. **Data Tier (Database & Cloud Storage):**
-   - **PostgreSQL (Supabase):** Kết hợp `pgvector` cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer.
-   - **Supabase Storage:** Lưu trữ ảnh đại diện của khách hàng trên Cloud CDN (với cơ chế Fallback lưu tại Local nếu mất kết nối).
+   - **PostgreSQL (Supabase):** Kết hợp `pgvector` cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer. Dual-write fallback với SQLite.
+   - **Supabase Storage:** Lưu trữ ảnh đại diện của khách hàng trên Cloud CDN.
 
 ---
 
@@ -28,14 +28,14 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
 
 ### 2.1. Phân phối tác vụ qua Redis Pub/Sub
 Hệ thống sử dụng Redis làm Message Broker trung tâm:
-- API Server nhận frame từ WebSocket và đẩy vào Redis list/queue (ví dụ: `camera_frames_v2`).
-- Bất kỳ AI Worker nào đang rảnh (Idle) sẽ bốc (pop) frame từ queue này để xử lý.
-- Cơ chế này cho phép **Horizontal Scaling** vô hạn: Càng nhiều camera kết nối, quản trị viên chỉ cần bật thêm (scale up) AI Worker Node. API Server không bao giờ bị nghẽn CPU.
+- API Server nhận frame từ WebSocket và đẩy vào Redis list/queue (định dạng nhị phân với 4 byte header để chỉ định metadata).
+- Bất kỳ AI Worker nào đang rảnh (Idle) sẽ block (`BLPOP`) trên queue này để xử lý ngay lập tức khi có frame mới.
+- Cơ chế này cho phép **Horizontal Scaling** vô hạn: API Server không bao giờ bị nghẽn CPU dù số lượng Camera tăng lên, các Worker cũng không bị gán chặt với bất kỳ Camera cụ thể nào.
 
 ### 2.2. Streaming qua WebSocket & Session Isolation
-Hệ thống loại bỏ hoàn toàn HTTP Polling cũ kỹ, thay bằng kết nối WebSocket bền vững (`/ws/{camera_id}` hoặc `/ws/observe/{camera_id}`).
-- **Session Isolation:** Mặc dù endpoint sử dụng chung `camera_id` tĩnh, nhưng ở phía backend mỗi khi có Client/Tab Trình duyệt kết nối, hệ thống sẽ tự động sinh ra một `connection_id` ngẫu nhiên duy nhất (VD: `conn_uuid...`). Luồng camera và kết quả bounding box của Tab nào sẽ chỉ được gửi về đúng Tab đó thông qua `connection_id` này, đảm bảo tính riêng tư và tránh xung đột khi nhiều người quản trị mở nhiều camera cùng lúc.
-- Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng của session đó (`worker_results_{connection_id}`). API Server đang subscribe kênh này sẽ nhận kết quả và forward về đúng Client.
+Hệ thống sử dụng WebSocket bền vững để truyền tải Frame và nhận kết quả Real-time:
+- **Session Isolation:** Mỗi khi có Client/Tab Trình duyệt kết nối, hệ thống sinh ra một `connection_id` ngẫu nhiên. Luồng camera và kết quả bounding box của Tab nào sẽ chỉ gửi về đúng Tab đó thông qua `connection_id` này.
+- Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng của session đó (`worker_results_{connection_id}`). API Server subscribe kênh này sẽ nhận kết quả và forward về đúng Client qua WebSocket tương ứng, loại bỏ Broadcast không cần thiết.
 
 ---
 
@@ -49,34 +49,31 @@ graph TD
     end
 
     subgraph Backend [Master Node / Gateway]
-        C -->|1. Push Frame| D[(Redis Queue)]
-        E[(Redis Pub/Sub)] -->|4. Subscribe Result| C
+        C -->|1. Push Frame (camera_frames_v2)| D[(Redis Queue)]
+        E[(Redis Pub/Sub)] -->|4. Subscribe (worker_results_...)| C
     end
 
     subgraph Workers [Worker Nodes / AI Cluster]
-        F[AI Worker 1]
-        G[AI Worker 2]
-        H[AI Worker N]
+        F[AI Worker 1 (Stateless)]
+        G[AI Worker 2 (Stateless)]
         
-        D -->|2. Pop Frame| F
-        D -->|2. Pop Frame| G
-        D -->|2. Pop Frame| H
+        D -->|2. Pop Frame BLPOP| F
+        D -->|2. Pop Frame BLPOP| G
         
         F -->|3. Publish Result| E
         G -->|3. Publish Result| E
-        H -->|3. Publish Result| E
     end
 
     subgraph Database [Cloud Database & Storage]
-        F -->|HNSW Search / Dual-write| I[(Supabase pgvector)]
+        F -->|HNSW Search / Dual-write| I[(PostgreSQL / Supabase)]
         G -->|HNSW Search / Dual-write| I
-        H -->|HNSW Search / Dual-write| I
+        C -->|CRUD & Permissions| I
     end
 ```
 
 ## 4. Tối ưu hóa Hiệu năng & Vận hành
 
-- **Connection Pool:** Cả API Server và AI Worker đều sử dụng `ThreadedConnectionPool` của `psycopg2` (min=2, max=10) để tái sử dụng kết nối Database, tránh tình trạng thắt nút cổ chai (bottleneck) khi truy vấn liên tục.
-- **Track Lifecycle Caching:** Dữ liệu hồ sơ khách hàng chỉ được truy vấn **1 lần duy nhất** khi khuôn mặt xuất hiện. AI Worker lưu vào RAM bộ cache của những người đang trong khung hình (`GuestTrackManager`), giảm tải 99% cho Database.
-- **Lazy Embedding & Throttling:** Quá trình trích xuất vector đặc trưng 512D (thao tác tốn kém nhất) chỉ xảy ra ở một số frame nhất định khi đủ điều kiện kích thước, và được chạy dưới dạng Background Thread bên trong AI Worker.
-- **Centralized Logging:** Mọi log của hệ thống (API Gateway, Redis, AI Worker) được quy chuẩn hóa cấu trúc qua module `logger.py` (`[HH:MM:SS] LEVEL module: message`), giúp dễ dàng giám sát trên môi trường Production.
+- **Connection Pool:** Cả API Server và AI Worker đều sử dụng `ThreadedConnectionPool` của `psycopg2` để tái sử dụng kết nối Database, tránh Overhead khi khởi tạo Connection mới liên tục.
+- **Track Lifecycle Caching:** Dữ liệu hồ sơ khách hàng chỉ truy vấn **1 lần duy nhất** khi khuôn mặt xuất hiện. Cache in-RAM qua `GuestTrackManager`.
+- **Throttling & Lazy Execution:** Embedding chỉ được thực thi với các frame đủ điều kiện. Worker chủ động drop các frame đã "quá hạn" (`delay > 0.5s`) trên hàng đợi để đảm bảo tính Real-time.
+- **Centralized Logging:** Module `logger.py` chuẩn hóa toàn bộ log trên backend, hỗ trợ tốt cho việc Debug trên Docker.
