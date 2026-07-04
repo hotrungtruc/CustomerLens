@@ -1282,6 +1282,11 @@ def bulk_insert_recognize_logs(conn, logs):
         for log in logs:
             bbox_val = json.dumps(log.get("bbox")) if log.get("bbox") else None
             ts = log.get("timestamp", datetime.now())
+            try:
+                track_val = int(log["track_id"]) if log.get("track_id") is not None else None
+            except ValueError:
+                track_val = None
+                
             values.append(
                 (
                     str(uuid.uuid4()),
@@ -1289,7 +1294,7 @@ def bulk_insert_recognize_logs(conn, logs):
                     str(log["camera_id"]),
                     str(log["connection_id"]) if log.get("connection_id") else None,
                     str(log["customer_id"]) if log.get("customer_id") else None,
-                    int(log["track_id"]) if log.get("track_id") is not None else None,
+                    track_val,
                     bbox_val,
                     ts,
                 )
@@ -1314,6 +1319,11 @@ def bulk_insert_recognize_logs(conn, logs):
             ts = log.get("timestamp", datetime.now().isoformat())
             if isinstance(ts, datetime):
                 ts = ts.isoformat()
+            try:
+                track_val = int(log["track_id"]) if log.get("track_id") is not None else None
+            except ValueError:
+                track_val = None
+                
             values.append(
                 (
                     str(uuid.uuid4()),
@@ -1321,7 +1331,7 @@ def bulk_insert_recognize_logs(conn, logs):
                     str(log["camera_id"]),
                     str(log["connection_id"]) if log.get("connection_id") else None,
                     str(log["customer_id"]) if log.get("customer_id") else None,
-                    int(log["track_id"]) if log.get("track_id") is not None else None,
+                    track_val,
                     bbox_val,
                     ts,
                 )
