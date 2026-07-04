@@ -119,7 +119,7 @@ class InsightEmbedder:
 
             options = FaceLandmarkerOptions(
                 base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK)),
-                running_mode=VisionRunningMode.VIDEO,
+                running_mode=VisionRunningMode.IMAGE,
                 num_faces=5,
                 min_face_detection_confidence=0.5,
                 min_tracking_confidence=0.5,
@@ -271,10 +271,8 @@ class InsightEmbedder:
             # Use MediaPipe Tasks FaceLandmarker
             # Build a mediapipe Image from numpy array
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            import time
-
-            timestamp_ms = int(time.time() * 1000)
-            result = self.face_landmarker.detect_for_video(mp_image, timestamp_ms)
+            
+            result = self.face_landmarker.detect(mp_image)
             if not result or not getattr(result, "face_landmarks", None):
                 return np.empty((0, 4)), np.empty((0, 5, 2)), np.empty((0,))
 
