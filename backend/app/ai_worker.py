@@ -8,6 +8,7 @@ import time
 import cv2
 import numpy as np
 import redis
+from kafka import KafkaConsumer, KafkaProducer
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,6 +23,8 @@ logger = logging.getLogger("AIWorker")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.from_url(REDIS_URL)
 
+KAFKA_BROKER_URL = os.getenv("KAFKA_BROKER_URL", "redpanda:29092")
+
 def main():
     parser = argparse.ArgumentParser(description="Stateless AI Worker for Face Recognition")
     parser.add_argument("--camera", type=str, default="default", help="(Deprecated) Camera ID - ignored in stateless mode")
@@ -35,17 +38,25 @@ def main():
     frame_queue = "camera_frames_v2"
     frame_count = 0
     
-    logger.info("Worker is ready and waiting for frames on global queue 'camera_frames_v2'...")
+    logger.info(f"Worker connecting to Kafka at {KAFKA_BROKER_URL}...")
     
-    while True:
+    # Initialize Kafka Consumer and Producer
+    consumer = KafkaConsumer(
+        frame_queue,
+        bootstrap_servers=KAFKA_BROKER_URL,
+        group_id="ai_workers_group",
+        auto_offset_reset='latest'
+    )
+    producer = KafkaProducer(
+        bootstrap_servers=KAFKA_BROKER_URL,
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
+    
+    logger.info("Worker is ready and waiting for frames on Kafka topic 'camera_frames_v2'...")
+    
+    for message in consumer:
         try:
-            # BLPOP blocks until an item is available (LIFO: getting the most recently lpush'd item)
-            result = redis_client.blpop([frame_queue], timeout=1)
-            
-            if not result:
-                continue
-                
-            queue_name, item = result
+            item = message.value
             
             # Unpack 4-byte length
             meta_len = int.from_bytes(item[:4], byteorder="big")
@@ -77,6 +88,7 @@ def main():
             opeid = data.get("opeid")
             camera_id = data.get("camera_id")
             connection_id = data.get("connection_id")
+            reply_to = data.get("reply_to")
             local_track_id = data.get("local_track_id")
             client_bbox = data.get("bbox") # Original bbox from frontend
             
@@ -153,7 +165,10 @@ def main():
                 payload["local_track_id"] = local_track_id
                 payload["client_bbox"] = client_bbox
                 
-            redis_client.publish(pubsub_channel, json.dumps(payload))
+            if reply_to:
+                producer.send(reply_to, value=payload)
+            else:
+                logger.warning(f"No reply_to topic found for connection {connection_id}")
             
         except Exception as e:
             logger.error(f"Error processing frame: {e}", exc_info=True)

@@ -317,3 +317,20 @@ export async function updateSettings(payload) {
   }
   return response.json();
 }
+
+export async function fetchHistory(params = {}) {
+  const queryParts = [];
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== undefined && val !== null && val !== "") {
+      queryParts.push(`${encodeURIComponent(key)}=${encodeURIComponent(val)}`);
+    }
+  }
+  const queryString = queryParts.length > 0 ? `?${queryParts.join("&")}` : "";
+  const response = await apiFetch(`${API_BASE_URL}/api/history${queryString}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error("Không thể tải lịch sử nhận diện");
+  }
+  return response.json();
+}

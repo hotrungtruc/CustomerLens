@@ -3,7 +3,7 @@
 -- Tuning for recognize_logs
 -- This table receives bulk inserts frequently. We need to lower the threshold
 -- for autovacuum to trigger more often, preventing bloat.
-ALTER TABLE recognize_logs SET (
+ALTER TABLE recognize_logs_default SET (
     autovacuum_vacuum_scale_factor = 0.05,
     autovacuum_analyze_scale_factor = 0.02,
     autovacuum_vacuum_cost_limit = 1000

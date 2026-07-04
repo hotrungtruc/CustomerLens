@@ -7,7 +7,7 @@ Frontend của dự án Front Door AI được xây dựng hoàn toàn dựa tr�
 Toàn bộ Source Code Frontend nằm trong `frontend/src/app`. Dưới đây là các Route chính được thiết kế dựa trên kiến trúc file-based routing của Next.js:
 
 - **/login**: Giao diện đăng nhập cho hệ thống quản trị, lấy Token trả về từ Backend.
-- **/camera**: Cung cấp giao diện kết nối Webcam (hoặc các camera ngoại vi), xử lý nén luồng hình ảnh và truyền Stream qua WebSocket. Tại đây, luồng "Observer" cũng được tích hợp để vẽ lên canvas các bounding box (Khung nhận diện).
+- **/camera**: Cung cấp giao diện kết nối Webcam (hoặc các camera ngoại vi). Tích hợp MediaPipe để phát hiện khuôn mặt ngay trên trình duyệt (Edge Detection), tự động cắt (crop) ảnh khuôn mặt, và truyền Stream qua WebSocket với dung lượng siêu nhỏ. Tại đây, luồng "Observer" cũng được tích hợp để vẽ lên canvas các bounding box (Khung nhận diện).
 - **/customers**: Giao diện CRM (Customer Relationship Management) quản lý thông tin các Khách hàng (Customers) và Khách vãng lai (Guests). Bao gồm tính năng Promote Guest (Chuyển khách vãng lai thành khách hàng chính thức).
 - **/history**: Danh sách lịch sử điểm danh (Recognize Logs) dựa trên dữ liệu Backend trả về.
 - **/reports**: Giao diện Phân tích số liệu (Analytics), báo cáo lượng Check-ins hàng ngày và thông kê các mức hạng khách (Loyalty Tiers).
@@ -17,7 +17,7 @@ Toàn bộ Source Code Frontend nằm trong `frontend/src/app`. Dưới đây l�
 
 - **UI & Styling:** Sử dụng **Tailwind CSS** để thiết kế giao diện (Utility-first) và **Lucide React** cho hệ thống Icon đồng nhất, nhẹ, sắc nét.
 - **State Management & Data Fetching:** Sử dụng hệ thống Hook của React kết hợp với WebSocket API tích hợp sẵn (Native `WebSocket`).
-- **Edge AI (MediaPipe Vision):** Frontend có tích hợp `@mediapipe/tasks-vision` để hỗ trợ một số logic tiện ích như vẽ Bounding Box / Landmark siêu nhẹ phía máy khách (Client-side Rendering), giảm tải quá trình Render từ ảnh nhận về thành lớp vẽ Canvas tĩnh để không làm gián đoạn UX.
+- **Edge AI (MediaPipe Vision):** Frontend tích hợp thư viện `@mediapipe/tasks-vision` chạy qua WebAssembly để thực hiện **Edge Tracking**. Trình duyệt tự cấp phát `local_track_id` và cắt (crop) chính xác phần khuôn mặt ra thành một ảnh JPEG nhỏ (10-20KB). Việc chuyển dịch tính toán Face Detection xuống Edge giúp tối ưu đáng kể băng thông mạng và năng lực xử lý của máy chủ.
 
 ## 3. Quản lý Quyền Truy cập (RBAC)
 
@@ -28,8 +28,8 @@ Frontend áp dụng Role-Based Access Control thông qua Wrapper Components (Lay
 
 ## 4. Tương tác với Luồng WebSocket
 
-### Canvas Rendering
-Để tránh tình trạng "giật lag" (Jitter) khi luồng mạng yếu, Frontend áp dụng kỹ thuật sau:
-1. **Camera Frame:** Vẽ thẳng (Draw) ảnh thu được từ thiết bị vào thẻ `<canvas>`.
-2. **AI Results:** WebSocket Server trả về mảng Bounding Box + Metadata (Tên, ID). Lớp dữ liệu này được vẽ (Render) đè lên `<canvas>` dưới dạng lớp phủ (Overlay). 
-Kết quả: Tốc độ khung hình mượt mà, Bounding Box luôn đi liền với khuôn mặt.
+### Gửi Khung Hình Tối Ưu (Edge Crop)
+Để tiết kiệm tối đa băng thông và giảm độ trễ, Frontend thực hiện:
+1. **Local Face Detection:** Sử dụng MediaPipe dò tìm khuôn mặt liên tục ở 30-60 FPS.
+2. **Crop & Compress:** Khi phát hiện khuôn mặt, thay vì gửi toàn bộ khung hình Full HD, trình duyệt dùng `<canvas>` để cắt (crop) riêng phần bounding box khuôn mặt, nén thành JPEG (khoảng 10-20KB).
+3. **Transmission:** Gửi ảnh crop kèm `local_track_id` qua WebSocket lên API Gateway (FastAPI) định kỳ (ví dụ 1 lần/giây). Hệ thống Backend (AI Worker) chỉ việc trích xuất vector (Embedding) và trả về kết quả định danh cho `local_track_id` đó. Mọi thao tác vẽ UI (Bounding box) tiếp tục được thực hiện tại Frontend mà không bị lag.

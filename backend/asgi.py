@@ -11,6 +11,8 @@ from config import CORS_ORIGINS
 from contextlib import asynccontextmanager
 from app.db.connection import get_db_connection, ensure_schema
 
+from app.api.kafka_manager import init_kafka, close_kafka
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database schema on startup
@@ -19,7 +21,14 @@ async def lifespan(app: FastAPI):
         ensure_schema(conn)
     finally:
         conn.close()
+    
+    # Initialize Kafka
+    await init_kafka()
+    
     yield
+    
+    # Close Kafka
+    await close_kafka()
 
 app = FastAPI(lifespan=lifespan)
 
