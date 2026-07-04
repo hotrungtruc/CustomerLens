@@ -98,18 +98,26 @@ def fetch_all_embeddings_from_db(conn):
     Returns four lists:
         known_embeddings, known_ids, guest_embeddings, guest_ids
     """
-    if DB_TYPE != "postgresql":
-        return [], [], [], []
-
     cursor = conn.cursor()
-    # Fetch customer_id and the vector representation as text (e.g. '[0.1, 0.2, ...]')
-    cursor.execute(
-        """
-        SELECT customer_id, embedding::text AS emb_text
-        FROM customer_embeddings
-        WHERE embedding IS NOT NULL
-        """
-    )
+    
+    if DB_TYPE == "postgresql":
+        # Fetch customer_id and the vector representation as text (e.g. '[0.1, 0.2, ...]')
+        cursor.execute(
+            """
+            SELECT customer_id, embedding::text AS emb_text
+            FROM customer_embeddings
+            WHERE embedding IS NOT NULL
+            """
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT customer_id, embedding AS emb_text
+            FROM customer_embeddings
+            WHERE embedding IS NOT NULL
+            """
+        )
+        
     rows = cursor.fetchall()
 
     known_embeddings = []
@@ -118,10 +126,15 @@ def fetch_all_embeddings_from_db(conn):
     guest_ids = []
 
     for row in rows:
-        c_id = row["customer_id"]
-        emb_text = row["emb_text"]
+        try:
+            c_id = row["customer_id"]
+            emb_text = row["emb_text"]
+        except TypeError:
+            # Fallback if row is a tuple
+            c_id = row[0]
+            emb_text = row[1]
 
-        if not emb_text or not emb_text.startswith("[") or not emb_text.endswith("]"):
+        if not emb_text or not isinstance(emb_text, str) or not emb_text.startswith("[") or not emb_text.endswith("]"):
             continue
 
         try:

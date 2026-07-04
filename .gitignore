@@ -63,7 +63,6 @@ frontend/.env.local
 backend/.env
 backend/data/settings.json
 .env
-deploy_env.bat
 
 # Local manual backups
 local_backups/
