@@ -271,7 +271,7 @@ export default function CustomersPage() {
                           <div className="flex items-center gap-3">
                             <div className="h-9 w-9 shrink-0 rounded-full bg-gradient-to-br from-blue-100 to-slate-200" />
                             <Link
-                              href={`/ customers / ${c.id} `}
+                              href={`/customers/${c.id}`}
                               className="text-sm font-semibold text-slate-900 hover:text-blue-600"
                             >
                               {c.name}
