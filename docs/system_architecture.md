@@ -9,10 +9,12 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
 1. **Client Tier (Frontend):** 
    - Xây dựng bằng **Next.js 14** (App Router).
    - Truy cập Camera thiết bị thông qua WebRTC / `getUserMedia`.
-   - Nén ảnh và stream trực tiếp dữ liệu thô (Raw Binary) qua **WebSocket** (Subprotocol: `camera-observer`).
+   - Tích hợp mô hình AI nhẹ **MediaPipe** trực tiếp trên trình duyệt để thực hiện **Edge Tracking** (theo dõi khuôn mặt liên tục).
+   - Tự động cắt mặt (crop) và chỉ stream phần ảnh khuôn mặt (kèm `local_track_id`) qua **WebSocket** (Subprotocol: `camera-observer`) với tần suất tối ưu (vd: 1 lần/giây).
 2. **Gateway Tier (FastAPI Backend):**
    - Đóng vai trò là điểm cuối (endpoint) giao tiếp với người dùng (`routes.py`).
-   - Tiếp nhận luồng WebSocket, bóc tách frame và đẩy (publish) vào hàng đợi (queue) thông qua **Redis** (Queue name: `camera_frames_v2`).
+   - Tiếp nhận luồng WebSocket, bóc tách protocol nhị phân (chứa siêu dữ liệu Edge Crop + ảnh JPEG) và đẩy vào hàng đợi thông qua **Redis** (`camera_frames_v2`).
+   - Xử lý gán nhãn thông tin hồ sơ bằng cách mapping `local_track_id` từ Worker trả về.
    - Chờ nhận kết quả từ Redis (qua cơ chế Pub/Sub) và truyền lại cho Frontend.
 3. **Worker Tier (AI Processing):**
    - Là các tiến trình (containers) độc lập, hoàn toàn **Stateless** (không lưu trạng thái - `ai_worker.py`).
@@ -32,10 +34,11 @@ Hệ thống sử dụng Redis làm Message Broker trung tâm:
 - Bất kỳ AI Worker nào đang rảnh (Idle) sẽ block (`BLPOP`) trên queue này để xử lý ngay lập tức khi có frame mới.
 - Cơ chế này cho phép **Horizontal Scaling** vô hạn: API Server không bao giờ bị nghẽn CPU dù số lượng Camera tăng lên, các Worker cũng không bị gán chặt với bất kỳ Camera cụ thể nào.
 
-### 2.2. Streaming qua WebSocket & Session Isolation
-Hệ thống sử dụng WebSocket bền vững để truyền tải Frame và nhận kết quả Real-time:
-- **Session Isolation:** Mỗi khi có Client/Tab Trình duyệt kết nối, hệ thống sinh ra một `connection_id` ngẫu nhiên. Luồng camera và kết quả bounding box của Tab nào sẽ chỉ gửi về đúng Tab đó thông qua `connection_id` này.
-- Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng của session đó (`worker_results_{connection_id}`). API Server subscribe kênh này sẽ nhận kết quả và forward về đúng Client qua WebSocket tương ứng, loại bỏ Broadcast không cần thiết.
+### 2.2. Edge Tracking & Caching
+Thay vì gửi liên tục 30 FPS lên Server gây quá tải mạng, Front Door AI sử dụng kiến trúc Edge Tracking:
+- **Xử lý tại biên (Edge):** MediaPipe trên trình duyệt nhận diện và cấp phát một mã theo dõi duy nhất (`local_track_id`) cho từng người. Bounding Box trên giao diện được vẽ trực tiếp ở tần số 60 FPS mà không cần đợi Server.
+- **Tối ưu băng thông:** Frontend chỉ cắt (crop) khung mặt và gửi ảnh nhỏ gọn (10-20KB) lên Server theo một tần suất cố định (ví dụ: 1 ảnh/giây). 
+- **Session Isolation:** Mỗi Tab Trình duyệt kết nối sinh ra một `connection_id` ngẫu nhiên. Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng (`worker_results_{connection_id}`). API Server nhận kết quả và forward về Client, Client sẽ tự động ánh xạ thông tin cá nhân vào `local_track_id` đang hiển thị.
 
 ---
 

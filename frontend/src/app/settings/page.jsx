@@ -49,6 +49,8 @@ export default function SettingsPage() {
     new_guest_debounce_similarity: 0.38,
     checkin_cooldown_seconds: 30,
     customer_profile_hold_seconds: 2.5,
+    edge_crop_padding: 0.25,
+    edge_send_interval_ms: 1000,
   });
   
   const [loading, setLoading] = useState(true);
@@ -79,12 +81,12 @@ export default function SettingsPage() {
     const floatKeys = [
       "similarity_threshold", "min_detection_score", "track_iou_threshold", 
       "guest_min_detection_score", "new_guest_debounce_similarity",
-      "customer_profile_hold_seconds"
+      "customer_profile_hold_seconds", "edge_crop_padding"
     ];
     const intKeys = [
       "process_every_n_frames", "min_face_bbox_size", "track_buffer_size",
       "guest_creation_buffer_size", "guest_min_face_bbox_size", 
-      "new_guest_debounce_seconds", "checkin_cooldown_seconds"
+      "new_guest_debounce_seconds", "checkin_cooldown_seconds", "edge_send_interval_ms"
     ];
 
     let val = value;
@@ -171,6 +173,34 @@ export default function SettingsPage() {
                       type="number" step="0.01"
                       value={settings.track_iou_threshold} 
                       onChange={(v) => handleChange("track_iou_threshold", v)}
+                    />
+                  </div>
+                </div>
+
+                {/* Edge Tracking */}
+                <div className="min-h-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm relative z-0 hover:z-10 transition-all">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
+                      <Activity className="h-4 w-4 text-emerald-600" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-slate-800">
+                      Edge Tracking (Frontend)
+                    </h3>
+                  </div>
+                  <div className="mt-2 divide-y divide-slate-50">
+                    <InputRow 
+                      label="Tần suất gửi ảnh crop (ms)" 
+                      tooltip="Khoảng thời gian tối thiểu giữa 2 lần gửi ảnh crop của cùng một khuôn mặt (ms)."
+                      type="number"
+                      value={settings.edge_send_interval_ms} 
+                      onChange={(v) => handleChange("edge_send_interval_ms", v)}
+                    />
+                    <InputRow 
+                      label="Padding cắt ảnh crop (%)" 
+                      tooltip="Tỷ lệ mở rộng khung cắt khuôn mặt (vd: 0.25 = 25%) để nhận diện chính xác hơn."
+                      type="number" step="0.05"
+                      value={settings.edge_crop_padding} 
+                      onChange={(v) => handleChange("edge_crop_padding", v)}
                     />
                   </div>
                 </div>

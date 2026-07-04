@@ -6,18 +6,7 @@ import { useLocalFaceDetector } from "../hooks/useLocalFaceDetector";
 import { useVideoBbox } from "../hooks/useVideoBbox";
 import { getTrackBadge } from "../lib/trackBadge";
 
-// IoU matching (Intersection over Union)
-function calculateIoU(boxA, boxB) {
-  const xA = Math.max(boxA.left, boxB.left);
-  const yA = Math.max(boxA.top, boxB.top);
-  const xB = Math.min(boxA.left + boxA.width, boxB.left + boxB.width);
-  const yB = Math.min(boxA.top + boxA.height, boxB.top + boxB.height);
-  const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
-  if (interArea === 0) return 0;
-  const boxAArea = boxA.width * boxA.height;
-  const boxBArea = boxB.width * boxB.height;
-  return interArea / (boxAArea + boxBArea - interArea);
-}
+
 
 /**
  * CameraStream — live webcam feed with bounding-box overlays.
@@ -48,6 +37,8 @@ export default function CameraStream({
     customers,
     frameSize,
     cameraError,
+    sendCrop,
+    edgeSettings,
   } = useCamera(cameraId);
 
   const mapBbox = useVideoBbox(videoRef, frameSize.width, frameSize.height);
@@ -58,60 +49,26 @@ export default function CameraStream({
     onCustomersChange?.(customers, frameSize);
   }, [customers, frameSize, onCustomersChange]);
 
-  // Transform backend customers into percentage boxes
-  const backendFaces = customers
-    .filter((c) => Array.isArray(c.bbox) && c.bbox.length === 4)
-    .map((c) => {
-      const [x1, y1, x2, y2] = c.bbox;
-      const mapped = mapBbox(x1, y1, x2 - x1, y2 - y1);
-      return {
-        ...c,
-        left: mapped.left,
-        top: mapped.top,
-        width: mapped.width,
-        height: mapped.height,
-      };
+  const lastSendTimeRef = useRef({});
+
+  // 1. Trigger crop sending for tracked faces
+  useEffect(() => {
+    const now = Date.now();
+    localFaces.forEach(face => {
+      const lastSend = lastSendTimeRef.current[face.local_track_id] || 0;
+      // Send crop if not sent in the configured interval
+      if (now - lastSend > (edgeSettings?.edge_send_interval_ms || 1000)) {
+        sendCrop(face);
+        lastSendTimeRef.current[face.local_track_id] = now;
+      }
     });
+  }, [localFaces, sendCrop, edgeSettings]);
 
-  const prevLocalFacesRef = useRef([]);
-
-  // Hybrid Tracking: Merge local faces with backend labels
-  const matchedBackendIds = new Set();
+  // 2. Merge local faces with backend profiles
   const mergedFaces = localFaces.map((localFace, i) => {
-    let bestMatch = null;
-    let bestIoU = 0;
+    // Find backend profile by local_track_id
+    const backendMatch = customers.find(c => c.local_track_id === localFace.local_track_id);
     
-    // 1. Try to match with CURRENT backend faces
-    backendFaces.forEach((backendFace) => {
-      const iou = calculateIoU(localFace, backendFace);
-      if (iou > 0.2 && iou > bestIoU) {
-        bestIoU = iou;
-        bestMatch = backendFace;
-      }
-    });
-
-    // 2. If no current match, try to inherit from PREVIOUS local face
-    if (!bestMatch) {
-      let bestPrevLocalMatch = null;
-      let bestPrevIoU = 0;
-      prevLocalFacesRef.current.forEach((prevLocalFace) => {
-        const iou = calculateIoU(localFace, prevLocalFace);
-        if (iou > 0.3 && iou > bestPrevIoU) {
-          bestPrevIoU = iou;
-          bestPrevLocalMatch = prevLocalFace;
-        }
-      });
-      if (bestPrevLocalMatch && bestPrevLocalMatch.backendMatch) {
-         bestMatch = bestPrevLocalMatch.backendMatch;
-      }
-    }
-    
-    if (bestMatch) {
-      matchedBackendIds.add(bestMatch.track_id);
-    }
-    
-    // localFace returns percentage of native video width, let's map it via mapBbox 
-    // by pretending it's an absolute coordinate.
     const lx = (localFace.left / 100) * frameSize.width;
     const ly = (localFace.top / 100) * frameSize.height;
     const lw = (localFace.width / 100) * frameSize.width;
@@ -121,19 +78,12 @@ export default function CameraStream({
     return {
       ...localFace,
       ...mappedLocal,
-      id: bestMatch ? bestMatch.track_id : `local-${i}`,
-      backendMatch: bestMatch,
+      id: localFace.local_track_id,
+      backendMatch: backendMatch || null,
     };
   });
 
-  // Update prevLocalFacesRef for next frame
-  useEffect(() => {
-    prevLocalFacesRef.current = mergedFaces;
-  }, [mergedFaces]);
-
-  const unmatchedBackendFaces = backendFaces.filter(
-    (bf) => !matchedBackendIds.has(bf.track_id)
-  );
+  const unmatchedBackendFaces = [];
 
   const statusLabel =
     wsStatus === "live"
@@ -225,10 +175,10 @@ export default function CameraStream({
           {mergedFaces.map((face) => {
             const isHl = face.backendMatch && highlightedTrackId === face.backendMatch.track_id;
             
-            let symbol = null;
+             let symbol = null;
             let theme = null;
             if (face.backendMatch) {
-               const badge = getTrackBadge(face.backendMatch.track_id);
+               const badge = getTrackBadge(face.backendMatch.local_track_id || face.id);
                symbol = badge.symbol;
                theme = badge.theme;
             }

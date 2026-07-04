@@ -3,11 +3,33 @@
 import { useEffect, useState, useRef } from "react";
 import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
 
+function calculateIoU(boxA, boxB) {
+  const xA = Math.max(boxA.left, boxB.left);
+  const yA = Math.max(boxA.top, boxB.top);
+  const xB = Math.min(boxA.left + boxA.width, boxB.left + boxB.width);
+  const yB = Math.min(boxA.top + boxA.height, boxB.top + boxB.height);
+  const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+  if (interArea === 0) return 0;
+  const boxAArea = boxA.width * boxA.height;
+  const boxBArea = boxB.width * boxB.height;
+  return interArea / (boxAArea + boxBArea - interArea);
+}
+
+function generateUUID() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+  );
+}
+
 export function useLocalFaceDetector(videoRef) {
   const [localFaces, setLocalFaces] = useState([]);
   const faceDetectorRef = useRef(null);
   const requestRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
+  const trackedFacesRef = useRef([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -66,9 +88,47 @@ export function useLocalFaceDetector(videoRef) {
                          top: (originY / sh) * 100,
                          width: (width / sw) * 100,
                          height: (height / sh) * 100,
+                         pixelBox: { originX, originY, width, height },
                      };
                  });
-                 setLocalFaces(mappedFaces);
+
+                 // IoU Tracking
+                 const currentTracks = trackedFacesRef.current;
+                 const newTracks = [];
+
+                 mappedFaces.forEach(face => {
+                   let bestMatch = null;
+                   let bestIoU = 0;
+                   currentTracks.forEach(track => {
+                     if (track.matched) return; // Prevent double matching
+                     const iou = calculateIoU(face, track);
+                     if (iou > 0.3 && iou > bestIoU) {
+                       bestIoU = iou;
+                       bestMatch = track;
+                     }
+                   });
+
+                   if (bestMatch) {
+                     bestMatch.matched = true;
+                     newTracks.push({
+                       ...face,
+                       local_track_id: bestMatch.local_track_id,
+                       first_seen: bestMatch.first_seen,
+                     });
+                   } else {
+                     newTracks.push({
+                       ...face,
+                       local_track_id: "local_" + generateUUID(),
+                       first_seen: Date.now(),
+                     });
+                   }
+                 });
+
+                 trackedFacesRef.current = newTracks;
+                 setLocalFaces(newTracks);
+             } else {
+                 trackedFacesRef.current = [];
+                 setLocalFaces([]);
              }
           } catch(err) {
              console.error("Face detection error:", err);

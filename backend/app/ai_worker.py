@@ -72,14 +72,19 @@ def main():
                 system_settings.load_settings()
                 
             current_n_frames = system_settings.get("process_every_n_frames", PROCESS_EVERY_N_FRAMES)
-            if frame_count % current_n_frames != 0:
-                continue
-                
             raw_image_bytes = item[4+meta_len:]
-                
+
             opeid = data.get("opeid")
             camera_id = data.get("camera_id")
             connection_id = data.get("connection_id")
+            local_track_id = data.get("local_track_id")
+            client_bbox = data.get("bbox") # Original bbox from frontend
+            
+            # If it's an edge crop, process it immediately (frontend already throttles)
+            is_edge_crop = bool(local_track_id)
+            if not is_edge_crop:
+                if frame_count % current_n_frames != 0:
+                    continue
             
             if not camera_id or not connection_id:
                 logger.warning(
@@ -144,6 +149,10 @@ def main():
                 "face_records": face_records,
                 "frame_size": {"width": frame.shape[1], "height": frame.shape[0]}
             }
+            if is_edge_crop:
+                payload["local_track_id"] = local_track_id
+                payload["client_bbox"] = client_bbox
+                
             redis_client.publish(pubsub_channel, json.dumps(payload))
             
         except Exception as e:

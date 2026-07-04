@@ -248,6 +248,55 @@ class GuestTrackManager:
             try:
                 if guest_id not in self.guest_ids:
                     return False
+                    
+    def search_identity(self, embedding):
+        """Search for a matching identity given an embedding. Returns (best_id, similarity)."""
+        best_match_id = None
+        best_sim = 0.0
+        
+        norm_emb = normalize_embedding(embedding)
+        
+        if self.use_pgvector:
+            pgvec_results = self._query_pgvector(
+                norm_emb, top_k=1, threshold=self.similarity_threshold
+            )
+            if pgvec_results and pgvec_results[0][1] >= self.similarity_threshold:
+                best_match_id = pgvec_results[0][0]
+                best_sim = pgvec_results[0][1]
+            # Also check in-memory guests
+            if not best_match_id and self.guest_embeddings:
+                guest_sims = cosine_similarities(
+                    self.guest_embeddings, norm_emb
+                )
+                if guest_sims.size > 0:
+                    best_g_idx = int(np.argmax(guest_sims))
+                    if float(guest_sims[best_g_idx]) >= self.similarity_threshold:
+                        best_match_id = self.guest_ids[best_g_idx]
+                        best_sim = float(guest_sims[best_g_idx])
+        else:
+            combined_embeddings = []
+            combined_ids = []
+            if self.known_embeddings:
+                combined_embeddings.extend(self.known_embeddings)
+                combined_ids.extend(self.known_ids)
+            if self.guest_embeddings:
+                combined_embeddings.extend(self.guest_embeddings)
+                combined_ids.extend(self.guest_ids)
+                
+            if len(combined_embeddings) > 0:
+                similarities = cosine_similarities(combined_embeddings, norm_emb)
+                if similarities.size > 0:
+                    best_index = int(np.argmax(similarities))
+                    sim = float(similarities[best_index])
+                    if sim >= self.similarity_threshold:
+                        if best_index < len(self.known_embeddings):
+                            best_match_id = self.known_ids[best_index]
+                        else:
+                            guest_idx = best_index - len(self.known_embeddings)
+                            best_match_id = self.guest_ids[guest_idx]
+                        best_sim = sim
+                        
+        return best_match_id, best_sim
                 idx = int(self.guest_ids.index(guest_id))
                 emb = self.guest_embeddings.pop(idx)
                 self.guest_ids.pop(idx)

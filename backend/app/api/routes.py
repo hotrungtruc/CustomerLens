@@ -1104,6 +1104,8 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         opeid = data.get("opeid")
         result_camera_id = data.get("camera_id")
         result_connection_id = data.get("connection_id")
+        local_track_id = data.get("local_track_id")
+        client_bbox = data.get("client_bbox")
 
         # Convert back lists to np.arrays for embeddings and landmarks
         for rec in face_records:
@@ -1112,48 +1114,93 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             if rec.get("landmark") is not None:
                 rec["landmark"] = np.array(rec["landmark"], dtype=np.float32)
 
-        tracked_faces = track_manager.process_faces(face_records, frame=None, embedder=None)
-
+        is_edge_crop = bool(local_track_id)
+        
         conn = get_db_connection()
         try:
             customers = []
             logs = []
-            for face in tracked_faces:
-                x1, y1, x2, y2 = face["bbox"]
-                customer_id = face["customer_id"]
-                track_id = face["track_id"]
-                
-                payload = {
-                    "tile_id": f"tile_{track_id}",
-                    "track_id": track_id,
-                    "bbox": (x1, y1, x2, y2),
-                    "detected": bool(customer_id),
-                    "id": customer_id,
-                    "name": "Khach moi",
-                    "customer_type": "guest",
-                    "customer_status": "temporary"
-                }
-                
-                if customer_id:
-                    track = track_manager.tracks.get(track_id)
-                    info = track.cached_profile if track else None
-                    if not info:
-                        info = get_customer_info(conn, customer_id)
-                        if info and track:
-                            track.cached_profile = info
+            
+            if is_edge_crop:
+                # Bypass GuestTrackManager tracking, use it only for searching
+                for rec in face_records:
+                    embedding = rec.get("embedding")
+                    if embedding is None:
+                        continue
+                        
+                    best_match, _ = track_manager.search_identity(embedding)
+                    
+                    customer_id = best_match
+                    if not customer_id:
+                        import uuid
+                        customer_id = f"GUEST_{result_camera_id}_{str(uuid.uuid4())[:8]}"
+                        track_manager._insert_guest_into_main_db_async(customer_id, embedding)
+                    
+                    bbox = client_bbox or rec.get("bbox")
+                    payload = {
+                        "tile_id": f"tile_{local_track_id}",
+                        "track_id": local_track_id, # Return local track ID for frontend merging
+                        "local_track_id": local_track_id,
+                        "bbox": bbox,
+                        "detected": bool(customer_id),
+                        "id": customer_id,
+                        "name": "Khách mới",
+                        "customer_type": "guest",
+                        "customer_status": "temporary"
+                    }
+                    
+                    info = get_customer_info(conn, customer_id)
                     if info:
                         _apply_profile_to_payload(payload, info)
                         
-                customers.append(payload)
-                logs.append({
-                    "opeid": opeid,
-                    "camera_id": result_camera_id,
-                    "connection_id": result_connection_id,
-                    "customer_id": customer_id,
-                    "track_id": track_id,
-                    "bbox": (x1, y1, x2, y2),
-                    "timestamp": timestamp
-                })
+                    customers.append(payload)
+                    logs.append({
+                        "opeid": opeid,
+                        "camera_id": result_camera_id,
+                        "connection_id": result_connection_id,
+                        "customer_id": customer_id,
+                        "track_id": local_track_id,
+                        "bbox": tuple(bbox) if bbox else None,
+                        "timestamp": timestamp
+                    })
+            else:
+                tracked_faces = track_manager.process_faces(face_records, frame=None, embedder=None)
+                for face in tracked_faces:
+                    x1, y1, x2, y2 = face["bbox"]
+                    customer_id = face["customer_id"]
+                    track_id = face["track_id"]
+                    
+                    payload = {
+                        "tile_id": f"tile_{track_id}",
+                        "track_id": track_id,
+                        "bbox": (x1, y1, x2, y2),
+                        "detected": bool(customer_id),
+                        "id": customer_id,
+                        "name": "Khách mới",
+                        "customer_type": "guest",
+                        "customer_status": "temporary"
+                    }
+                    
+                    if customer_id:
+                        track = track_manager.tracks.get(track_id)
+                        info = track.cached_profile if track else None
+                        if not info:
+                            info = get_customer_info(conn, customer_id)
+                            if info and track:
+                                track.cached_profile = info
+                        if info:
+                            _apply_profile_to_payload(payload, info)
+                            
+                    customers.append(payload)
+                    logs.append({
+                        "opeid": opeid,
+                        "camera_id": result_camera_id,
+                        "connection_id": result_connection_id,
+                        "customer_id": customer_id,
+                        "track_id": track_id,
+                        "bbox": (x1, y1, x2, y2),
+                        "timestamp": timestamp
+                    })
             
             if logs:
                 bulk_insert_recognize_logs(conn, logs)
@@ -1255,7 +1302,23 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                         connection_state.disconnect_reason = "frame_too_large"
                         await websocket.close(code=1009, reason="Frame too large")
                         break
-                    state.latest_jpeg = bytes(data)
+                        
+                    # Parse Frontend Protocol
+                    if data.startswith(b'\xff\xd8'):
+                        # Backward compatibility: raw JPEG
+                        raw_image_bytes = bytes(data)
+                        client_meta = {}
+                    else:
+                        try:
+                            meta_len = int.from_bytes(data[:4], byteorder="big")
+                            client_meta_json = data[4:4+meta_len].decode("utf-8")
+                            client_meta = json.loads(client_meta_json)
+                            raw_image_bytes = data[4+meta_len:]
+                        except Exception:
+                            raw_image_bytes = bytes(data)
+                            client_meta = {}
+
+                    state.latest_jpeg = raw_image_bytes
                     state.last_frame_time = time.time()
                     
                     opeid = str(uuid.uuid4())
@@ -1265,10 +1328,12 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                         "connection_id": connection_id,
                         "timestamp": datetime.now().isoformat()
                     }
-                    meta_json = json.dumps(meta_dict).encode("utf-8")
-                    meta_len = len(meta_json).to_bytes(4, byteorder="big")
+                    meta_dict.update(client_meta)
                     
-                    packed_payload = meta_len + meta_json + bytes(data)
+                    meta_json = json.dumps(meta_dict).encode("utf-8")
+                    meta_len_out = len(meta_json).to_bytes(4, byteorder="big")
+                    
+                    packed_payload = meta_len_out + meta_json + raw_image_bytes
                     
                     # Push to global camera_frames queue
                     await r.lpush("camera_frames_v2", packed_payload)
