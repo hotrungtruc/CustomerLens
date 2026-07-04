@@ -62,8 +62,8 @@ export function useCamera(cameraId) {
   const [cameraError, setCameraError] = useState("");
   const [connectionId, setConnectionId] = useState(null);
   const [edgeSettings, setEdgeSettings] = useState({
-    edge_crop_padding: 0.25,
-    edge_send_interval_ms: 1000
+    edge_crop_padding: 0.8,
+    edge_send_interval_ms: 200
   });
 
   // Load edge tracking settings
@@ -217,7 +217,7 @@ export function useCamera(cameraId) {
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    if (!video || !canvas) return;
+    if (!video || !canvas || video.readyState < 2) return;
 
     const ctx = canvas.getContext("2d", { willReadFrequently: false });
     if (!ctx) return;
