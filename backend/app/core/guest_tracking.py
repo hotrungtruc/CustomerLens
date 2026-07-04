@@ -239,16 +239,6 @@ class GuestTrackManager:
         # No longer used (stateless backend)
         pass
 
-    def promote_guest(self, guest_id: str, new_id: str) -> bool:
-        """Promote a guest entry (guest_id) into the known encodings with new_id.
-
-        Returns True if promotion succeeded, False otherwise.
-        """
-        with self.lock:
-            try:
-                if guest_id not in self.guest_ids:
-                    return False
-                    
     def search_identity(self, embedding):
         """Search for a matching identity given an embedding. Returns (best_id, similarity)."""
         best_match_id = None
@@ -297,6 +287,16 @@ class GuestTrackManager:
                         best_sim = sim
                         
         return best_match_id, best_sim
+
+    def promote_guest(self, guest_id: str, new_id: str) -> bool:
+        """Promote a guest entry (guest_id) into the known encodings with new_id.
+
+        Returns True if promotion succeeded, False otherwise.
+        """
+        with self.lock:
+            try:
+                if guest_id not in self.guest_ids:
+                    return False
                 idx = int(self.guest_ids.index(guest_id))
                 emb = self.guest_embeddings.pop(idx)
                 self.guest_ids.pop(idx)
