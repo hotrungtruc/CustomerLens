@@ -11,7 +11,14 @@ export const TRACK_BADGE_THEMES = [
 ];
 
 export function getTrackBadge(trackId) {
-  const safeTrack = Number(trackId || 0);
+  const strId = String(trackId || "");
+  let hash = 0;
+  for (let i = 0; i < strId.length; i++) {
+    hash = (hash << 5) - hash + strId.charCodeAt(i);
+    hash |= 0;
+  }
+  const safeTrack = Math.abs(hash) || 0;
+  
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const symbol =
     safeTrack > 0 ? alphabet[(safeTrack - 1) % alphabet.length] : "?";
