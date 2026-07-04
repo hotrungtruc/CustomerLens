@@ -104,9 +104,26 @@ def main():
                 continue
                 
             # Detect
-            detections = embedder.detect(frame)
+            if is_edge_crop:
+                h, w = frame.shape[:2]
+                pad_h = int(h * 0.5)
+                pad_w = int(w * 0.5)
+                frame_padded = cv2.copyMakeBorder(frame, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+                detections = embedder.detect(frame_padded)
+                
+                adjusted_detections = ([], [], [])
+                for bbox, landmark, score in zip(*detections):
+                    x1, y1, x2, y2 = bbox
+                    adj_bbox = (x1 - pad_w, y1 - pad_h, x2 - pad_w, y2 - pad_h)
+                    adj_landmark = landmark - [pad_w, pad_h]
+                    adjusted_detections[0].append(adj_bbox)
+                    adjusted_detections[1].append(adj_landmark)
+                    adjusted_detections[2].append(score)
+                detections = adjusted_detections
+            else:
+                detections = embedder.detect(frame)
+
             face_records = []
-            
             batch_landmarks = []
             batch_records = []
             
