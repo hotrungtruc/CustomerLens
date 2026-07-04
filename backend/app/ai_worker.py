@@ -103,48 +103,44 @@ def main():
             if frame is None:
                 continue
                 
-            # Detect
-            if is_edge_crop:
-                h, w = frame.shape[:2]
-                pad_h = int(h * 0.5)
-                pad_w = int(w * 0.5)
-                frame_padded = cv2.copyMakeBorder(frame, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-                detections = embedder.detect(frame_padded)
-                
-                adjusted_detections = ([], [], [])
-                for bbox, landmark, score in zip(*detections):
-                    x1, y1, x2, y2 = bbox
-                    adj_bbox = (x1 - pad_w, y1 - pad_h, x2 - pad_w, y2 - pad_h)
-                    adj_landmark = landmark - [pad_w, pad_h]
-                    adjusted_detections[0].append(adj_bbox)
-                    adjusted_detections[1].append(adj_landmark)
-                    adjusted_detections[2].append(score)
-                detections = adjusted_detections
-            else:
-                detections = embedder.detect(frame)
-
             face_records = []
             batch_landmarks = []
             batch_records = []
             
-            for bbox, landmark, score in zip(*detections):
-                x1, y1, x2, y2 = map(int, bbox)
-                quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
-                guest_quality_ok = embedder.is_guest_quality_ok((x1, y1, x2, y2), score, landmark)
-                
+            if is_edge_crop:
+                # Bypass detection entirely for edge crops, rely on frontend's tight bounding box
+                h, w = frame.shape[:2]
                 record = {
-                    "bbox": (x1, y1, x2, y2),
-                    "landmark": landmark.tolist() if isinstance(landmark, np.ndarray) else landmark,
-                    "score": float(score),
-                    "quality_ok": quality_ok,
-                    "guest_quality_ok": guest_quality_ok,
+                    "bbox": (0, 0, w, h), # Full crop
+                    "landmark": None,
+                    "score": 1.0,
+                    "quality_ok": True,
+                    "guest_quality_ok": True,
                     "embedding": None,
                 }
                 face_records.append(record)
-                
-                if quality_ok and "landmark" in record:
-                    batch_landmarks.append(landmark)
-                    batch_records.append(record)
+                batch_landmarks.append(None)
+                batch_records.append(record)
+            else:
+                detections = embedder.detect(frame)
+                for bbox, landmark, score in zip(*detections):
+                    x1, y1, x2, y2 = map(int, bbox)
+                    quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+                    guest_quality_ok = embedder.is_guest_quality_ok((x1, y1, x2, y2), score, landmark)
+                    
+                    record = {
+                        "bbox": (x1, y1, x2, y2),
+                        "landmark": landmark.tolist() if isinstance(landmark, np.ndarray) else landmark,
+                        "score": float(score),
+                        "quality_ok": quality_ok,
+                        "guest_quality_ok": guest_quality_ok,
+                        "embedding": None,
+                    }
+                    face_records.append(record)
+                    
+                    if quality_ok and "landmark" in record:
+                        batch_landmarks.append(landmark)
+                        batch_records.append(record)
                     
             # --- BATCH EMBEDDING EXTRACTION ---
             if batch_landmarks and frame is not None:
