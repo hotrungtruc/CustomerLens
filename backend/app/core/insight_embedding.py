@@ -339,16 +339,19 @@ class InsightEmbedder:
 
         return boxes_arr, landmarks_arr, scores_arr
 
-    def get_embedding(self, image_bgr, landmarks):
-        matrix, _ = cv2.estimateAffinePartial2D(
-            landmarks.astype(np.float32),
-            ARC_FACE_TEMPLATE,
-            method=cv2.LMEDS,
-        )
-        if matrix is None:
-            return None
+    def get_embedding(self, image_bgr, landmarks=None):
+        if landmarks is None:
+            aligned = cv2.resize(image_bgr, FACE_SIZE)
+        else:
+            matrix, _ = cv2.estimateAffinePartial2D(
+                landmarks.astype(np.float32),
+                ARC_FACE_TEMPLATE,
+                method=cv2.LMEDS,
+            )
+            if matrix is None:
+                return None
 
-        aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
+            aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
 
         # Check input shape of the model to support NCHW vs NHWC dynamically
         input_shape = self.recognizer.get_inputs()[0].shape
