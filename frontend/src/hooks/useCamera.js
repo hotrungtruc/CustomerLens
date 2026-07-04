@@ -104,7 +104,8 @@ export function useCamera(cameraId) {
         }
         
         // Handle AI Tracking Data
-        if (data.customers) {
+        if (data.type === "camera_update" || data.customers) {
+          console.log("[WS] Received camera_update:", JSON.stringify(data).slice(0, 200));
           if (data.frame_size?.width) setFrameSize(data.frame_size);
           setCustomers(prev => {
             let next = [...prev];
@@ -268,8 +269,9 @@ export function useCamera(cameraId) {
                combined.set(new Uint8Array(blobBuffer), 4 + metaBytes.length);
                
                if (ws.readyState === WebSocket.OPEN) {
-                 ws.send(combined);
-               }
+                  ws.send(combined);
+                  console.log(`[sendCrop] Sent edge crop for track=${face.local_track_id}, size=${combined.byteLength}b`);
+                }
             }).catch(err => console.error("Blob array buffer error", err));
           }
         },
