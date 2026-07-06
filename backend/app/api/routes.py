@@ -1021,6 +1021,7 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
 async def websocket_camera(websocket: WebSocket, camera_id: str):
     credential, auth_error = _resolve_websocket_camera(websocket)
     if auth_error or credential["camera_id"] != camera_id:
+        print(f"WS Auth Error: {auth_error}, expected {camera_id} but got {credential.get('camera_id') if credential else None}")
         await websocket.close(code=1008)
         return
 
@@ -1042,6 +1043,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         return
 
     if not acquired:
+        print(f"WS Camera Lease Error: could not acquire lease for {camera_id}")
         await r.aclose()
         await websocket.close(code=1008)
         return
