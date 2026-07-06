@@ -543,36 +543,6 @@ class GuestTrackManager:
                         existing_customer_id = top_id
                         track_state.resolved_customer_id = top_id
 
-                        # --- AUTO MERGE LOGIC ---
-                        # If we have low-quality/glasses frames in the buffer and we successfully identified the person,
-                        # we merge an averaged "glasses" template into the face bank to improve future recognition.
-                        if len(track_state.guest_embeddings) > 0 and not str(
-                            top_id
-                        ).startswith("GUEST_"):
-                            avg_g_emb = calculate_robust_mean_embedding(
-                                track_state.guest_embeddings
-                            )
-                            if self.use_pgvector:
-                                # Persist merged embedding to pgvector DB
-                                try:
-                                    from app.db.vector_search import \
-                                        insert_embedding_with_vector
-                                    conn = self._get_cached_conn()
-                                    blob = np.asarray(avg_g_emb, dtype=np.float32).tobytes()
-                                    insert_embedding_with_vector(
-                                        conn, top_id, blob, avg_g_emb,
-                                        dim=len(avg_g_emb),
-                                        model_name="edgeface_s_gamma_05",
-                                    )
-                                    conn.commit()
-                                except Exception as e:
-                                    logger.warning("Auto-merge pgvector insert failed: %s", e)
-                            else:
-                                self.known_embeddings.append(avg_g_emb)
-                                self.known_ids.append(top_id)
-                            track_state.guest_embeddings.clear()
-                            self.persist_known_embeddings()
-
         resolved_customer_id = existing_customer_id if existing_customer_id else None
 
         # Fallback to mean embedding for resolution or guest creation
@@ -620,19 +590,23 @@ class GuestTrackManager:
                 )
                 if avg_guest_emb is not None:
                     known_similarity = 0.0
+                    match_id = None
                     if self.use_pgvector:
                         # Use HNSW index instead of brute-force O(n) scan
                         debounce_results = self._query_pgvector(
                             avg_guest_emb, top_k=1, threshold=0.0
                         )
                         if debounce_results:
+                            match_id = debounce_results[0][0]
                             known_similarity = debounce_results[0][1]
                     elif self.known_embeddings:
                         known_scores = cosine_similarities(
                             self.known_embeddings, avg_guest_emb
                         )
                         if known_scores.size > 0:
-                            known_similarity = float(np.max(known_scores))
+                            best_idx = int(np.argmax(known_scores))
+                            match_id = self.known_ids[best_idx]
+                            known_similarity = float(known_scores[best_idx])
 
                     track_age_seconds = now - track_state.first_seen_at
                     debounce_sec = system_settings.get("new_guest_debounce_seconds", NEW_GUEST_DEBOUNCE_SECONDS)
@@ -640,7 +614,7 @@ class GuestTrackManager:
                     if track_age_seconds < debounce_sec:
                         resolved_customer_id = None
                     elif known_similarity >= debounce_sim:
-                        resolved_customer_id = None
+                        resolved_customer_id = match_id
                     else:
                         resolved_customer_id = self._register_guest(
                             avg_guest_emb, track_state
