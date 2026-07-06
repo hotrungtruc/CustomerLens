@@ -39,6 +39,7 @@ export default function CameraStream({
     cameraError,
     sendCrop,
     edgeSettings,
+    faceImagesRef,
   } = useCamera(cameraId);
 
   const mapBbox = useVideoBbox(videoRef, frameSize.width, frameSize.height);
@@ -46,8 +47,13 @@ export default function CameraStream({
 
   // Lift customers + frameSize to parent whenever they change
   useEffect(() => {
-    onCustomersChange?.(customers, frameSize);
-  }, [customers, frameSize, onCustomersChange]);
+    // Attach base64 crop image to each customer for UI avatar
+    const enrichedCustomers = customers.map(c => ({
+       ...c,
+       faceImage: faceImagesRef.current[c.local_track_id] || null
+    }));
+    onCustomersChange?.(enrichedCustomers, frameSize);
+  }, [customers, frameSize, onCustomersChange, faceImagesRef]);
 
   const lastSendTimeRef = useRef({});
 
@@ -170,7 +176,8 @@ export default function CameraStream({
           }
         />
 
-        {/* Bounding box overlays */}
+        {/* Bounding box overlays - HIDDEN AS REQUESTED */}
+        {/*
         <div className="pointer-events-none absolute inset-0">
           {mergedFaces.map((face) => {
             const isHl = face.backendMatch && highlightedTrackId === face.backendMatch.track_id;
@@ -213,6 +220,7 @@ export default function CameraStream({
             );
           })}
         </div>
+        */}
 
         {/* Hidden capture canvas */}
         <canvas ref={canvasRef} className="hidden" />

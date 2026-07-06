@@ -9,7 +9,7 @@ Tầng Backend của Front Door AI được xây dựng dựa trên FastAPI (`ba
 - **Chức năng:** Sử dụng bởi thiết bị Camera (Edge Device hoặc Trình duyệt) để truyền liên tục Binary Frames về máy chủ.
 - **Xác thực:** Dựa trên Cookie HTTPOnly (`device_token`) được ký phát thông qua tiến trình Enrollment. Máy chủ sẽ xác thực tính hợp lệ của Device Credential thông qua DB trước khi chấp nhận kết nối.
 - **Keep-alive & Lease:** Để tránh tình trạng một luồng bị chiếm dụng sai, máy chủ quản lý "Lease" (Phiên thuê) qua Redis (`_maintain_camera_lease`). Các lệnh Redis LUA Script được sử dụng để Renew, Takeover, và Release Lease. Máy chủ sẽ ngắt các WebSocket có ping trễ hoặc hết hạn Lease (`code 4009`).
-- **Data Payload:** Frames được nén dạng JPEG, gửi lên theo định dạng nhị phân với Metadata (JSON chiều dài 4 bytes header) kèm theo hình ảnh thô. Máy chủ đẩy payload thẳng vào Redis list `camera_frames_v2`.
+- **Data Payload:** Frames được nén dạng JPEG, gửi lên theo định dạng nhị phân với Metadata (JSON chiều dài 4 bytes header) kèm theo hình ảnh thô. Máy chủ Produce payload thẳng vào Redpanda topic `camera_frames`.
 
 ### 1.2 Luồng Observer (Dashboard Client)
 - **Endpoint:** `WS /ws/observe/{camera_id}`

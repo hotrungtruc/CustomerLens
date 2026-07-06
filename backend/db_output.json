@@ -1,0 +1,32 @@
+[
+  {
+    "customer_id": "GUEST_cam_1133bc0f82844fa58a01387068a2e1c6_4247dfbc",
+    "name": "Guest",
+    "email": null,
+    "customer_type": "guest"
+  },
+  {
+    "customer_id": "000",
+    "name": "Trung Trực Hồ",
+    "email": "hotrungtruc1706@gmail.com",
+    "customer_type": "registered"
+  },
+  {
+    "customer_id": "001",
+    "name": "Trung Trực Hồ",
+    "email": "hotrungtruc1706@gmail.com",
+    "customer_type": "registered"
+  },
+  {
+    "customer_id": "GUEST_cam_1133bc0f82844fa58a01387068a2e1c6_c7637212",
+    "name": "Guest",
+    "email": null,
+    "customer_type": "guest"
+  },
+  {
+    "customer_id": "002",
+    "name": "Trung Trực Hồ",
+    "email": "hotrungtruc1706@gmail.com",
+    "customer_type": "registered"
+  }
+]

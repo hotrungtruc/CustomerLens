@@ -5,9 +5,9 @@ Luồng xử lý AI của Front Door AI được thiết kế để giải quy�
 ## 1. Phân Phối Tác Vụ Cơ Sở (Message Broker)
 
 Thay vì tích hợp chung luồng AI với API Server, hệ thống tách rời hoàn toàn:
-- API Server (FastAPI) nhận các frames liên tục từ WebSocket và đẩy chúng vào Redis Queue (`camera_frames_v2`).
-- Một nhóm các **AI Worker (Stateless)** lắng nghe queue này (`BLPOP`), kéo frame về để phân tích. Sự tách biệt này giúp mở rộng năng lực xử lý (Horizontal Scaling) vô hạn bằng cách chạy nhiều AI Worker song song.
-- Worker sẽ tự động **Drop (bỏ qua)** các frame bị trễ (delay > 0.5s) để tránh tình trạng thắt nút cổ chai (bottleneck) tích tụ trên hàng đợi.
+- API Server (FastAPI) nhận các frames liên tục từ WebSocket và Produce chúng vào **Redpanda** (topic `camera_frames`) thay vì Redis.
+- Một nhóm các **AI Worker (Stateless)** lắng nghe qua cơ chế Kafka Consumer Group, kéo frame về theo các **Lô (Batch Polling)**. Sự tách biệt này giúp mở rộng năng lực xử lý (Horizontal Scaling).
+- Bằng cách nhóm các frame theo `local_track_id` trong 1 lô, Worker tự động **Deduplicate (loại bỏ)** các frame trung gian bị trễ và chỉ lấy ảnh mới nhất để đem đi nhúng, giải quyết hoàn toàn bài toán độ trễ (latency).
 
 ## 2. Các Tầng Xử lý Bên Trong Worker (Processing Layers)
 
@@ -49,12 +49,12 @@ Việc trích xuất và nhận diện đặc trưng khuôn mặt liên tục tr
 ```mermaid
 sequenceDiagram
     participant API as API Server (Gateway)
-    participant Redis as Redis Queue
+    participant RP as Redpanda
     participant Worker as AI Worker
     participant DB as PostgreSQL (Supabase)
 
-    API->>Redis: Publish Frame
-    Redis->>Worker: Pop Frame (BLPOP)
+    API->>RP: Produce Frame (camera_frames)
+    RP->>Worker: Batch Poll & Deduplicate
     Worker->>Worker: MediaPipe Face Detection
     Worker->>Worker: Kalman Filter & IOU Tracking
     

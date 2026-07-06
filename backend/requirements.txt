@@ -9,3 +9,5 @@ uvicorn[standard]
 scipy
 psycopg2-binary
 redis
+aiokafka
+kafka-python

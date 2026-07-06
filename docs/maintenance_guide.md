@@ -58,7 +58,7 @@ Mọi file trong thư mục `data/images/` sẽ được upload lên Supabase St
 
 ### 3.3. Camera Bị Lag / Khung hình trễ (Latency)
 - **Dấu hiệu:** Người đi qua cửa nhưng vài giây sau khung xanh Tracking mới hiện lên.
-- **Nguyên nhân:** Có thể số lượng AI Worker hiện tại không đủ đáp ứng số lượng người trong khung hình, dẫn đến tình trạng thắt cổ chai ở hàng đợi Redis (`camera_frames_v2`).
+- **Nguyên nhân:** Có thể số lượng AI Worker hiện tại không đủ đáp ứng số lượng người trong khung hình, dẫn đến việc phải xử lý quá nhiều batch lớn từ Redpanda (mặc dù đã có Deduplication nhưng nhúng nhiều người cùng lúc vẫn tốn thời gian).
 - **Khắc phục:** 
   - Kiểm tra cấu hình thread của Docker (`OMP_NUM_THREADS=2`, v.v.).
-  - Bật thêm các AI Worker (Thêm server Worker mới hoặc tăng số container trên các máy Worker hiện tại) để xử lý lượng tải lớn hơn. Hệ thống sẽ tự động cân bằng tải qua Redis Queue.
+  - Bật thêm các AI Worker (Thêm server Worker mới hoặc tăng số container trên các máy Worker hiện tại) để chia sẻ tải trong Consumer Group của Redpanda.

@@ -9,6 +9,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 import redis
+from kafka import KafkaConsumer
 
 # Add the parent directory to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,44 +37,76 @@ def main():
     frame_queue = "camera_frames_v2"
     frame_count = 0
     
-    logger.info("Worker is ready and waiting for frames on global queue 'camera_frames_v2'...")
+    KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
+    logger.info(f"Worker is ready and waiting for frames on Redpanda '{KAFKA_BOOTSTRAP_SERVERS}'...")
     
+    try:
+        consumer = KafkaConsumer(
+            "camera_frames",
+            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+            group_id="ai_workers",
+            auto_offset_reset='latest',
+            enable_auto_commit=True
+        )
+    except Exception as e:
+        logger.error(f"Failed to connect to Redpanda: {e}")
+        sys.exit(1)
+        
     while True:
         try:
-            # BLPOP blocks until an item is available (LIFO: getting the most recently lpush'd item)
-            result = redis_client.blpop([frame_queue], timeout=1)
+            # Batch Polling (Max 50 records)
+            records = consumer.poll(timeout_ms=1000, max_records=50)
             
-            if not result:
+            if not records:
                 continue
                 
-            queue_name, item = result
-            
-            # Unpack 4-byte length
-            meta_len = int.from_bytes(item[:4], byteorder="big")
-            meta_json = item[4:4+meta_len].decode("utf-8")
-            data = json.loads(meta_json)
-            
-            # Drop frame if delayed > 500ms (realtime constraint)
-            timestamp_str = data.get("timestamp")
-            if timestamp_str:
-                try:
-                    frame_time = datetime.fromisoformat(timestamp_str).timestamp()
-                    delay = time.time() - frame_time
-                    if delay > 0.5:
-                        logger.warning(f"Dropping stale frame (delay: {delay:.3f}s)")
+            # Deduplication: keep only the latest frame per (connection_id, local_track_id)
+            latest_frames = {}
+            for topic_partition, messages in records.items():
+                for msg in messages:
+                    item = msg.value
+                    meta_len = int.from_bytes(item[:4], byteorder="big")
+                    try:
+                        meta_json = item[4:4+meta_len].decode("utf-8")
+                        data = json.loads(meta_json)
+                    except Exception as e:
+                        logger.error(f"Failed to parse metadata: {e}")
                         continue
-                except Exception:
-                    pass
-            
-            # It's a frame (Binary Packed)
-            frame_count += 1
-            
-            # Reload settings every 60 frames to check for updates
-            if frame_count % 60 == 0:
-                system_settings.load_settings()
+                    
+                    connection_id = data.get("connection_id")
+                    local_track_id = data.get("local_track_id")
+                    
+                    if not connection_id:
+                        continue
+                        
+                    # If it's a full frame without track id, don't deduplicate by track id
+                    key = (connection_id, local_track_id) if local_track_id else (connection_id, id(msg))
+                    
+                    # Store the latest message for this key (messages are ordered by offset)
+                    latest_frames[key] = (item, data, meta_len)
+
+            for key, (item, data, meta_len) in latest_frames.items():
+                # Drop frame if delayed > 500ms (realtime constraint)
+                timestamp_str = data.get("timestamp")
+                if timestamp_str:
+                    try:
+                        frame_time = datetime.fromisoformat(timestamp_str).timestamp()
+                        delay = time.time() - frame_time
+                        if delay > 0.5:
+                            logger.warning(f"Dropping stale frame (delay: {delay:.3f}s)")
+                            continue
+                    except Exception:
+                        pass
                 
-            current_n_frames = system_settings.get("process_every_n_frames", PROCESS_EVERY_N_FRAMES)
-            raw_image_bytes = item[4+meta_len:]
+                # It's a frame (Binary Packed)
+                frame_count += 1
+                
+                # Reload settings every 60 frames to check for updates
+                if frame_count % 60 == 0:
+                    system_settings.load_settings()
+                    
+                current_n_frames = system_settings.get("process_every_n_frames", PROCESS_EVERY_N_FRAMES)
+                raw_image_bytes = item[4+meta_len:]
 
             opeid = data.get("opeid")
             camera_id = data.get("camera_id")

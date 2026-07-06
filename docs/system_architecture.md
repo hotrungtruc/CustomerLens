@@ -13,12 +13,12 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
    - Tự động cắt mặt (crop) và chỉ stream phần ảnh khuôn mặt (kèm `local_track_id`) qua **WebSocket** (Subprotocol: `camera-observer`) với tần suất tối ưu (vd: 1 lần/giây).
 2. **Gateway Tier (FastAPI Backend):**
    - Đóng vai trò là điểm cuối (endpoint) giao tiếp với người dùng (`routes.py`).
-   - Tiếp nhận luồng WebSocket, bóc tách protocol nhị phân (chứa siêu dữ liệu Edge Crop + ảnh JPEG) và đẩy vào hàng đợi thông qua **Redis** (`camera_frames_v2`).
+   - Tiếp nhận luồng WebSocket, bóc tách protocol nhị phân (chứa siêu dữ liệu Edge Crop + ảnh JPEG) và đẩy vào hàng đợi thông qua **Redpanda** (Event Sourcing - topic `camera_frames`).
    - Xử lý gán nhãn thông tin hồ sơ bằng cách mapping `local_track_id` từ Worker trả về.
    - Chờ nhận kết quả từ Redis (qua cơ chế Pub/Sub) và truyền lại cho Frontend.
 3. **Worker Tier (AI Processing):**
    - Là các tiến trình (containers) độc lập, hoàn toàn **Stateless** (không lưu trạng thái - `ai_worker.py`).
-   - Lắng nghe hàng đợi từ Redis, kéo frame về, xử lý phát hiện (Detection), theo dõi (Tracking) và trích xuất vector (Embedding).
+   - Lắng nghe sự kiện từ Redpanda qua cơ chế **Batch Polling & Deduplication** (chỉ lấy ảnh mới nhất của mỗi người), kéo frame về, xử lý phát hiện (Detection), theo dõi (Tracking) và trích xuất vector (Embedding).
    - Đẩy kết quả trở lại một kênh (channel) đặc thù của `connection_id` tương ứng trên Redis (Channel name: `worker_results_{connection_id}`).
 4. **Data Tier (Database & Cloud Storage):**
    - **PostgreSQL (Supabase):** Kết hợp `pgvector` cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer. Dual-write fallback với SQLite.
@@ -28,10 +28,10 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
 
 ## 2. Luồng Dữ liệu (Data Flow) & Scalability
 
-### 2.1. Phân phối tác vụ qua Redis Pub/Sub
-Hệ thống sử dụng Redis làm Message Broker trung tâm:
-- API Server nhận frame từ WebSocket và đẩy vào Redis list/queue (định dạng nhị phân với 4 byte header để chỉ định metadata).
-- Bất kỳ AI Worker nào đang rảnh (Idle) sẽ block (`BLPOP`) trên queue này để xử lý ngay lập tức khi có frame mới.
+### 2.1. Phân phối tác vụ qua Redpanda & Redis
+Hệ thống sử dụng **Redpanda** cho luồng dữ liệu vào (Event Sourcing) và **Redis** cho luồng kết quả ra:
+- API Server nhận frame từ WebSocket và Produce vào topic `camera_frames` của Redpanda (định dạng nhị phân với 4 byte header để chỉ định metadata). Data được giữ lại (Retention 2GB) phục vụ Replay.
+- Bất kỳ AI Worker nào cũng thuộc chung một Consumer Group, kéo dữ liệu theo lô lớn (Batch Polling). Việc xử lý lô lớn giúp Worker bỏ qua (drop) các frame trùng lặp cũ và luôn bắt kịp tốc độ Realtime.
 - Cơ chế này cho phép **Horizontal Scaling** vô hạn: API Server không bao giờ bị nghẽn CPU dù số lượng Camera tăng lên, các Worker cũng không bị gán chặt với bất kỳ Camera cụ thể nào.
 
 ### 2.2. Edge Tracking & Caching
@@ -52,7 +52,7 @@ graph TD
     end
 
     subgraph Backend [Master Node / Gateway]
-        C -->|1. Push Frame (camera_frames_v2)| D[(Redis Queue)]
+        C -->|1. Produce (camera_frames)| D[(Redpanda)]
         E[(Redis Pub/Sub)] -->|4. Subscribe (worker_results_...)| C
     end
 
@@ -60,8 +60,8 @@ graph TD
         F[AI Worker 1 (Stateless)]
         G[AI Worker 2 (Stateless)]
         
-        D -->|2. Pop Frame BLPOP| F
-        D -->|2. Pop Frame BLPOP| G
+        D -->|2. Batch Poll & Deduplicate| F
+        D -->|2. Batch Poll & Deduplicate| G
         
         F -->|3. Publish Result| E
         G -->|3. Publish Result| E

@@ -14,6 +14,24 @@ import redis.asyncio as aioredis
 from fastapi import (APIRouter, Header, HTTPException, Request, WebSocket,
                      WebSocketDisconnect)
 from fastapi.responses import Response
+from aiokafka import AIOKafkaProducer
+
+kafka_producer: AIOKafkaProducer = None
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
+
+async def init_kafka_producer():
+    global kafka_producer
+    try:
+        kafka_producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
+        await kafka_producer.start()
+        print(f"Connected to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}")
+    except Exception as e:
+        print(f"Failed to connect to Redpanda: {e}")
+
+async def close_kafka_producer():
+    global kafka_producer
+    if kafka_producer:
+        await kafka_producer.stop()
 
 # Session store mapping hex tokens to user dicts
 ACTIVE_SESSIONS = {}
@@ -1335,9 +1353,11 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     
                     packed_payload = meta_len_out + meta_json + raw_image_bytes
                     
-                    # Push to global camera_frames queue
-                    await r.lpush("camera_frames_v2", packed_payload)
-                    await r.ltrim("camera_frames_v2", 0, 49)
+                    # Push to global camera_frames queue via Redpanda
+                    if kafka_producer:
+                        await kafka_producer.send_and_wait("camera_frames", packed_payload)
+                    else:
+                        print("Warning: kafka_producer is not initialized!")
             elif "text" in msg:
                 try:
                     text_data = msg["text"]

@@ -1,7 +1,14 @@
 @echo off
 echo Dang copy file backend/.env len cac server EC2...
-
 echo.
+echo ========================================================
+echo LUU Y: TRUOC KHI CHAY SCRIPT NAY, HAY DAM BAO FILE backend/.env
+echo CUA BAN DA CAU HINH CAC BIEN SAU TRO DEN MASTER IP (15.134.121.250):
+echo REDIS_URL=redis://15.134.121.250:6379/0
+echo KAFKA_BOOTSTRAP_SERVERS=15.134.121.250:9092
+echo ========================================================
+echo.
+
 echo [1/3] Copying to Master (15.134.121.250)...
 scp -i "C:\Users\hotru\Downloads\master.pem" -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL "backend\.env" ubuntu@15.134.121.250:~/face-recognition-system/backend/.env
 

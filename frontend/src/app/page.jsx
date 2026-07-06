@@ -246,11 +246,16 @@ function CustomerCard({ c, onClick }) {
       onClick={() => onClick(c)}
       className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 transition-colors"
     >
-      {/* Badge khớp bounding box */}
+      {/* Avatar (hiển thị ảnh crop hoặc chữ cái) */}
       <div
-        className={`h-10 w-10 shrink-0 flex items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}
+        className={`h-10 w-10 shrink-0 flex items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white overflow-hidden ${theme.base}`}
       >
-        {symbol}
+        {c.faceImage ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={c.faceImage} alt="Face" className="w-full h-full object-cover" />
+        ) : (
+          symbol
+        )}
       </div>
 
       <div className="min-w-0 flex-1">

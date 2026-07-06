@@ -1,6 +1,11 @@
 stages:
   - deploy
 
+variables:
+  MASTER_IP: "15.134.121.250"
+  WORKER_IPS: "3.26.147.158 3.107.239.168"
+  EC2_USER: "ubuntu"
+
 deploy_production:
   stage: deploy
   # Only run on pushes to the main branch
@@ -30,7 +35,7 @@ deploy_production:
         git reset --hard origin/main
 
           sudo docker compose down --timeout 30
-          sudo docker compose up --build -d
+          sudo docker compose up --build -d backend redis redpanda ai_worker
           sudo docker image prune -f
 ENDSSH
 
@@ -47,7 +52,7 @@ ENDSSH
           git reset --hard origin/main
 
           sudo docker compose down --timeout 30
-          sudo docker compose up --build -d
+          sudo docker compose up --build -d ai_worker
           sudo docker image prune -f
 ENDSSH
       done

@@ -53,6 +53,7 @@ export function useCamera(cameraId) {
   const serverReadyRef = useRef(false);
   const skipNextDeviceStartRef = useRef(false);
   const peerConnectionsRef = useRef({});
+  const faceImagesRef = useRef({});
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -226,9 +227,9 @@ export function useCamera(cameraId) {
     try {
       const { originX, originY, width, height } = face.pixelBox;
       
-      // Use configured padding
-      const padX = width * edgeSettings.edge_crop_padding;
-      const padY = height * edgeSettings.edge_crop_padding;
+      // Use 20% padding as requested
+      const padX = width * 0.20;
+      const padY = height * 0.20;
       
       const sx = Math.max(0, originX - padX);
       const sy = Math.max(0, originY - padY);
@@ -243,6 +244,11 @@ export function useCamera(cameraId) {
       canvas.width = w;
       canvas.height = h;
       ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, w, h);
+
+      // Save crop for UI Avatar (only capture once per track to prevent flickering)
+      if (!faceImagesRef.current[face.local_track_id]) {
+        faceImagesRef.current[face.local_track_id] = canvas.toDataURL("image/jpeg", 0.7);
+      }
 
       canvas.toBlob(
         (blob) => {
@@ -401,5 +407,6 @@ export function useCamera(cameraId) {
     cameraError,
     sendCrop,
     edgeSettings,
+    faceImagesRef,
   };
 }
