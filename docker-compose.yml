@@ -76,7 +76,7 @@ services:
       - redpanda
       - start
       - --smp 1
-      - --memory 256M
+      - --memory 512M
       - --reserve-memory 0M
       - --overprovisioned
       - --node-id 0
