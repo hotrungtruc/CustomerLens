@@ -32,7 +32,8 @@ Lưu trữ thông tin chi tiết của Khách Hàng và Khách Vãng Lai (Guest)
 - `name` (VARCHAR), `phone`, `email`
 - `customer_type` (VARCHAR): Định danh là `registered` hoặc `guest`.
 - `loyalty_tier` (VARCHAR): Hạng khách hàng (`Standard`, `VIP`, ...).
-- `total_visits`, `last_visit`, `total_spending`: Dữ liệu phân tích (Analytics) của khách.
+- `total_visits`, `total_spending`: Dữ liệu phân tích (Analytics) của khách.
+- `last_visit`, `registered_at`, `created_at`, `updated_at` (TIMESTAMP): Các mốc thời gian lưu trữ ở dạng ngày tháng chuẩn (đã được tối ưu hóa từ VARCHAR để truy vấn tốc độ cao).
 
 ### Bảng `customer_embeddings` (Bảng Vector)
 Lưu trữ Vector Đặc Trưng Sinh Trắc Học của khuôn mặt.
@@ -41,9 +42,10 @@ Lưu trữ Vector Đặc Trưng Sinh Trắc Học của khuôn mặt.
   2. Trường `face_embedding` (Kiểu `BYTEA` nhị phân): Định dạng dự phòng khi hệ thống chuyển sang dùng SQLite.
 - AI Pipeline chỉ cần 1 trong 2 trường này để có thể phân tích độ tương đồng.
 
-### Bảng `recognize_logs`
-Bảng lưu trữ lịch sử nhận diện chi tiết (tới từng frame):
-- `id` (UUID PRIMARY KEY)
+### Bảng `recognize_logs` (Đã được Partitioning)
+Bảng lưu trữ lịch sử nhận diện chi tiết (tới từng frame). **Bảng này được chia mảnh (Partition) tự động theo từng tháng thông qua `pg_partman` để đảm bảo hệ thống không bị chậm khi số lượng log tăng đột biến.** Đồng thời kết hợp với `pg_cron` để tự động xóa log (Data Retention = 1 tháng).
+- `id` (UUID)
+- `timestamp` (TIMESTAMP): Khóa chính bao gồm `(id, timestamp)` phục vụ cho Partition. Bảng được đánh index `(camera_id, timestamp DESC)` và `(customer_id, timestamp DESC)` để trích xuất nhanh.
 - `opeid` (UUID): ID hoạt động để phân nhóm log.
 - `camera_id` (VARCHAR)
 - `customer_id` (VARCHAR): Khách hàng được nhận diện trong log.

@@ -203,11 +203,11 @@ export async function fetchUsers() {
   return response.json();
 }
 
-export async function createModerator(username, password, sendBbox = true) {
+export async function createModerator(username, password) {
   const response = await apiFetch(`${API_BASE_URL}/api/users`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify({ username, password, send_bbox: sendBbox }),
+    body: JSON.stringify({ username, password }),
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));

@@ -80,3 +80,15 @@ graph TD
 - **Track Lifecycle Caching:** Dữ liệu hồ sơ khách hàng chỉ truy vấn **1 lần duy nhất** khi khuôn mặt xuất hiện. Cache in-RAM qua `GuestTrackManager`.
 - **Throttling & Lazy Execution:** Embedding chỉ được thực thi với các frame đủ điều kiện. Worker chủ động drop các frame đã "quá hạn" (`delay > 0.5s`) trên hàng đợi để đảm bảo tính Real-time.
 - **Centralized Logging:** Module `logger.py` chuẩn hóa toàn bộ log trên backend, hỗ trợ tốt cho việc Debug trên Docker.
+
+## 5. Hạ tầng Triển khai (Deployment Infrastructure)
+
+Hệ thống hiện tại được triển khai trên nền tảng AWS EC2 với mô hình cluster Master-Worker:
+
+- **Master Node (Gateway, API, Database, Message Broker):**
+  - **IP:** `15.134.121.250`
+  - **SSH Key:** `master.pem` (đường dẫn cục bộ: `C:\Users\hotru\Downloads\master.pem`)
+- **Worker Nodes (AI Processing - 2 instances):**
+  - **Worker 1 IP:** `3.26.147.158`
+  - **Worker 2 IP:** `3.107.239.168`
+  - **SSH Key:** `workers_2.pem` (đường dẫn cục bộ: `C:\Users\hotru\Downloads\workers_2.pem`)

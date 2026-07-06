@@ -171,7 +171,7 @@ def ensure_schema(conn):
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(32) DEFAULT 'active'")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
         conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-        conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS send_bbox INTEGER DEFAULT 1")
+
         conn.execute(
             "UPDATE users SET role = COALESCE(role, CASE WHEN LOWER(username) = 'admin' THEN 'admin' ELSE 'moderator' END)"
         )
@@ -231,25 +231,25 @@ def ensure_schema(conn):
                 phone VARCHAR(50) DEFAULT NULL,
                 email VARCHAR(255) DEFAULT NULL,
                 occupation VARCHAR(255) DEFAULT NULL,
-                registered_at VARCHAR(255) DEFAULT NULL,
+                registered_at TIMESTAMP DEFAULT NULL,
                 tenure INTEGER NOT NULL DEFAULT 0,
                 loyalty_tier VARCHAR(50) NOT NULL DEFAULT 'Standard',
                 total_visits INTEGER NOT NULL DEFAULT 0,
-                last_visit VARCHAR(255) NOT NULL DEFAULT '1970-01-01 00:00:00',
+                last_visit TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:00',
                 total_spending REAL NOT NULL DEFAULT 0,
                 note TEXT DEFAULT NULL,
                 customer_type VARCHAR(50) NOT NULL DEFAULT 'registered',
                 status VARCHAR(50) NOT NULL DEFAULT 'active',
-                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
         _add_missing_columns(
             conn,
             "customers",
             {
-                "created_at": "VARCHAR(255) DEFAULT CURRENT_TIMESTAMP",
-                "updated_at": "VARCHAR(255) DEFAULT CURRENT_TIMESTAMP",
+                "created_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+                "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
             },
         )
         conn.execute("""
@@ -343,17 +343,21 @@ def ensure_schema(conn):
                 created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """)
+        # Create sequence or table if not exists for recognize_logs
+        # Since partman is used, this ensures the parent table exists.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS recognize_logs (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                id UUID DEFAULT gen_random_uuid(),
                 opeid UUID NOT NULL,
                 camera_id VARCHAR(255) NOT NULL,
                 customer_id VARCHAR(255) DEFAULT NULL,
                 track_id INTEGER DEFAULT NULL,
                 bbox JSONB DEFAULT NULL,
                 connection_id VARCHAR(64) DEFAULT NULL,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                moderator_username VARCHAR(255) DEFAULT 'admin',
+                PRIMARY KEY (id, timestamp)
+            ) PARTITION BY RANGE (timestamp);
             """)
         _add_missing_columns(
             conn,
@@ -367,17 +371,17 @@ def ensure_schema(conn):
                 "phone": "VARCHAR(50) DEFAULT NULL",
                 "email": "VARCHAR(255) DEFAULT NULL",
                 "occupation": "VARCHAR(255) DEFAULT NULL",
-                "registered_at": "VARCHAR(255) DEFAULT NULL",
+                "registered_at": "TIMESTAMP DEFAULT NULL",
                 "tenure": "INTEGER NOT NULL DEFAULT 0",
                 "loyalty_tier": "VARCHAR(50) NOT NULL DEFAULT 'Standard'",
                 "total_visits": "INTEGER NOT NULL DEFAULT 0",
-                "last_visit": "VARCHAR(255) NOT NULL DEFAULT '1970-01-01 00:00:00'",
+                "last_visit": "TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:00'",
                 "total_spending": "REAL NOT NULL DEFAULT 0",
                 "note": "TEXT DEFAULT NULL",
                 "customer_type": "VARCHAR(50) NOT NULL DEFAULT 'registered'",
                 "status": "VARCHAR(50) NOT NULL DEFAULT 'active'",
-                "created_at": "VARCHAR(255) DEFAULT NULL",
-                "updated_at": "VARCHAR(255) DEFAULT NULL",
+                "created_at": "TIMESTAMP DEFAULT NULL",
+                "updated_at": "TIMESTAMP DEFAULT NULL",
             },
         )
         conn.commit()
@@ -425,7 +429,7 @@ def ensure_schema(conn):
                 "status": "TEXT NOT NULL DEFAULT 'active'",
                 "created_at": "TEXT DEFAULT NULL",
                 "updated_at": "TEXT DEFAULT NULL",
-                "send_bbox": "INTEGER DEFAULT 1",
+
         },
     )
     conn.execute(
@@ -818,7 +822,7 @@ def list_users_with_permissions(conn):
     }
     users = conn.execute(
         """
-        SELECT id, username, role, cameras, status, created_at, updated_at, send_bbox
+        SELECT id, username, role, cameras, status, created_at, updated_at
         FROM users
         ORDER BY username ASC
         """

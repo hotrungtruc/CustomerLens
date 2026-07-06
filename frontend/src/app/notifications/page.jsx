@@ -27,7 +27,7 @@ import {
   updateModerator,
 } from "../../services/api";
 
-const EMPTY_FORM = { username: "", password: "", cameraIds: [], sendBbox: true };
+const EMPTY_FORM = { username: "", password: "", cameraIds: [] };
 
 function StatBox({ Icon, label, value }) {
   return (
@@ -169,7 +169,6 @@ export default function PermissionsPage() {
       cameraIds: (user.camera_ids || []).filter((cameraId) =>
         cameraMap.has(cameraId),
       ),
-      sendBbox: user.send_bbox !== undefined ? Boolean(user.send_bbox) : true,
     });
     setMessage("");
     setError("");
@@ -200,15 +199,17 @@ export default function PermissionsPage() {
     setMessage("");
     try {
       if (editingUser) {
-        const updatePayload = { send_bbox: form.sendBbox };
+        const updatePayload = {};
         if (form.password) {
           updatePayload.password = form.password;
         }
-        await updateModerator(editingUser.username, updatePayload);
+        if (Object.keys(updatePayload).length > 0) {
+          await updateModerator(editingUser.username, updatePayload);
+        }
         await updateCameraPermissions(editingUser.username, form.cameraIds);
         setMessage(`Đã cập nhật moderator ${editingUser.username}.`);
       } else {
-        await createModerator(username, form.password, form.sendBbox);
+        await createModerator(username, form.password);
         await updateCameraPermissions(username, form.cameraIds);
         setMessage(`Đã tạo moderator ${username}.`);
       }
@@ -337,24 +338,7 @@ export default function PermissionsPage() {
                       ))}
                     </div>
                   </div>
-                  <div>
-                    <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-white p-3 hover:border-blue-200 hover:bg-blue-50/40">
-                      <input
-                        type="checkbox"
-                        checked={form.sendBbox}
-                        onChange={(e) => setForm((curr) => ({ ...curr, sendBbox: e.target.checked }))}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate text-sm font-semibold text-slate-800">
-                          Hiển thị Bounding Box
-                        </span>
-                        <span className="block truncate text-[10px] text-slate-500">
-                          Bật tùy chọn này để moderator nhận được bounding box
-                        </span>
-                      </span>
-                    </label>
-                  </div>
+
                   {error ? <p className="text-sm text-rose-600">{error}</p> : null}
                   {message ? <p className="text-sm text-blue-700">{message}</p> : null}
                   <button

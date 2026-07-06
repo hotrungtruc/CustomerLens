@@ -82,16 +82,21 @@ from app.core.settings import system_settings
 from app.core.guest_tracking import GuestTrackManager
 
 def _apply_profile_to_payload(payload: dict, info: dict):
+    from datetime import datetime
+    
+    def safe_iso(val):
+        return val.isoformat() if isinstance(val, datetime) else val
+
     payload.update({
         "id": info["customer_id"],
         "name": info["name"] or "Khach moi",
         "email": info.get("email"),
         "occupation": info.get("occupation", "General"),
-        "registered_at": info.get("registered_at"),
+        "registered_at": safe_iso(info.get("registered_at")),
         "tenure": info.get("tenure", 0),
         "loyalty_tier": info.get("loyalty_tier", "Standard"),
         "total_visits": info.get("total_visits", 0),
-        "last_visit": info.get("last_visit"),
+        "last_visit": safe_iso(info.get("last_visit")),
         "total_spending": info.get("total_spending", 0),
         "service_category": info.get("service_category", "General"),
         "service_start_year": info.get("service_start_year", 0),
@@ -609,7 +614,7 @@ async def api_login(request: Request):
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, username, password_hash, role, cameras, status, send_bbox FROM users WHERE username = ?",
+            "SELECT id, username, password_hash, role, cameras, status FROM users WHERE username = ?",
             (username,),
         )
         row = cursor.fetchone()
@@ -632,7 +637,6 @@ async def api_login(request: Request):
             "username": row["username"],
             "role": row["role"],
             "cameras": cameras_list,
-            "send_bbox": bool(dict(row).get("send_bbox", 1)),
         }
         ACTIVE_SESSIONS[token] = user_info
 
@@ -1550,7 +1554,6 @@ async def create_user(
     payload = await request.json()
     username = str(payload.get("username") or "").strip()
     password = str(payload.get("password") or "")
-    send_bbox = 1 if payload.get("send_bbox", True) else 0
     if not username or len(username) > 255:
         raise HTTPException(status_code=400, detail="Username is required")
     if len(password) < 6:
@@ -1564,10 +1567,10 @@ async def create_user(
             raise HTTPException(status_code=409, detail="Username already exists")
         conn.execute(
             """
-            INSERT INTO users (username, password_hash, role, status, send_bbox)
-            VALUES (?, ?, 'moderator', 'active', ?)
+            INSERT INTO users (username, password_hash, role, status)
+            VALUES (?, ?, 'moderator', 'active')
             """,
-            (username, hashlib.sha256(password.encode("utf-8")).hexdigest(), send_bbox),
+            (username, hashlib.sha256(password.encode("utf-8")).hexdigest()),
         )
         conn.commit()
         user = conn.execute(
@@ -1597,7 +1600,6 @@ async def update_user(
     payload = await request.json()
     password = str(payload.get("password") or "")
     status = payload.get("status")
-    send_bbox = payload.get("send_bbox")
     if password and len(password) < 6:
         raise HTTPException(status_code=400, detail="Password must have at least 6 characters")
     if status is not None and status not in {"active", "disabled"}:
@@ -1623,13 +1625,8 @@ async def update_user(
                 "UPDATE users SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (status, user["id"]),
             )
-        if send_bbox is not None:
-            conn.execute(
-                "UPDATE users SET send_bbox = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (1 if send_bbox else 0, user["id"]),
-            )
         conn.commit()
-        if password or status == "disabled" or send_bbox is not None:
+        if password or status == "disabled":
             revoke_user_sessions(user["id"])
         return {"status": "success", "username": username}
     except HTTPException:
@@ -1752,10 +1749,6 @@ async def websocket_observe(websocket: WebSocket, camera_id: str):
                     channel = message["channel"].decode("utf-8")
                     data = json.loads(message["data"])
                     if channel == f"camera_updates:{camera_id}":
-                        if not bool(user.get("send_bbox", True)) and "customers" in data:
-                            for c in data["customers"]:
-                                c.pop("bbox", None)
-                                c.pop("landmark", None)
                         await websocket.send_json(data)
                     elif channel == f"webrtc_signaling_{camera_id}":
                         if data.get("sender") == "camera":
