@@ -394,9 +394,9 @@ def resolve_device_identity(request: Request, response: Response):
                 invalid_response.delete_cookie(
                     DEVICE_COOKIE_NAME,
                     path="/",
-                    secure=_device_cookie_secure(request),
+                    secure=True,
                     httponly=True,
-                    samesite="lax",
+                    samesite="none",
                 )
                 return invalid_response
 
@@ -432,9 +432,9 @@ def resolve_device_identity(request: Request, response: Response):
             value=raw_token,
             max_age=DEVICE_COOKIE_MAX_AGE,
             path="/",
-            secure=_device_cookie_secure(request),
+            secure=True,
             httponly=True,
-            samesite="lax",
+            samesite="none",
         )
         return {
             "camera_id": camera_id,
@@ -573,9 +573,9 @@ async def claim_device_enrollment(request: Request, response: Response):
             value=raw_token,
             max_age=DEVICE_COOKIE_MAX_AGE,
             path="/",
-            secure=_device_cookie_secure(request),
+            secure=True,
             httponly=True,
-            samesite="lax",
+            samesite="none",
         )
         return {
             "status": "success",
@@ -1021,7 +1021,7 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
 async def websocket_camera(websocket: WebSocket, camera_id: str):
     credential, auth_error = _resolve_websocket_camera(websocket)
     if auth_error or credential["camera_id"] != camera_id:
-        print(f"WS Auth Error: {auth_error}, expected {camera_id} but got {credential.get('camera_id') if credential else None}")
+        print(f"WS Auth Error: {auth_error}, expected {camera_id} but got {credential.get('camera_id') if credential else None}", flush=True)
         await websocket.close(code=1008)
         return
 
@@ -1043,7 +1043,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         return
 
     if not acquired:
-        print(f"WS Camera Lease Error: could not acquire lease for {camera_id}")
+        print(f"WS Camera Lease Error: could not acquire lease for {camera_id}", flush=True)
         await r.aclose()
         await websocket.close(code=1008)
         return
