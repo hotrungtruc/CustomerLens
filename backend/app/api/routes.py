@@ -1258,8 +1258,9 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                             "camera_id": camera_id,
                             "connection_id": connection_id,
                         }
-                        await websocket.send_json(pubsub_message)
-                        await r.publish(f"camera_updates:{camera_id}", json.dumps(pubsub_message))
+                        json_str = json.dumps(pubsub_message, default=str)
+                        await websocket.send_text(json_str)
+                        await r.publish(f"camera_updates:{camera_id}", json_str)
                     elif channel == f"webrtc_signaling_{camera_id}":
                         if data.get("sender") == "admin":
                             await websocket.send_json(data)
