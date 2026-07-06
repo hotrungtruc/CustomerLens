@@ -1019,10 +1019,15 @@ def api_get_customer_by_id(customer_id: str, authorization: str | None = Header(
 
 @router.websocket("/ws/{camera_id}")
 async def websocket_camera(websocket: WebSocket, camera_id: str):
+    try:
+        await websocket.accept()
+    except Exception:
+        return
+
     credential, auth_error = _resolve_websocket_camera(websocket)
     if auth_error or credential["camera_id"] != camera_id:
         print(f"WS Auth Error: {auth_error}, expected {camera_id} but got {credential.get('camera_id') if credential else None}", flush=True)
-        await websocket.close(code=1008)
+        await websocket.close(code=4003)
         return
 
     connection_id = "conn_" + uuid.uuid4().hex
@@ -1045,15 +1050,9 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
     if not acquired:
         print(f"WS Camera Lease Error: could not acquire lease for {camera_id}", flush=True)
         await r.aclose()
-        await websocket.close(code=1008)
+        await websocket.close(code=4008)
         return
 
-    try:
-        await websocket.accept()
-    except Exception:
-        await _release_camera_lease(r, camera_id, connection_id)
-        await r.aclose()
-        return
 
     state = get_camera_state(camera_id)
     connection_state = ConnectionState(connection_id, camera_id, websocket)
