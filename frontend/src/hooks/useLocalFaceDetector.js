@@ -83,13 +83,31 @@ export function useLocalFaceDetector(videoRef) {
                  
                  const mappedFaces = detections.detections.map(d => {
                      const { originX, originY, width, height } = d.boundingBox;
+                     
+                     // Edge detection margin (5% of width/height)
+                     const marginX = sw * 0.05;
+                     const marginY = sh * 0.05;
+                     
+                     // Check if face touches the edge
+                     const isAtEdge = 
+                        originX < marginX ||
+                        originY < marginY ||
+                        originX + width > sw - marginX ||
+                        originY + height > sh - marginY;
+                        
+                     // Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
+                     const hasValidLandmarks = d.keypoints && d.keypoints.length >= 4;
+                     
+                     const isGoodQuality = !isAtEdge && hasValidLandmarks;
+
                      return {
                          left: (originX / sw) * 100,
                          top: (originY / sh) * 100,
                          width: (width / sw) * 100,
                          height: (height / sh) * 100,
                          pixelBox: { originX, originY, width, height },
-                         keypoints: d.keypoints || []
+                         keypoints: d.keypoints || [],
+                         isGoodQuality // Flag for sending crop
                      };
                  });
 

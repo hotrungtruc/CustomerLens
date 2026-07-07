@@ -61,6 +61,11 @@ export default function CameraStream({
   useEffect(() => {
     const now = Date.now();
     localFaces.forEach(face => {
+      // Skip edge faces or incomplete faces
+      if (face.isGoodQuality === false) {
+        return;
+      }
+        
       const lastSend = lastSendTimeRef.current[face.local_track_id] || 0;
       // Send crop if not sent in the configured interval
       if (now - lastSend > (edgeSettings?.edge_send_interval_ms || 1000)) {
