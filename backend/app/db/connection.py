@@ -299,50 +299,7 @@ def ensure_schema(conn):
             conn.commit()
         except Exception:
             conn.rollback()  # Index may already exist or halfvec not supported
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS products (
-                product_id VARCHAR(255) PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT DEFAULT NULL,
-                price REAL NOT NULL DEFAULT 0,
-                category VARCHAR(255) NOT NULL DEFAULT 'General',
-                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS table_bookings (
-                booking_id VARCHAR(255) PRIMARY KEY,
-                customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
-                table_number VARCHAR(50) NOT NULL,
-                booking_at VARCHAR(255) NOT NULL,
-                party_size INTEGER NOT NULL DEFAULT 1,
-                status VARCHAR(50) NOT NULL DEFAULT 'Pending',
-                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS orders (
-                order_id VARCHAR(255) PRIMARY KEY,
-                customer_id VARCHAR(255) NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
-                order_date_time VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                total_amount REAL NOT NULL DEFAULT 0,
-                status VARCHAR(50) NOT NULL DEFAULT 'Preparing',
-                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS order_items (
-                order_item_id VARCHAR(255) PRIMARY KEY,
-                order_id VARCHAR(255) NOT NULL REFERENCES orders(order_id) ON DELETE CASCADE,
-                product_id VARCHAR(255) NOT NULL REFERENCES products(product_id) ON DELETE CASCADE,
-                quantity INTEGER NOT NULL DEFAULT 1,
-                subtotal REAL NOT NULL DEFAULT 0,
-                created_at VARCHAR(255) NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """)
+
         # Create sequence or table if not exists for recognize_logs
         # Since partman is used, this ensures the parent table exists.
         conn.execute("""
@@ -575,57 +532,7 @@ def ensure_schema(conn):
             """)
         conn.execute("DROP TABLE customer_embeddings_old")
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS products (
-            product_id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT DEFAULT NULL,
-            price REAL NOT NULL DEFAULT 0,
-            category TEXT NOT NULL DEFAULT 'General',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS table_bookings (
-            booking_id TEXT PRIMARY KEY,
-            customer_id TEXT NOT NULL,
-            table_number TEXT NOT NULL,
-            booking_at TEXT NOT NULL,
-            party_size INTEGER NOT NULL DEFAULT 1,
-            status TEXT NOT NULL DEFAULT 'Pending',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
-        )
-        """)
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS orders (
-            order_id TEXT PRIMARY KEY,
-            customer_id TEXT NOT NULL,
-            order_date_time TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            total_amount REAL NOT NULL DEFAULT 0,
-            status TEXT NOT NULL DEFAULT 'Preparing',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
-        )
-        """)
-
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS order_items (
-            order_item_id TEXT PRIMARY KEY,
-            order_id TEXT NOT NULL,
-            product_id TEXT NOT NULL,
-            quantity INTEGER NOT NULL DEFAULT 1,
-            subtotal REAL NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (order_id) REFERENCES orders(order_id),
-            FOREIGN KEY (product_id) REFERENCES products(product_id)
-        )
-        """)
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS recognize_logs (
