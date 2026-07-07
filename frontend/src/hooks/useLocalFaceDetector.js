@@ -95,11 +95,17 @@ export function useLocalFaceDetector(videoRef) {
                         originX + width > sw - marginX ||
                         originY + height > sh - marginY;
                         
-                     // Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
+                     // 1. Check Confidence Score
+                     const score = d.categories && d.categories.length > 0 ? d.categories[0].score : 1;
+                     const isHighConfidence = score > 0.8;
+                     
+                     // 2. Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
                      const hasValidLandmarks = d.keypoints && d.keypoints.length >= 4;
                      
-                     // Check for extreme profile (Yaw angle estimation)
+                     // 3. Check for extreme profile (Yaw angle & Eye distance)
                      let isExtremeProfile = false;
+                     let isEyesWideEnough = true;
+                     
                      if (hasValidLandmarks) {
                          // Indices: 0: Right Eye, 1: Left Eye, 2: Nose Tip
                          const rightEye = d.keypoints[0];
@@ -112,14 +118,23 @@ export function useLocalFaceDetector(videoRef) {
                              
                              const ratio = distRight > 0 ? distLeft / distRight : 999;
                              
-                             // 3.0 threshold as requested (3.0 for looking right, 1/3.0=0.333 for looking left)
-                             if (ratio > 3.0 || ratio < 0.333) {
+                             // 1.8 threshold (stricter: nose can't be twice as far from one eye)
+                             if (ratio > 1.8 || ratio < 0.55) {
                                  isExtremeProfile = true;
+                             }
+                             
+                             // Check Inter-Ocular Distance relative to face width
+                             const eyeDist = Math.sqrt(Math.pow(rightEye.x - leftEye.x, 2) + Math.pow(rightEye.y - leftEye.y, 2));
+                             // MediaPipe's boundingBox width is absolute pixels, sw is videoWidth
+                             const boxWidthNorm = width / sw;
+                             // Eyes should be at least 20% of the box width apart
+                             if (eyeDist < boxWidthNorm * 0.2) {
+                                 isEyesWideEnough = false;
                              }
                          }
                      }
                      
-                     const isGoodQuality = !isAtEdge && hasValidLandmarks && !isExtremeProfile;
+                     const isGoodQuality = !isAtEdge && hasValidLandmarks && !isExtremeProfile && isHighConfidence && isEyesWideEnough;
 
                      return {
                          left: (originX / sw) * 100,
