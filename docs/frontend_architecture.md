@@ -17,7 +17,11 @@ Toàn bộ Source Code Frontend nằm trong `frontend/src/app`. Dưới đây l�
 
 - **UI & Styling:** Sử dụng **Tailwind CSS** để thiết kế giao diện (Utility-first) và **Lucide React** cho hệ thống Icon đồng nhất, nhẹ, sắc nét.
 - **State Management & Data Fetching:** Sử dụng hệ thống Hook của React kết hợp với WebSocket API tích hợp sẵn (Native `WebSocket`).
-- **Edge AI (MediaPipe Vision):** Frontend có tích hợp `@mediapipe/tasks-vision` để hỗ trợ một số logic tiện ích như vẽ Bounding Box / Landmark siêu nhẹ phía máy khách (Client-side Rendering), giảm tải quá trình Render từ ảnh nhận về thành lớp vẽ Canvas tĩnh để không làm gián đoạn UX.
+- **Edge AI (MediaPipe Vision):** Frontend có tích hợp `@mediapipe/tasks-vision` để xử lý phân tích hình ảnh siêu nhẹ phía máy khách (Client-side Rendering). Hệ thống áp dụng **Bộ lọc 3 lớp (Strict Face Filtering)** ngay tại trình duyệt để "làm sạch" dữ liệu trước khi gửi lên Server:
+  1. **Lọc theo độ tự tin (Confidence > 80%):** Loại bỏ các khuôn mặt ảo giác do AI dự đoán mò (thường là gáy, tai hoặc vật thể giống mặt).
+  2. **Lọc theo góc nghiêng (Yaw Ratio):** Tính toán tỷ lệ khoảng cách từ đỉnh mũi tới hai mắt (giới hạn lệch 1.8 lần) để từ chối các ảnh nghiêng quá mức.
+  3. **Lọc theo độ rộng (Inter-Ocular Distance):** Đo khoảng cách giữa 2 mắt (phải > 20% khung mặt) để loại bỏ góc quay ngang hoàn toàn 90 độ.
+  Nhờ bộ lọc Edge AI này, Backend giảm tải được một lượng lớn ảnh rác, giúp tăng tốc độ xử lý và đảm bảo chất lượng sinh ra Vector định danh.
 
 ## 3. Quản lý Quyền Truy cập (RBAC)
 

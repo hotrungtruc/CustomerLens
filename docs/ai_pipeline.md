@@ -13,6 +13,14 @@ Thay vì tích hợp chung luồng AI với API Server, hệ thống tách rời
 
 Khi một AI Worker nhận được Frame, quá trình xử lý trải qua các bước sau thông qua 2 lớp chính: `InsightEmbedder` và `GuestTrackManager`.
 
+### Bước 0: Tiền xử lý tại Biên (Frontend Edge Filtering)
+- Trước khi Frame được gửi qua WebSocket tới Server, Frontend đóng vai trò là chốt chặn đầu tiên (Edge AI) nhờ tích hợp MediaPipe.
+- Chạy **Bộ lọc 3 lớp (Strict Face Filtering)**:
+  - Loại bỏ ảnh bị cắt xén (chạm vào viền margin 5% của camera).
+  - Loại bỏ khuôn mặt có độ tự tin thấp (`score < 0.8`) hoặc khoảng cách 2 mắt quá hẹp.
+  - Loại bỏ các góc nghiêng cực đoan bằng tỷ lệ Yaw Ratio (lệch > 1.8 lần).
+- Chỉ những khung hình chứa khuôn mặt đạt chất lượng (Quality Face) mới được crop và bắn qua WebSocket, giúp triệt tiêu hiện tượng "nhận nhầm gáy/tai" và tạo ra ID rác.
+
 ### Bước 1: Face Detection (Phát hiện khuôn mặt)
 - Sử dụng **MediaPipe Tasks API** tích hợp bên trong `InsightEmbedder` để phát hiện cực nhanh các khuôn mặt trong khung hình.
 - Trả về Bounding Box (Tọa độ khuôn mặt), Landmark (Các điểm neo khuôn mặt) kèm theo Score (Độ tin cậy).
