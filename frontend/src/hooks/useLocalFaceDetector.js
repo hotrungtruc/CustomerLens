@@ -98,7 +98,28 @@ export function useLocalFaceDetector(videoRef) {
                      // Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
                      const hasValidLandmarks = d.keypoints && d.keypoints.length >= 4;
                      
-                     const isGoodQuality = !isAtEdge && hasValidLandmarks;
+                     // Check for extreme profile (Yaw angle estimation)
+                     let isExtremeProfile = false;
+                     if (hasValidLandmarks) {
+                         // Indices: 0: Right Eye, 1: Left Eye, 2: Nose Tip
+                         const rightEye = d.keypoints[0];
+                         const leftEye = d.keypoints[1];
+                         const nose = d.keypoints[2];
+                         
+                         if (rightEye && leftEye && nose) {
+                             const distRight = Math.sqrt(Math.pow(rightEye.x - nose.x, 2) + Math.pow(rightEye.y - nose.y, 2));
+                             const distLeft = Math.sqrt(Math.pow(leftEye.x - nose.x, 2) + Math.pow(leftEye.y - nose.y, 2));
+                             
+                             const ratio = distRight > 0 ? distLeft / distRight : 999;
+                             
+                             // 3.0 threshold as requested (3.0 for looking right, 1/3.0=0.333 for looking left)
+                             if (ratio > 3.0 || ratio < 0.333) {
+                                 isExtremeProfile = true;
+                             }
+                         }
+                     }
+                     
+                     const isGoodQuality = !isAtEdge && hasValidLandmarks && !isExtremeProfile;
 
                      return {
                          left: (originX / sw) * 100,
