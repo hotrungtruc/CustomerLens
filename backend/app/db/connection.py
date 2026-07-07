@@ -128,6 +128,42 @@ def _add_missing_columns(conn, table_name, columns):
             )
 
 
+def _add_all_audit_columns(conn):
+    audit_cols_pg = {
+        "opeid": "VARCHAR(255)",
+        "reg_id": "VARCHAR(255)",
+        "reg_dt": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "upd_id": "VARCHAR(255)",
+        "upd_dt": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "del_id": "VARCHAR(255)",
+        "del_dt": "TIMESTAMP",
+        "del_yn": "VARCHAR(1) DEFAULT 'N'"
+    }
+    audit_cols_sl = {
+        "opeid": "TEXT",
+        "reg_id": "TEXT",
+        "reg_dt": "TEXT DEFAULT CURRENT_TIMESTAMP",
+        "upd_id": "TEXT",
+        "upd_dt": "TEXT DEFAULT CURRENT_TIMESTAMP",
+        "del_id": "TEXT",
+        "del_dt": "TEXT",
+        "del_yn": "TEXT DEFAULT 'N'"
+    }
+    
+    # In connection.py, DB_TYPE is imported or available globally
+    cols = audit_cols_pg if DB_TYPE == "postgresql" else audit_cols_sl
+    tables = [
+        "users", "cameras", "camera_device_credentials", 
+        "user_camera_permissions", "camera_connections", 
+        "customers", "customer_embeddings", "recognize_logs"
+    ]
+    for t in tables:
+        try:
+            _add_missing_columns(conn, t, cols)
+        except Exception as e:
+            print(f"Warning: could not add audit columns to {t}: {e}")
+
+
 def _embedding_to_blob(embedding):
     try:
         import numpy as np
@@ -554,6 +590,7 @@ def ensure_schema(conn):
 
     _migrate_legacy_customer_data(conn)
     _migrate_embeddings(conn)
+    _add_all_audit_columns(conn)
     conn.commit()
 
 
