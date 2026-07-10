@@ -589,36 +589,9 @@ class GuestTrackManager:
                     track_state.guest_embeddings[-self.guest_creation_buffer_size :]
                 )
                 if avg_guest_emb is not None:
-                    known_similarity = 0.0
-                    match_id = None
-                    if self.use_pgvector:
-                        # Use HNSW index instead of brute-force O(n) scan
-                        debounce_results = self._query_pgvector(
-                            avg_guest_emb, top_k=1, threshold=0.0
-                        )
-                        if debounce_results:
-                            match_id = debounce_results[0][0]
-                            known_similarity = debounce_results[0][1]
-                    elif self.known_embeddings:
-                        known_scores = cosine_similarities(
-                            self.known_embeddings, avg_guest_emb
-                        )
-                        if known_scores.size > 0:
-                            best_idx = int(np.argmax(known_scores))
-                            match_id = self.known_ids[best_idx]
-                            known_similarity = float(known_scores[best_idx])
-
-                    track_age_seconds = now - track_state.first_seen_at
-                    debounce_sec = system_settings.get("new_guest_debounce_seconds", NEW_GUEST_DEBOUNCE_SECONDS)
-                    debounce_sim = system_settings.get("new_guest_debounce_similarity", NEW_GUEST_DEBOUNCE_SIMILARITY)
-                    if track_age_seconds < debounce_sec:
-                        resolved_customer_id = None
-                    elif known_similarity >= debounce_sim:
-                        resolved_customer_id = match_id
-                    else:
-                        resolved_customer_id = self._register_guest(
-                            avg_guest_emb, track_state
-                        )
+                    resolved_customer_id = self._register_guest(
+                        avg_guest_emb, track_state
+                    )
 
             if resolved_customer_id is None and not str(
                 existing_customer_id
