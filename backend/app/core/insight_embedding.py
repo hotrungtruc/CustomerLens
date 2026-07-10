@@ -200,10 +200,8 @@ class InsightEmbedder:
         left, top, right, bottom = map(int, bbox)
         width = max(0, right - left)
         height = max(0, bottom - top)
-        # Use lower minimum sizes for better detection compatibility
-        # MediaPipe and OpenCV can detect smaller faces, and we validate quality through embedding
-        min_size = 50  # Lower threshold for all detection methods
-        min_score = 0.3  # Lower score threshold - embeddings themselves provide quality validation
+        min_size = system_settings.get("min_face_bbox_size", MIN_FACE_BBOX_SIZE)
+        min_score = system_settings.get("min_detection_score", MIN_DETECTION_SCORE)
         return width >= min_size and height >= min_size and float(score) >= min_score
 
     def is_guest_quality_ok(self, bbox, score, landmarks):
