@@ -402,7 +402,7 @@ class InsightEmbedder:
         """Batch extraction of face embeddings.
         Fallback to sequential extraction since the ONNX model may have a static batch size of 1.
         """
-        if not list_of_landmarks:
+        if list_of_landmarks is None or len(list_of_landmarks) == 0:
             return []
 
         results = []
