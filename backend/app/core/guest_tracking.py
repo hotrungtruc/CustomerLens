@@ -351,8 +351,8 @@ class GuestTrackManager:
                 insert_guest_record(conn, guest_id)
                 logger.info("Successfully inserted guest record for %s", guest_id)
 
-                # Also store the embedding in customer_embeddings with pgvector
-                if embedding is not None and self.use_pgvector:
+                # Also store the embedding in customer_embeddings
+                if embedding is not None:
                     try:
                         from app.db.vector_search import \
                             insert_embedding_with_vector
