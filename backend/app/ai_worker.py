@@ -108,100 +108,100 @@ def main():
                 current_n_frames = system_settings.get("process_every_n_frames", PROCESS_EVERY_N_FRAMES)
                 raw_image_bytes = item[4+meta_len:]
 
-            opeid = data.get("opeid")
-            camera_id = data.get("camera_id")
-            connection_id = data.get("connection_id")
-            local_track_id = data.get("local_track_id")
-            client_bbox = data.get("bbox") # Original bbox from frontend
+                opeid = data.get("opeid")
+                camera_id = data.get("camera_id")
+                connection_id = data.get("connection_id")
+                local_track_id = data.get("local_track_id")
+                client_bbox = data.get("bbox") # Original bbox from frontend
             
-            # If it's an edge crop, process it immediately (frontend already throttles)
-            is_edge_crop = bool(local_track_id)
-            if not is_edge_crop:
-                if frame_count % current_n_frames != 0:
+                # If it's an edge crop, process it immediately (frontend already throttles)
+                is_edge_crop = bool(local_track_id)
+                if not is_edge_crop:
+                    if frame_count % current_n_frames != 0:
+                        continue
+            
+                if not camera_id or not connection_id:
+                    logger.warning(
+                        "Received frame without camera_id or connection_id. Skipping."
+                    )
                     continue
             
-            if not camera_id or not connection_id:
-                logger.warning(
-                    "Received frame without camera_id or connection_id. Skipping."
-                )
-                continue
+                try:
+                    image_array = np.frombuffer(raw_image_bytes, dtype=np.uint8)
+                    frame = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+                except Exception as e:
+                    logger.error(f"Frame decode error: {e}")
+                    frame = None
             
-            try:
-                image_array = np.frombuffer(raw_image_bytes, dtype=np.uint8)
-                frame = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-            except Exception as e:
-                logger.error(f"Frame decode error: {e}")
-                frame = None
-            
-            if frame is None:
-                continue
+                if frame is None:
+                    continue
                 
-            face_records = []
-            batch_landmarks = []
-            batch_records = []
+                face_records = []
+                batch_landmarks = []
+                batch_records = []
             
-            if is_edge_crop:
-                # Bypass detection entirely for edge crops, rely on frontend's tight bounding box
-                h, w = frame.shape[:2]
-                landmarks = data.get("landmarks")
-                record = {
-                    "bbox": (0, 0, w, h), # Full crop
-                    "landmark": landmarks,
-                    "score": 1.0,
-                    "quality_ok": True,
-                    "guest_quality_ok": True,
-                    "embedding": None,
-                }
-                face_records.append(record)
-                batch_landmarks.append(landmarks)
-                batch_records.append(record)
-            else:
-                detections = embedder.detect(frame)
-                for bbox, landmark, score in zip(*detections):
-                    x1, y1, x2, y2 = map(int, bbox)
-                    quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
-                    guest_quality_ok = embedder.is_guest_quality_ok((x1, y1, x2, y2), score, landmark)
-                    
+                if is_edge_crop:
+                    # Bypass detection entirely for edge crops, rely on frontend's tight bounding box
+                    h, w = frame.shape[:2]
+                    landmarks = data.get("landmarks")
                     record = {
-                        "bbox": (x1, y1, x2, y2),
-                        "landmark": landmark.tolist() if isinstance(landmark, np.ndarray) else landmark,
-                        "score": float(score),
-                        "quality_ok": quality_ok,
-                        "guest_quality_ok": guest_quality_ok,
+                        "bbox": (0, 0, w, h), # Full crop
+                        "landmark": landmarks,
+                        "score": 1.0,
+                        "quality_ok": True,
+                        "guest_quality_ok": True,
                         "embedding": None,
                     }
                     face_records.append(record)
+                    batch_landmarks.append(landmarks)
+                    batch_records.append(record)
+                else:
+                    detections = embedder.detect(frame)
+                    for bbox, landmark, score in zip(*detections):
+                        x1, y1, x2, y2 = map(int, bbox)
+                        quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+                        guest_quality_ok = embedder.is_guest_quality_ok((x1, y1, x2, y2), score, landmark)
                     
-                    if quality_ok and "landmark" in record:
-                        batch_landmarks.append(landmark)
-                        batch_records.append(record)
+                        record = {
+                            "bbox": (x1, y1, x2, y2),
+                            "landmark": landmark.tolist() if isinstance(landmark, np.ndarray) else landmark,
+                            "score": float(score),
+                            "quality_ok": quality_ok,
+                            "guest_quality_ok": guest_quality_ok,
+                            "embedding": None,
+                        }
+                        face_records.append(record)
                     
-            # --- BATCH EMBEDDING EXTRACTION ---
-            if batch_landmarks and frame is not None:
-                try:
-                    batch_embs = embedder.get_batch_embeddings(frame, batch_landmarks)
-                    for record, emb in zip(batch_records, batch_embs):
-                        if emb is not None:
-                            record["embedding"] = emb.tolist() if isinstance(emb, np.ndarray) else emb
-                except Exception as e:
-                    logger.warning(f"Batch extraction error: {e}")
+                        if quality_ok and "landmark" in record:
+                            batch_landmarks.append(landmark)
+                            batch_records.append(record)
+                    
+                # --- BATCH EMBEDDING EXTRACTION ---
+                if batch_landmarks and frame is not None:
+                    try:
+                        batch_embs = embedder.get_batch_embeddings(frame, batch_landmarks)
+                        for record, emb in zip(batch_records, batch_embs):
+                            if emb is not None:
+                                record["embedding"] = emb.tolist() if isinstance(emb, np.ndarray) else emb
+                    except Exception as e:
+                        logger.warning(f"Batch extraction error: {e}")
             
-            # Publish back to Master
-            pubsub_channel = f"worker_results_{connection_id}"
+                # Publish back to Master
+                pubsub_channel = f"worker_results_{connection_id}"
             
-            payload = {
-                "opeid": opeid,
-                "camera_id": camera_id,
-                "connection_id": connection_id,
-                "timestamp": data.get("timestamp"),
-                "face_records": face_records,
-                "frame_size": {"width": frame.shape[1], "height": frame.shape[0]}
-            }
-            if is_edge_crop:
-                payload["local_track_id"] = local_track_id
-                payload["client_bbox"] = client_bbox
+                payload = {
+                    "opeid": opeid,
+                    "camera_id": camera_id,
+                    "connection_id": connection_id,
+                    "timestamp": data.get("timestamp"),
+                    "face_records": face_records,
+                    "frame_size": {"width": frame.shape[1], "height": frame.shape[0]}
+                }
+                if is_edge_crop:
+                    payload["local_track_id"] = local_track_id
+                    payload["client_bbox"] = client_bbox
                 
-            redis_client.publish(pubsub_channel, json.dumps(payload))
+                redis_client.publish(pubsub_channel, json.dumps(payload))
             
         except Exception as e:
             logger.error(f"Error processing frame: {e}", exc_info=True)

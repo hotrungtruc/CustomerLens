@@ -20,7 +20,7 @@ def search_similar_faces(
     conn,
     query_embedding: np.ndarray,
     top_k: int = 5,
-    threshold: float = 0.50,
+    threshold: float = 0.55,
 ):
     """Find the top_k most similar face embeddings using the HNSW index.
 

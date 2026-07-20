@@ -227,9 +227,9 @@ export function useCamera(cameraId) {
     try {
       const { originX, originY, width, height } = face.pixelBox;
       
-      // Use 20% padding as requested
-      const padX = width * 0.20;
-      const padY = height * 0.20;
+      // Use 50% padding as requested
+      const padX = width * 0.50;
+      const padY = height * 0.50;
       
       const sx = Math.max(0, originX - padX);
       const sy = Math.max(0, originY - padY);

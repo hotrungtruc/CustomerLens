@@ -143,6 +143,7 @@ class TrackState:
     bbox: tuple
     embeddings: list = field(default_factory=list)
     guest_embeddings: list = field(default_factory=list)
+    local_track_id: str | None = None
     resolved_customer_id: str | None = None
     last_seen_frame: int = 0
     first_seen_frame: int = 0
@@ -171,8 +172,8 @@ class GuestTrackManager:
         self,
         buffer_size=3,
         guest_creation_buffer_size=8,
-        similarity_threshold=0.38,
-        iou_threshold=0.25,
+        similarity_threshold=0.55,
+        iou_threshold=0.36,
         min_bbox_size=100,
         min_detection_score=0.85,
         guest_prefix="GUEST",
@@ -620,7 +621,26 @@ class GuestTrackManager:
             high_records = []
             low_records = []
 
+            # PRE-ASSOCIATION: Bypass IoU matching if local_track_id is provided
+            matched_by_local_id = []
+            tracks_pool = [t for t in self.tracks.values() if t.state in ("tracked", "lost")]
+            
+            remaining_records = []
             for record in face_records:
+                tid = record.get("local_track_id")
+                if tid:
+                    # Find track with this local_track_id
+                    matched_track = next((t for t in tracks_pool if t.local_track_id == tid), None)
+                    if matched_track:
+                        matched_by_local_id.append((matched_track, record))
+                        tracks_pool.remove(matched_track)
+                    else:
+                        # Will be processed in unmatched_high_dets
+                        remaining_records.append(record)
+                else:
+                    remaining_records.append(record)
+
+            for record in remaining_records:
                 score = record.get("score", 1.0)
                 if score < self.min_detection_score:
                     continue  # Filter out detections below absolute minimum
@@ -630,9 +650,7 @@ class GuestTrackManager:
                     low_records.append(record)
 
             # 3. Get currently active tracks pool (tracked + recently lost)
-            tracks_pool = [
-                t for t in self.tracks.values() if t.state in ("tracked", "lost")
-            ]
+            # tracks_pool already filtered by local_track_id pre-association
 
             matched_1 = []
             unmatched_tracks = []
@@ -704,7 +722,7 @@ class GuestTrackManager:
                 unmatched_tracks_final = list(unmatched_tracks)
 
             # 5. Update states and collect batch embedding requests
-            all_matches = matched_1 + matched_2
+            all_matches = matched_by_local_id + matched_1 + matched_2
             matched_detections = {}
 
             batch_landmarks = []
@@ -745,6 +763,7 @@ class GuestTrackManager:
                 new_track = TrackState(
                     track_id=track_id,
                     bbox=det["bbox"],
+                    local_track_id=det.get("local_track_id"),
                     last_seen_frame=self.frame_index,
                     first_seen_frame=self.frame_index,
                     first_seen_at=now,

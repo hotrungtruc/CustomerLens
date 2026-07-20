@@ -33,7 +33,7 @@ export function useLocalFaceDetector(videoRef) {
 
   useEffect(() => {
     let isMounted = true;
-    
+
     async function initDetector() {
       try {
         const vision = await FilesetResolver.forVisionTasks(
@@ -54,9 +54,9 @@ export function useLocalFaceDetector(videoRef) {
         console.error("Failed to initialize MediaPipe FaceDetector:", err);
       }
     }
-    
+
     initDetector();
-    
+
     return () => {
       isMounted = false;
       if (faceDetectorRef.current) {
@@ -70,130 +70,130 @@ export function useLocalFaceDetector(videoRef) {
       if (faceDetectorRef.current && videoRef.current && videoRef.current.readyState >= 2) {
         const startTimeMs = performance.now();
         const video = videoRef.current;
-        
+
         // Only run detection if the video frame has advanced
         if (lastVideoTimeRef.current !== video.currentTime) {
           lastVideoTimeRef.current = video.currentTime;
-          
+
           try {
-             const detections = faceDetectorRef.current.detectForVideo(video, startTimeMs);
-             if (detections && detections.detections) {
-                 const sw = video.videoWidth;
-                 const sh = video.videoHeight;
-                 
-                 const mappedFaces = detections.detections.map(d => {
-                     const { originX, originY, width, height } = d.boundingBox;
-                     
-                     // Edge detection margin (5% of width/height)
-                     const marginX = sw * 0.05;
-                     const marginY = sh * 0.05;
-                     
-                     // Check if face touches the edge
-                     const isAtEdge = 
-                        originX < marginX ||
-                        originY < marginY ||
-                        originX + width > sw - marginX ||
-                        originY + height > sh - marginY;
-                        
-                     // 1. Check Confidence Score
-                     const score = d.categories && d.categories.length > 0 ? d.categories[0].score : 1;
-                     const isHighConfidence = score > 0.8;
-                     
-                     // 2. Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
-                     const hasValidLandmarks = d.keypoints && d.keypoints.length >= 4;
-                     
-                     // 3. Check for extreme profile (Yaw angle & Eye distance)
-                     let isExtremeProfile = false;
-                     let isEyesWideEnough = true;
-                     
-                     if (hasValidLandmarks) {
-                         // Indices: 0: Right Eye, 1: Left Eye, 2: Nose Tip
-                         const rightEye = d.keypoints[0];
-                         const leftEye = d.keypoints[1];
-                         const nose = d.keypoints[2];
-                         
-                         if (rightEye && leftEye && nose) {
-                             const distRight = Math.sqrt(Math.pow(rightEye.x - nose.x, 2) + Math.pow(rightEye.y - nose.y, 2));
-                             const distLeft = Math.sqrt(Math.pow(leftEye.x - nose.x, 2) + Math.pow(leftEye.y - nose.y, 2));
-                             
-                             const ratio = distRight > 0 ? distLeft / distRight : 999;
-                             
-                             // 1.8 threshold (stricter: nose can't be twice as far from one eye)
-                             if (ratio > 1.8 || ratio < 0.55) {
-                                 isExtremeProfile = true;
-                             }
-                             
-                             // Check Inter-Ocular Distance relative to face width
-                             const eyeDist = Math.sqrt(Math.pow(rightEye.x - leftEye.x, 2) + Math.pow(rightEye.y - leftEye.y, 2));
-                             // MediaPipe's boundingBox width is absolute pixels, sw is videoWidth
-                             const boxWidthNorm = width / sw;
-                             // Eyes should be at least 20% of the box width apart
-                             if (eyeDist < boxWidthNorm * 0.2) {
-                                 isEyesWideEnough = false;
-                             }
-                         }
-                     }
-                     
-                     const isGoodQuality = !isAtEdge && hasValidLandmarks && !isExtremeProfile && isHighConfidence && isEyesWideEnough;
+            const detections = faceDetectorRef.current.detectForVideo(video, startTimeMs);
+            if (detections && detections.detections) {
+              const sw = video.videoWidth;
+              const sh = video.videoHeight;
 
-                     return {
-                         left: (originX / sw) * 100,
-                         top: (originY / sh) * 100,
-                         width: (width / sw) * 100,
-                         height: (height / sh) * 100,
-                         pixelBox: { originX, originY, width, height },
-                         keypoints: d.keypoints || [],
-                         isGoodQuality // Flag for sending crop
-                     };
-                 });
+              const mappedFaces = detections.detections.map(d => {
+                const { originX, originY, width, height } = d.boundingBox;
 
-                 // IoU Tracking
-                 const currentTracks = trackedFacesRef.current;
-                 const newTracks = [];
+                // Edge detection margin (5% of width/height)
+                const marginX = sw * 0.05;
+                const marginY = sh * 0.05;
 
-                 mappedFaces.forEach(face => {
-                   let bestMatch = null;
-                   let bestIoU = 0;
-                   currentTracks.forEach(track => {
-                     if (track.matched) return; // Prevent double matching
-                     const iou = calculateIoU(face, track);
-                     if (iou > 0.3 && iou > bestIoU) {
-                       bestIoU = iou;
-                       bestMatch = track;
-                     }
-                   });
+                // Check if face touches the edge
+                const isAtEdge =
+                  originX < marginX ||
+                  originY < marginY ||
+                  originX + width > sw - marginX ||
+                  originY + height > sh - marginY;
 
-                   if (bestMatch) {
-                     bestMatch.matched = true;
-                     newTracks.push({
-                       ...face,
-                       local_track_id: bestMatch.local_track_id,
-                       first_seen: bestMatch.first_seen,
-                     });
-                   } else {
-                     newTracks.push({
-                       ...face,
-                       local_track_id: "local_" + generateUUID(),
-                       first_seen: Date.now(),
-                     });
-                   }
-                 });
+                // 1. Check Confidence Score
+                const score = d.categories && d.categories.length > 0 ? d.categories[0].score : 1;
+                const isHighConfidence = score > 0.8;
 
-                 trackedFacesRef.current = newTracks;
-                 setLocalFaces(newTracks);
-             } else {
-                 trackedFacesRef.current = [];
-                 setLocalFaces([]);
-             }
-          } catch(err) {
-             console.error("Face detection error:", err);
+                // 2. Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
+                const hasValidLandmarks = d.keypoints && d.keypoints.length >= 4;
+
+                // 3. Check for extreme profile (Yaw angle & Eye distance)
+                let isExtremeProfile = false;
+                let isEyesWideEnough = true;
+
+                if (hasValidLandmarks) {
+                  // Indices: 0: Right Eye, 1: Left Eye, 2: Nose Tip
+                  const rightEye = d.keypoints[0];
+                  const leftEye = d.keypoints[1];
+                  const nose = d.keypoints[2];
+
+                  if (rightEye && leftEye && nose) {
+                    const distRight = Math.sqrt(Math.pow(rightEye.x - nose.x, 2) + Math.pow(rightEye.y - nose.y, 2));
+                    const distLeft = Math.sqrt(Math.pow(leftEye.x - nose.x, 2) + Math.pow(leftEye.y - nose.y, 2));
+
+                    const ratio = distRight > 0 ? distLeft / distRight : 999;
+
+                    // 1.8 threshold (stricter: nose can't be twice as far from one eye)
+                    if (ratio > 1.8 || ratio < 0.55) {
+                      isExtremeProfile = true;
+                    }
+
+                    // Check Inter-Ocular Distance relative to face width
+                    const eyeDist = Math.sqrt(Math.pow(rightEye.x - leftEye.x, 2) + Math.pow(rightEye.y - leftEye.y, 2));
+                    // MediaPipe's boundingBox width is absolute pixels, sw is videoWidth
+                    const boxWidthNorm = width / sw;
+                    // Eyes should be at least 20% of the box width apart
+                    if (eyeDist < boxWidthNorm * 0.2) {
+                      isEyesWideEnough = false;
+                    }
+                  }
+                }
+
+                const isGoodQuality = !isAtEdge && hasValidLandmarks && !isExtremeProfile && isHighConfidence && isEyesWideEnough;
+
+                return {
+                  left: (originX / sw) * 100,
+                  top: (originY / sh) * 100,
+                  width: (width / sw) * 100,
+                  height: (height / sh) * 100,
+                  pixelBox: { originX, originY, width, height },
+                  keypoints: d.keypoints || [],
+                  isGoodQuality // Flag for sending crop
+                };
+              });
+
+              // IoU Tracking
+              const currentTracks = trackedFacesRef.current;
+              const newTracks = [];
+
+              mappedFaces.forEach(face => {
+                let bestMatch = null;
+                let bestIoU = 0;
+                currentTracks.forEach(track => {
+                  if (track.matched) return; // Prevent double matching
+                  const iou = calculateIoU(face, track);
+                  if (iou > 0.3 && iou > bestIoU) {
+                    bestIoU = iou;
+                    bestMatch = track;
+                  }
+                });
+
+                if (bestMatch) {
+                  bestMatch.matched = true;
+                  newTracks.push({
+                    ...face,
+                    local_track_id: bestMatch.local_track_id,
+                    first_seen: bestMatch.first_seen,
+                  });
+                } else {
+                  newTracks.push({
+                    ...face,
+                    local_track_id: "local_" + generateUUID(),
+                    first_seen: Date.now(),
+                  });
+                }
+              });
+
+              trackedFacesRef.current = newTracks;
+              setLocalFaces(newTracks);
+            } else {
+              trackedFacesRef.current = [];
+              setLocalFaces([]);
+            }
+          } catch (err) {
+            console.error("Face detection error:", err);
           }
         }
       }
-      
+
       requestRef.current = requestAnimationFrame(detectFaces);
     }
-    
+
     requestRef.current = requestAnimationFrame(detectFaces);
     return () => {
       if (requestRef.current) {

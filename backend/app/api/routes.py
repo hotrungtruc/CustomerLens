@@ -1137,93 +1137,61 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             if rec.get("landmark") is not None:
                 rec["landmark"] = np.array(rec["landmark"], dtype=np.float32)
 
-        is_edge_crop = bool(local_track_id)
-        
+        # Assign client_bbox to bbox if present, and add local_track_id
+        for rec in face_records:
+            if local_track_id:
+                rec["local_track_id"] = local_track_id
+            if client_bbox and ("bbox" not in rec or not rec["bbox"]):
+                rec["bbox"] = client_bbox
+            elif client_bbox and local_track_id:
+                # For edge crops, overwrite bbox to track overlapping perfectly
+                rec["bbox"] = client_bbox
+
         conn = get_db_connection()
         try:
             customers = []
             logs = []
             
-            if is_edge_crop:
-                # Bypass GuestTrackManager tracking, use it only for searching
-                for rec in face_records:
-                    embedding = rec.get("embedding")
-                    if embedding is None:
-                        continue
-                        
-                    best_match, _ = track_manager.search_identity(embedding)
-                    
-                    customer_id = best_match
-                    if not customer_id:
-                        import uuid
-                        customer_id = f"GUEST_{result_camera_id}_{str(uuid.uuid4())[:8]}"
-                        track_manager._insert_guest_into_main_db_async(customer_id, embedding)
-                    
-                    bbox = client_bbox or rec.get("bbox")
-                    payload = {
-                        "tile_id": f"tile_{local_track_id}",
-                        "track_id": local_track_id, # Return local track ID for frontend merging
-                        "local_track_id": local_track_id,
-                        "bbox": bbox,
-                        "detected": bool(customer_id),
-                        "id": customer_id,
-                        "name": "Khách mới",
-                        "customer_type": "guest",
-                        "customer_status": "temporary"
-                    }
-                    
-                    info = get_customer_info(conn, customer_id)
+            tracked_faces = track_manager.process_faces(face_records, frame=None, embedder=None)
+            for face in tracked_faces:
+                x1, y1, x2, y2 = face["bbox"]
+                customer_id = face["customer_id"]
+                track_id = face["track_id"]
+                
+                track = track_manager.tracks.get(track_id)
+                loc_track_id = track.local_track_id if track else None
+
+                payload = {
+                    "tile_id": f"tile_{loc_track_id or track_id}",
+                    "track_id": loc_track_id or track_id,
+                    "local_track_id": loc_track_id,
+                    "bbox": (x1, y1, x2, y2),
+                    "detected": bool(customer_id),
+                    "id": customer_id,
+                    "name": "Khách mới",
+                    "customer_type": "guest",
+                    "customer_status": "temporary"
+                }
+                
+                if customer_id:
+                    info = track.cached_profile if track else None
+                    if not info:
+                        info = get_customer_info(conn, customer_id)
+                        if info and track:
+                            track.cached_profile = info
                     if info:
                         _apply_profile_to_payload(payload, info)
                         
-                    customers.append(payload)
-                    logs.append({
-                        "opeid": opeid,
-                        "camera_id": result_camera_id,
-                        "connection_id": result_connection_id,
-                        "customer_id": customer_id,
-                        "track_id": local_track_id,
-                        "bbox": tuple(bbox) if bbox else None,
-                        "timestamp": timestamp
-                    })
-            else:
-                tracked_faces = track_manager.process_faces(face_records, frame=None, embedder=None)
-                for face in tracked_faces:
-                    x1, y1, x2, y2 = face["bbox"]
-                    customer_id = face["customer_id"]
-                    track_id = face["track_id"]
-                    
-                    payload = {
-                        "tile_id": f"tile_{track_id}",
-                        "track_id": track_id,
-                        "bbox": (x1, y1, x2, y2),
-                        "detected": bool(customer_id),
-                        "id": customer_id,
-                        "name": "Khách mới",
-                        "customer_type": "guest",
-                        "customer_status": "temporary"
-                    }
-                    
-                    if customer_id:
-                        track = track_manager.tracks.get(track_id)
-                        info = track.cached_profile if track else None
-                        if not info:
-                            info = get_customer_info(conn, customer_id)
-                            if info and track:
-                                track.cached_profile = info
-                        if info:
-                            _apply_profile_to_payload(payload, info)
-                            
-                    customers.append(payload)
-                    logs.append({
-                        "opeid": opeid,
-                        "camera_id": result_camera_id,
-                        "connection_id": result_connection_id,
-                        "customer_id": customer_id,
-                        "track_id": track_id,
-                        "bbox": (x1, y1, x2, y2),
-                        "timestamp": timestamp
-                    })
+                customers.append(payload)
+                logs.append({
+                    "opeid": opeid,
+                    "camera_id": result_camera_id,
+                    "connection_id": result_connection_id,
+                    "customer_id": customer_id,
+                    "track_id": track_id,
+                    "bbox": (x1, y1, x2, y2),
+                    "timestamp": timestamp
+                })
             
             if logs:
                 bulk_insert_recognize_logs(conn, logs)

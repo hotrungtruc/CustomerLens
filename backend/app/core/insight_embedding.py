@@ -41,14 +41,13 @@ ARC_FACE_TEMPLATE = np.array(
 
 EDGE_CROP_TEMPLATE = np.array(
     [
-        [38.2946, 51.6963],
-        [73.5318, 51.5014],
-        [56.0252, 71.7366],
-        [56.1396, 92.2848],
+        [38.2946, 51.6963],  # Left Eye
+        [73.5318, 51.5014],  # Right Eye
+        [56.0252, 71.7366],  # Nose Tip
+        [56.1396, 92.2848],  # Mouth Center (Center of left and right mouth corners)
     ],
     dtype=np.float32,
 )
-
 
 class InsightEmbedder:
     def __init__(
@@ -146,8 +145,8 @@ class InsightEmbedder:
             # refine_landmarks=False keeps performance reasonable
             self.face_mesh = self.mp_face_mesh.FaceMesh(
                 static_image_mode=False,
-                max_num_faces=5,
-                refine_landmarks=False,
+                max_num_faces=10,
+                refine_landmarks=True,
                 min_detection_confidence=0.5,
                 model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
             )
@@ -224,7 +223,7 @@ class InsightEmbedder:
             left_eye = landmarks[0]
             right_eye = landmarks[1]
             eye_dist = np.linalg.norm(left_eye - right_eye)
-            if eye_dist / width < 0.35:
+            if eye_dist / width < 0.25:
                 return False
 
         return True
@@ -248,7 +247,7 @@ class InsightEmbedder:
         # lm5 mapping: [Left Pupil, Right Pupil, Nose, Left Mouth, Right Mouth]
 
         # Common 5-point indices that map well onto face landmarker outputs
-        lm5_idx = [33, 263, 1, 61, 291]
+        lm5_idx = [468, 473, 1, 61, 291]
 
         if getattr(self, "_use_opencv", False):
             # Use OpenCV Haar Cascade for face detection

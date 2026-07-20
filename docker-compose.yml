@@ -11,8 +11,8 @@ services:
       - "0.0.0.0:8000:8000"
     volumes:
       # Persistent data outside the container - survives rebuilds
-      - /srv/faceai/models:/app/models:ro
-      - /srv/faceai/data:/app/data
+      - ./backend/models:/app/models:ro
+      - ./backend/data:/app/data
       - ./backend/config.py:/app/config.py:ro
     env_file:
       - ./backend/.env
@@ -54,8 +54,8 @@ services:
     restart: unless-stopped
     command: python app/ai_worker.py
     volumes:
-      - /srv/faceai/models:/app/models:ro
-      - /srv/faceai/data:/app/data
+      - ./backend/models:/app/models:ro
+      - ./backend/data:/app/data
       - ./backend/config.py:/app/config.py:ro
     env_file:
       - ./backend/.env
