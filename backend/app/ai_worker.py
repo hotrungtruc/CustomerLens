@@ -141,35 +141,56 @@ def main():
                 batch_records = []
             
                 if is_edge_crop:
-                    # Bypass detection entirely for edge crops, rely on frontend's tight bounding box
+                    # Run SCRFD detection on the edge crop to get high-precision landmarks
+                    detections = embedder.detect(frame)
                     h, w = frame.shape[:2]
-                    landmarks = data.get("landmarks")
                     
-                    quality_ok = True
-                    guest_quality_ok = True
-                    
-                    # Frontal face check: distance between eyes should be reasonable
-                    if landmarks is not None and len(landmarks) >= 2:
-                        left_eye = np.array(landmarks[0])
-                        right_eye = np.array(landmarks[1])
-                        eye_dist = np.linalg.norm(left_eye - right_eye)
-                        # Crop width 'w' includes 50% padding on each side (200% total).
-                        # So actual face width is roughly w / 2.0.
-                        face_width = max(1.0, w / 2.0)
-                        if eye_dist / face_width < 0.25:
-                            guest_quality_ok = False
-
-                    record = {
-                        "bbox": (0, 0, w, h), # Full crop
-                        "landmark": landmarks,
-                        "score": 1.0,
-                        "quality_ok": quality_ok,
-                        "guest_quality_ok": guest_quality_ok,
-                        "embedding": None,
-                    }
-                    face_records.append(record)
-                    batch_landmarks.append(landmarks)
-                    batch_records.append(record)
+                    # If SCRFD fails to detect on the crop, fallback to frontend landmarks or full crop
+                    if len(detections[0]) == 0:
+                        landmarks = data.get("landmarks")
+                        quality_ok = True
+                        guest_quality_ok = True
+                        if landmarks is not None and len(landmarks) >= 2:
+                            left_eye = np.array(landmarks[0])
+                            right_eye = np.array(landmarks[1])
+                            eye_dist = np.linalg.norm(left_eye - right_eye)
+                            face_width = max(1.0, w / 2.0)
+                            if eye_dist / face_width < 0.25:
+                                guest_quality_ok = False
+                        
+                        record = {
+                            "bbox": (0, 0, w, h), # Full crop
+                            "landmark": landmarks,
+                            "score": 1.0,
+                            "quality_ok": quality_ok,
+                            "guest_quality_ok": guest_quality_ok,
+                            "embedding": None,
+                        }
+                        if landmarks is not None:
+                            face_records.append(record)
+                            batch_landmarks.append(landmarks)
+                            batch_records.append(record)
+                    else:
+                        # Use the best detection from SCRFD (usually there's only one in a tight crop)
+                        # We take the first one or the one with highest score
+                        bbox, landmark, score = detections[0][0], detections[1][0], detections[2][0]
+                        x1, y1, x2, y2 = map(int, bbox)
+                        quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
+                        guest_quality_ok = embedder.is_guest_quality_ok((x1, y1, x2, y2), score, landmark)
+                        
+                        record = {
+                            "bbox": (x1, y1, x2, y2),
+                            "landmark": landmark.tolist() if isinstance(landmark, np.ndarray) else landmark,
+                            "score": float(score),
+                            "quality_ok": quality_ok,
+                            "guest_quality_ok": guest_quality_ok,
+                            "embedding": None,
+                        }
+                        face_records.append(record)
+                        
+                        if quality_ok and "landmark" in record:
+                            batch_landmarks.append(landmark)
+                            batch_records.append(record)
                 else:
                     detections = embedder.detect(frame)
                     for bbox, landmark, score in zip(*detections):
