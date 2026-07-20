@@ -227,6 +227,16 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
   );
 }
 
+function formatGuestId(id) {
+  if (!id) return "—";
+  if (typeof id === "string" && id.startsWith("GUEST_")) {
+    const parts = id.split("_");
+    const suffix = parts[parts.length - 1];
+    return `GUEST #${suffix}`;
+  }
+  return id;
+}
+
 // ── Customer card trong right panel ──────────────────────────────────────────
 function CustomerCard({ c, onClick }) {
   const known = isKnownCustomer(c);
@@ -277,8 +287,8 @@ function CustomerCard({ c, onClick }) {
           )}
         </div>
 
-        <span className="text-xs text-slate-400">
-          {known ? `CLIENT_${c.id}` : c.id || "—"}
+        <span className="text-xs font-semibold text-slate-500 font-mono">
+          {known ? `CLIENT_${c.id}` : formatGuestId(c.id)}
         </span>
 
         <div className="mt-0.5 flex items-center justify-between">
