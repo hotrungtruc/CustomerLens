@@ -228,9 +228,9 @@ export function useCamera(cameraId) {
     try {
       const { originX, originY, width, height } = face.pixelBox;
       
-      // Use 50% padding as requested
-      const padX = width * 0.50;
-      const padY = height * 0.50;
+      // Use 25% padding to include chin/forehead without overlapping neighbors
+      const padX = width * 0.25;
+      const padY = height * 0.25;
       
       const sx = Math.max(0, originX - padX);
       const sy = Math.max(0, originY - padY);
@@ -245,6 +245,37 @@ export function useCamera(cameraId) {
       canvas.width = w;
       canvas.height = h;
       ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, w, h);
+
+      // Blur Detection (Laplacian Variance)
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const data = imageData.data;
+      let sum = 0, sumSq = 0;
+      let validPixels = 0;
+      // Simple laplacian kernel approximation for speed: [0, 1, 0, 1, -4, 1, 0, 1, 0]
+      // We'll just sample every 4th pixel for speed
+      for (let y = 1; y < h - 1; y += 2) {
+        for (let x = 1; x < w - 1; x += 2) {
+          const i = (y * w + x) * 4;
+          // Grayscale values
+          const c = (data[i] + data[i+1] + data[i+2]) / 3;
+          const t = (data[i - w*4] + data[i+1 - w*4] + data[i+2 - w*4]) / 3;
+          const b = (data[i + w*4] + data[i+1 + w*4] + data[i+2 + w*4]) / 3;
+          const l = (data[i - 4] + data[i+1 - 4] + data[i+2 - 4]) / 3;
+          const r = (data[i + 4] + data[i+1 + 4] + data[i+2 + 4]) / 3;
+          
+          const laplacian = t + b + l + r - 4 * c;
+          sum += laplacian;
+          sumSq += laplacian * laplacian;
+          validPixels++;
+        }
+      }
+      const mean = sum / validPixels;
+      const variance = (sumSq / validPixels) - (mean * mean);
+      
+      if (variance < 50) {
+        // Blur detected, ignore frame
+        return;
+      }
 
       // Save crop for UI Avatar (only capture once per track to prevent flickering)
       if (!faceImagesRef.current[face.local_track_id]) {

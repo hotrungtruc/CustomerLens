@@ -11,6 +11,8 @@ from config import (FACE_LANDMARKER_TASK, GUEST_MIN_DETECTION_SCORE,
                     MIN_FACE_BBOX_SIZE, RECOGNIZER_FLOAT_PATH, RECOGNIZER_PATH,
                     SIMILARITY_THRESHOLD)
 from app.core.settings import system_settings
+from app.core.scrfd_detector import SCRFD
+from config import MODELS_DIR
 
 logger = get_logger(__name__)
 
@@ -109,55 +111,17 @@ class InsightEmbedder:
         self.recognizer_input = self.recognizer.get_inputs()[0].name
         logger.info("Loaded recognizer model: %s", model_used)
 
-        # Initialize face detection - try MediaPipe tasks first, then solutions, then fallback to OpenCV
-        if mp is None:
-            logger.warning(
-                "MediaPipe not available, will use OpenCV for face detection"
-            )
-            self._use_opencv = True
-            self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            )
-            self._mediapipe_tasks = False
-        elif hasattr(mp, "tasks") and FACE_LANDMARKER_TASK.exists():
-            # Use the newer MediaPipe Tasks API if the .task model file is available
-            BaseOptions = mp.tasks.BaseOptions
-            FaceLandmarker = mp.tasks.vision.FaceLandmarker
-            FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-            VisionRunningMode = mp.tasks.vision.RunningMode
-
-            options = FaceLandmarkerOptions(
-                base_options=BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK)),
-                running_mode=VisionRunningMode.IMAGE,
-                num_faces=5,
-                min_face_detection_confidence=0.5,
-                min_tracking_confidence=0.5,
-            )
-
-            # Create the face landmarker for video mode
-            self.face_landmarker = FaceLandmarker.create_from_options(options)
-            self._mediapipe_tasks = True
-            self._use_opencv = False
-            logger.info("Using MediaPipe Tasks API for face detection")
-        elif hasattr(mp, "solutions"):
-            # Older mediapipe versions expose the 'solutions' API (mp.solutions.face_mesh).
-            self.mp_face_mesh = mp.solutions.face_mesh
-            # refine_landmarks=False keeps performance reasonable
-            self.face_mesh = self.mp_face_mesh.FaceMesh(
-                static_image_mode=False,
-                max_num_faces=10,
-                refine_landmarks=True,
-                min_detection_confidence=0.5,
-                model_selection=MEDIAPIPE_FACE_MESH_MODEL_SELECTION,
-            )
+        # Initialize SCRFD face detection
+        scrfd_path = MODELS_DIR / "scrfd_500m_bnkps.onnx"
+        if scrfd_path.exists():
+            self.face_detector = SCRFD(str(scrfd_path), session_options=session_options, providers=providers)
+            self._use_scrfd = True
             self._mediapipe_tasks = False
             self._use_opencv = False
-            logger.info("Using MediaPipe Solutions API for face detection")
+            logger.info("Using SCRFD for high-precision face detection")
         else:
-            # Fallback to OpenCV for face detection
-            logger.warning(
-                "MediaPipe tasks/solutions not available, using OpenCV for face detection"
-            )
+            logger.warning("SCRFD model not found at %s. Falling back to OpenCV.", scrfd_path)
+            self._use_scrfd = False
             self._use_opencv = True
             self.face_cascade = cv2.CascadeClassifier(
                 cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -249,7 +213,38 @@ class InsightEmbedder:
         # Common 5-point indices that map well onto face landmarker outputs
         lm5_idx = [468, 473, 1, 61, 291]
 
-        if getattr(self, "_use_opencv", False):
+        if getattr(self, "_use_scrfd", False):
+            # Use SCRFD for face detection
+            bboxes, kpss, scrfd_scores = self.face_detector.detect(image_bgr, max_num=10, metric='default')
+            if bboxes.shape[0] == 0:
+                return np.empty((0, 4)), np.empty((0, 5, 2)), np.empty((0,))
+            
+            for i in range(bboxes.shape[0]):
+                box = bboxes[i]
+                boxes_out = [box[0], box[1], box[2], box[3]]
+                boxes.append(boxes_out)
+                
+                kps = kpss[i] if kpss is not None else None
+                if kps is not None:
+                    # SCRFD outputs 5 keypoints directly (Left eye, Right eye, Nose, Left mouth, Right mouth)
+                    landmarks_all.append(kps)
+                else:
+                    # Fallback if no keypoints
+                    x_center = (box[0] + box[2]) / 2
+                    y_center = (box[1] + box[3]) / 2
+                    w_ = box[2] - box[0]
+                    h_ = box[3] - box[1]
+                    lm5 = np.array([
+                        [box[0] + w_ * 0.25, y_center],
+                        [box[0] + w_ * 0.75, y_center],
+                        [x_center, box[1] + h_ * 0.5],
+                        [box[0] + w_ * 0.2, box[1] + h_ * 0.8],
+                        [box[0] + w_ * 0.8, box[1] + h_ * 0.8],
+                    ], dtype=np.float32)
+                    landmarks_all.append(lm5)
+                    
+                scores.append(scrfd_scores[i])
+        elif getattr(self, "_use_opencv", False):
             # Use OpenCV Haar Cascade for face detection
             gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
             faces = self.face_cascade.detectMultiScale(
