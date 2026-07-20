@@ -9,8 +9,9 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
 1. **Client Tier (Frontend):** 
    - Xây dựng bằng **Next.js 14** (App Router).
    - Truy cập Camera thiết bị thông qua WebRTC / `getUserMedia`.
-   - Tích hợp mô hình AI nhẹ **MediaPipe** trực tiếp trên trình duyệt để thực hiện **Edge Tracking** (theo dõi khuôn mặt liên tục).
-   - Tự động cắt mặt (crop) và chỉ stream phần ảnh khuôn mặt (kèm `local_track_id`) qua **WebSocket** (Subprotocol: `camera-observer`) với tần suất tối ưu (vd: 1 lần/giây).
+   - Tích hợp mô hình AI nhẹ **MediaPipe BlazeFace** trực tiếp trên trình duyệt để thực hiện **Edge Tracking** (theo dõi khuôn mặt liên tục).
+   - Sử dụng thuật toán **Laplacian Variance** để đánh giá độ mờ (Blur Detection), tự động bỏ qua các ảnh bị nhòe.
+   - Tự động cắt mặt (Edge Crop) với 25% padding và chỉ stream phần ảnh khuôn mặt (kèm `local_track_id`) qua **WebSocket** (Subprotocol: `camera-observer`) với tần suất tối ưu.
 2. **Gateway Tier (FastAPI Backend):**
    - Đóng vai trò là điểm cuối (endpoint) giao tiếp với người dùng (`routes.py`).
    - Tiếp nhận luồng WebSocket, bóc tách protocol nhị phân (chứa siêu dữ liệu Edge Crop + ảnh JPEG) và đẩy vào hàng đợi thông qua **Redpanda** (Event Sourcing - topic `camera_frames`).
@@ -18,7 +19,9 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
    - Chờ nhận kết quả từ Redis (qua cơ chế Pub/Sub) và truyền lại cho Frontend.
 3. **Worker Tier (AI Processing):**
    - Là các tiến trình (containers) độc lập, hoàn toàn **Stateless** (không lưu trạng thái - `ai_worker.py`).
-   - Lắng nghe sự kiện từ Redpanda qua cơ chế **Batch Polling & Deduplication** (chỉ lấy ảnh mới nhất của mỗi người), kéo frame về, xử lý phát hiện (Detection), theo dõi (Tracking) và trích xuất vector (Embedding).
+   - Lắng nghe sự kiện từ Redpanda, kéo các Edge Crop về. 
+   - Sử dụng kiến trúc **Hybrid Detection**: Worker chạy mô hình **SCRFD 500M** (viết bằng C++ / ONNX) trên ảnh Crop để trích xuất cực kỳ chính xác 5 điểm mốc (landmarks) bất chấp góc nghiêng.
+   - Dựa vào 5 điểm mốc, thuật toán Affine Transform sẽ căn chỉnh (Align) khuôn mặt trước khi đưa vào mô hình nhận diện **EdgeFace** để lấy Vector (Embedding).
    - Đẩy kết quả trở lại một kênh (channel) đặc thù của `connection_id` tương ứng trên Redis (Channel name: `worker_results_{connection_id}`).
 4. **Data Tier (Database & Cloud Storage):**
    - **PostgreSQL (Supabase):** Kết hợp `pgvector` cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer. Dual-write fallback với SQLite.
@@ -37,7 +40,7 @@ Hệ thống sử dụng **Redpanda** cho luồng dữ liệu vào (Event Sourci
 ### 2.2. Edge Tracking & Caching
 Thay vì gửi liên tục 30 FPS lên Server gây quá tải mạng, Front Door AI sử dụng kiến trúc Edge Tracking:
 - **Xử lý tại biên (Edge):** MediaPipe trên trình duyệt nhận diện và cấp phát một mã theo dõi duy nhất (`local_track_id`) cho từng người. Bounding Box trên giao diện được vẽ trực tiếp ở tần số 60 FPS mà không cần đợi Server.
-- **Tối ưu băng thông:** Frontend chỉ cắt (crop) khung mặt và gửi ảnh nhỏ gọn (10-20KB) lên Server theo một tần suất cố định (ví dụ: 1 ảnh/giây). 
+- **Tối ưu băng thông & Nhiễu:** Frontend đánh giá độ nhòe ảnh (Blur Detection), từ chối góc nghiêng xấu, sau đó cắt (crop) khuôn mặt với Padding 25% và gửi ảnh nhỏ gọn (10-20KB) lên Server theo một tần suất cố định (ví dụ: 1 ảnh/giây). Server (Worker) nhận crop, sẽ chạy tiếp mạng **SCRFD** để đảm bảo alignment hoàn hảo nhất trước khi nhúng.
 - **Session Isolation:** Mỗi Tab Trình duyệt kết nối sinh ra một `connection_id` ngẫu nhiên. Khi AI Worker xử lý xong, nó publish kết quả vào kênh Redis riêng (`worker_results_{connection_id}`). API Server nhận kết quả và forward về Client, Client sẽ tự động ánh xạ thông tin cá nhân vào `local_track_id` đang hiển thị.
 
 ---
@@ -63,8 +66,8 @@ graph TD
         D -->|2. Batch Poll & Deduplicate| F
         D -->|2. Batch Poll & Deduplicate| G
         
-        F -->|3. Publish Result| E
-        G -->|3. Publish Result| E
+        F -->|3. SCRFD Detect + EdgeFace Embed| E
+        G -->|3. SCRFD Detect + EdgeFace Embed| E
     end
 
     subgraph Database [Cloud Database & Storage]

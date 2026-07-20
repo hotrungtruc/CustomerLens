@@ -15,16 +15,17 @@ Khi một AI Worker nhận được Frame, quá trình xử lý trải qua các 
 
 ### Bước 0: Tiền xử lý tại Biên (Frontend Edge Filtering)
 - Trước khi Frame được gửi qua WebSocket tới Server, Frontend đóng vai trò là chốt chặn đầu tiên (Edge AI) nhờ tích hợp MediaPipe.
-- Chạy **Bộ lọc 3 lớp (Strict Face Filtering)**:
+- Chạy **Bộ lọc 4 lớp (Strict Face Filtering)**:
   - Loại bỏ ảnh bị cắt xén (chạm vào viền margin 5% của camera).
-  - Loại bỏ khuôn mặt có độ tự tin thấp (`score < 0.8`) hoặc khoảng cách 2 mắt quá hẹp.
+  - Loại bỏ khuôn mặt có độ tự tin thấp (`score < 0.4`) hoặc khoảng cách 2 mắt quá hẹp.
   - Loại bỏ các góc nghiêng cực đoan bằng tỷ lệ Yaw Ratio (lệch > 1.8 lần).
-- Chỉ những khung hình chứa khuôn mặt đạt chất lượng (Quality Face) mới được crop và bắn qua WebSocket, giúp triệt tiêu hiện tượng "nhận nhầm gáy/tai" và tạo ra ID rác.
+  - Loại bỏ các ảnh bị nhòe, mờ do chuyển động hoặc thiếu sáng thông qua thuật toán **Laplacian Variance** (Ngưỡng variance < 15).
+- Chỉ những khung hình chứa khuôn mặt đạt chất lượng (Quality Face) mới được crop (với padding 25%) và bắn qua WebSocket, giúp triệt tiêu hiện tượng "nhận nhầm gáy/tai" và tạo ra ID rác.
 
-### Bước 1: Face Detection (Phát hiện khuôn mặt)
-- Sử dụng **MediaPipe Tasks API** tích hợp bên trong `InsightEmbedder` để phát hiện cực nhanh các khuôn mặt trong khung hình.
-- Trả về Bounding Box (Tọa độ khuôn mặt), Landmark (Các điểm neo khuôn mặt) kèm theo Score (Độ tin cậy).
-- Bộ lọc cấu hình sẵn sẽ loại bỏ các khuôn mặt quá nhỏ (`MIN_FACE_BBOX_SIZE`) hoặc có độ tin cậy quá thấp (`MIN_DETECTION_SCORE`).
+### Bước 1: Face Detection (Phát hiện khuôn mặt) tại Backend
+- Ảnh Edge Crop được Worker nhận về sẽ đưa qua bộ **SCRFD 500M** (mô hình phát hiện khuôn mặt hiệu năng cao bằng C++ / ONNX).
+- SCRFD phát hiện khuôn mặt và trích xuất 5 điểm mốc (landmarks) cực kỳ chính xác, vượt trội hơn so với MediaPipe ở các góc nhìn khó.
+- Bộ lọc cấu hình sẵn sẽ loại bỏ các khuôn mặt quá nhỏ (`MIN_FACE_BBOX_SIZE`) hoặc có độ tin cậy quá thấp (`MIN_DETECTION_SCORE`). Khuôn mặt sau đó được **Affine Transform** (căn chỉnh thẳng) để chuẩn bị cho bước Embedding.
 
 ### Bước 2: Object Tracking (Theo dõi Đối tượng liên tục)
 Việc trích xuất và nhận diện đặc trưng khuôn mặt liên tục trên từng Frame là tốn kém. Giải pháp tối ưu là áp dụng **Tracking**:
@@ -63,8 +64,8 @@ sequenceDiagram
 
     API->>RP: Produce Frame (camera_frames)
     RP->>Worker: Batch Poll & Deduplicate
-    Worker->>Worker: MediaPipe Face Detection
-    Worker->>Worker: Kalman Filter & IOU Tracking
+    Worker->>Worker: Lọc & Căn chỉnh qua SCRFD (Alignment)
+    Worker->>Worker: Kế thừa Track ID từ Frontend
     
     alt Track ID chưa được định danh
         Worker->>Worker: Batch EdgeFace Embedding

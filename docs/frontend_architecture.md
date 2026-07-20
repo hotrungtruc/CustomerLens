@@ -17,11 +17,12 @@ Toàn bộ Source Code Frontend nằm trong `frontend/src/app`. Dưới đây l�
 
 - **UI & Styling:** Sử dụng **Tailwind CSS** để thiết kế giao diện (Utility-first) và **Lucide React** cho hệ thống Icon đồng nhất, nhẹ, sắc nét.
 - **State Management & Data Fetching:** Sử dụng hệ thống Hook của React kết hợp với WebSocket API tích hợp sẵn (Native `WebSocket`).
-- **Edge AI (MediaPipe Vision):** Frontend có tích hợp `@mediapipe/tasks-vision` để xử lý phân tích hình ảnh siêu nhẹ phía máy khách (Client-side Rendering). Hệ thống áp dụng **Bộ lọc 3 lớp (Strict Face Filtering)** ngay tại trình duyệt để "làm sạch" dữ liệu trước khi gửi lên Server:
-  1. **Lọc theo độ tự tin (Confidence > 80%):** Loại bỏ các khuôn mặt ảo giác do AI dự đoán mò (thường là gáy, tai hoặc vật thể giống mặt).
+- **Edge AI (MediaPipe Vision) & Hybrid Tracking:** Frontend có tích hợp `@mediapipe/tasks-vision` (BlazeFace Short Range) để xử lý phân tích hình ảnh siêu nhẹ phía máy khách (Client-side Rendering). Hệ thống áp dụng **Bộ lọc 4 lớp (Strict Face Filtering)** ngay tại trình duyệt để "làm sạch" dữ liệu trước khi gửi lên Server:
+  1. **Lọc theo độ tự tin (Confidence > 40%):** Loại bỏ các khuôn mặt ảo giác do AI dự đoán mò (thường là gáy, tai hoặc vật thể giống mặt). Ngưỡng 40% đã được cân chỉnh để nhận diện tốt qua màn hình/ảnh in.
   2. **Lọc theo góc nghiêng (Yaw Ratio):** Tính toán tỷ lệ khoảng cách từ đỉnh mũi tới hai mắt (giới hạn lệch 1.8 lần) để từ chối các ảnh nghiêng quá mức.
   3. **Lọc theo độ rộng (Inter-Ocular Distance):** Đo khoảng cách giữa 2 mắt (phải > 20% khung mặt) để loại bỏ góc quay ngang hoàn toàn 90 độ.
-  Nhờ bộ lọc Edge AI này, Backend giảm tải được một lượng lớn ảnh rác, giúp tăng tốc độ xử lý và đảm bảo chất lượng sinh ra Vector định danh.
+  4. **Lọc ảnh mờ (Laplacian Variance):** Đo phương sai của cường độ pixel. Các khung hình bị mờ do rung lắc hoặc thiếu sáng (Variance < 15) sẽ tự động bị loại bỏ.
+  Nhờ bộ lọc Edge AI này, Backend giảm tải được một lượng lớn ảnh rác, giúp tăng tốc độ xử lý và đảm bảo chất lượng sinh ra Vector định danh. Frontend chỉ việc crop khuôn mặt ra (padding 25%) và gửi Edge Crop qua WebSocket, còn việc trích xuất Landmark độ phân giải cao sẽ giao cho SCRFD ở Backend.
 
 ## 3. Quản lý Quyền Truy cập (RBAC)
 
@@ -32,8 +33,10 @@ Frontend áp dụng Role-Based Access Control thông qua Wrapper Components (Lay
 
 ## 4. Tương tác với Luồng WebSocket
 
-### Canvas Rendering
+### Canvas Rendering & Dynamic Cropping
 Để tránh tình trạng "giật lag" (Jitter) khi luồng mạng yếu, Frontend áp dụng kỹ thuật sau:
-1. **Camera Frame:** Vẽ thẳng (Draw) ảnh thu được từ thiết bị vào thẻ `<canvas>`.
-2. **AI Results:** WebSocket Server trả về mảng Bounding Box + Metadata (Tên, ID). Lớp dữ liệu này được vẽ (Render) đè lên `<canvas>` dưới dạng lớp phủ (Overlay). 
+1. **Camera Frame:** Vẽ thẳng (Draw) ảnh thu được từ thiết bị vào thẻ `<video>`.
+2. **AI Results:** Dữ liệu Bounding Box từ MediaPipe được lưu dưới dạng trạng thái (state).
+3. **Dynamic Canvas Cropping:** Khi đến lượt gửi ảnh, Frontend tạo một thẻ `<canvas>` tạm trong bộ nhớ (In-memory canvas), crop đúng khu vực khuôn mặt trên video, và chuyển đổi thành nhị phân. Bằng cách dùng canvas động, nhiều luồng crop có thể diễn ra song song độc lập với nhau, không bị hiện tượng Race Condition.
+4. **WebSocket Binary Transport:** Mảng Byte Array được ghép thêm một header chứa `local_track_id` và kích thước bounding box để Worker phân loại.
 Kết quả: Tốc độ khung hình mượt mà, Bounding Box luôn đi liền với khuôn mặt.
