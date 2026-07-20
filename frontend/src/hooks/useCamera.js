@@ -262,13 +262,17 @@ export function useCamera(cameraId) {
             blob.arrayBuffer().then(blobBuffer => {
                const transformed_landmarks = [];
                if (face.keypoints && face.keypoints.length >= 4) {
-                   // MediaPipe returns normalized coordinates [0..1]
-                   // Indices: 0: Right Eye, 1: Left Eye, 2: Nose Tip, 3: Mouth Center
-                   const indices = [1, 0, 2, 3]; // Map to: Left Eye, Right Eye, Nose, Mouth
-                   for (const idx of indices) {
-                       if (face.keypoints[idx]) {
-                           const px = face.keypoints[idx].x * video.videoWidth;
-                           const py = face.keypoints[idx].y * video.videoHeight;
+                   // Ensure the eye on the left side of the image is first, to match ArcFace template
+                   let eye1 = face.keypoints[0];
+                   let eye2 = face.keypoints[1];
+                   let leftEyeImg = eye1.x < eye2.x ? eye1 : eye2;
+                   let rightEyeImg = eye1.x < eye2.x ? eye2 : eye1;
+                   
+                   const points = [leftEyeImg, rightEyeImg, face.keypoints[2], face.keypoints[3]];
+                   for (const pt of points) {
+                       if (pt) {
+                           const px = pt.x * video.videoWidth;
+                           const py = pt.y * video.videoHeight;
                            const cropX = (px - sx) * scale;
                            const cropY = (py - sy) * scale;
                            transformed_landmarks.push([cropX, cropY]);
