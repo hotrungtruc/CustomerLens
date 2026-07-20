@@ -45,6 +45,8 @@ export function useLocalFaceDetector(videoRef) {
             delegate: "GPU",
           },
           runningMode: "VIDEO",
+          minDetectionConfidence: 0.3,
+          minSuppressionThreshold: 0.3
         });
 
         if (isMounted) {
@@ -97,7 +99,7 @@ export function useLocalFaceDetector(videoRef) {
 
                 // 1. Check Confidence Score
                 const score = d.categories && d.categories.length > 0 ? d.categories[0].score : 1;
-                const isHighConfidence = score > 0.8;
+                const isHighConfidence = score > 0.4;
 
                 // 2. Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
                 const hasValidLandmarks = d.keypoints && d.keypoints.length >= 4;
