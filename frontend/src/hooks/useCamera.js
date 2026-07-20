@@ -218,9 +218,10 @@ export function useCamera(cameraId) {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || video.readyState < 2) return;
+    if (!video || video.readyState < 2) return;
 
+    // Create a dynamic canvas to avoid race conditions when sending multiple crops asynchronously
+    const canvas = document.createElement("canvas");
     const ctx = canvas.getContext("2d", { willReadFrequently: false });
     if (!ctx) return;
 
