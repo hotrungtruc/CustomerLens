@@ -144,12 +144,27 @@ def main():
                     # Bypass detection entirely for edge crops, rely on frontend's tight bounding box
                     h, w = frame.shape[:2]
                     landmarks = data.get("landmarks")
+                    
+                    quality_ok = True
+                    guest_quality_ok = True
+                    
+                    # Frontal face check: distance between eyes should be reasonable
+                    if landmarks is not None and len(landmarks) >= 2:
+                        left_eye = np.array(landmarks[0])
+                        right_eye = np.array(landmarks[1])
+                        eye_dist = np.linalg.norm(left_eye - right_eye)
+                        # Crop width 'w' includes 50% padding on each side (200% total).
+                        # So actual face width is roughly w / 2.0.
+                        face_width = max(1.0, w / 2.0)
+                        if eye_dist / face_width < 0.25:
+                            guest_quality_ok = False
+
                     record = {
                         "bbox": (0, 0, w, h), # Full crop
                         "landmark": landmarks,
                         "score": 1.0,
-                        "quality_ok": True,
-                        "guest_quality_ok": True,
+                        "quality_ok": quality_ok,
+                        "guest_quality_ok": guest_quality_ok,
                         "embedding": None,
                     }
                     face_records.append(record)

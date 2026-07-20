@@ -29,7 +29,7 @@ def normalize_embedding(embedding):
         norm[norm == 0] = 1.0
         return embedding / norm
 
-def calculate_robust_mean_embedding(embeddings, similarity_threshold=0.6):
+def calculate_robust_mean_embedding(embeddings, similarity_threshold=0.45):
     """
     Calculate the mean embedding while rejecting outliers.
     Outliers are embeddings that are too far from the median.
@@ -51,8 +51,10 @@ def calculate_robust_mean_embedding(embeddings, similarity_threshold=0.6):
     valid_indices = np.where(median_sims >= similarity_threshold)[0]
     
     if len(valid_indices) == 0:
-        # Fallback if all are dissimilar (should rarely happen)
-        return normalize_embedding(np.mean(embeddings, axis=0))
+        # Fallback: Instead of averaging everything (which creates a noisy 'Frankenstein'),
+        # return the single embedding that is most similar to the rest.
+        best_idx = np.argmax(median_sims)
+        return normalize_embedding(embs[best_idx])
         
     return normalize_embedding(np.mean(embs[valid_indices], axis=0))
 
