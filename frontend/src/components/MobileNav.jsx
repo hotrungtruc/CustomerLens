@@ -19,7 +19,7 @@ const ITEMS = [
   { href: "/camera", label: "Camera", Icon: Camera },
   { href: "/customers", label: "Khách hàng", Icon: Users },
   { href: "/history", label: "Lịch sử", Icon: History },
-  { href: "/notifications", label: "Phân quyền", Icon: Shield },
+  { href: "/authorization", label: "Phân quyền", Icon: Shield },
   { href: "/reports", label: "Báo cáo", Icon: BarChart2 },
   { href: "/settings", label: "Cài đặt", Icon: Settings },
 ];
