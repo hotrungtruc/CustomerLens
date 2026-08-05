@@ -27,24 +27,24 @@ deploy_production:
     - echo "=== Deploying to Master ($MASTER_IP) ==="
     - ssh-keyscan -H "$MASTER_IP" >> ~/.ssh/known_hosts 2>/dev/null
     - |
-      ssh -i ~/.ssh/master.pem -o StrictHostKeyChecking=no "$EC2_USER@$MASTER_IP" << 'ENDSSH'
+      ssh -i ~/.ssh/master.pem -o StrictHostKeyChecking=no "$EC2_USER@$MASTER_IP" '
         set -e
         echo "--- Pulling latest code on Master ---"
         cd /home/ubuntu/face-recognition-system
         git fetch origin main
         git reset --hard origin/main
 
-          sudo docker compose down --timeout 30
-          sudo docker compose up --build -d backend redis redpanda ai_worker
-          sudo docker image prune -f
-ENDSSH
+        sudo docker compose down --timeout 30
+        sudo docker compose up --build -d backend redis redpanda ai_worker
+        sudo docker image prune -f
+      '
 
     - echo "=== Deploying to Workers ==="
     - |
       for WORKER_IP in $WORKER_IPS; do
         echo "--- Deploying to Worker: $WORKER_IP ---"
         ssh-keyscan -H "$WORKER_IP" >> ~/.ssh/known_hosts 2>/dev/null
-        ssh -i ~/.ssh/workers.pem -o StrictHostKeyChecking=no "$EC2_USER@$WORKER_IP" << 'ENDSSH'
+        ssh -i ~/.ssh/workers.pem -o StrictHostKeyChecking=no "$EC2_USER@$WORKER_IP" '
           set -e
           echo "--- Pulling latest code on Worker ---"
           cd /home/ubuntu/face-recognition-system
@@ -54,7 +54,7 @@ ENDSSH
           sudo docker compose down --timeout 30
           sudo docker compose up --build -d ai_worker
           sudo docker image prune -f
-ENDSSH
+        '
       done
 
     - echo "=== Triggering Vercel Frontend Build ==="
