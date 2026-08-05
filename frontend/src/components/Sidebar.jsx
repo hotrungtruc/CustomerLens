@@ -47,7 +47,7 @@ const ALL_NAV_ITEMS = [
   {
     key: "notifications",
     label: "Phân quyền",
-    href: "/notifications",
+    href: "/authorization",
     Icon: Shield,
     roles: ["admin"],
   },
