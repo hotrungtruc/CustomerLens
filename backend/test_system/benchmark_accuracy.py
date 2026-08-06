@@ -63,16 +63,12 @@ def evaluate_accuracy(
     extracted_count = 0
     failed_count = 0
 
-    for idx, img_path in enumerate(all_images, 1):
-        if idx % 50 == 0 or idx == len(all_images):
-            print(f"  Processing image {idx}/{len(all_images)} ({(idx/len(all_images))*100:.1f}%)...")
-            sys.stdout.flush()
-        img = cv2.imread(img_path)
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _extract_worker(path):
+        img = cv2.imread(path)
         if img is None:
-            failed_count += 1
-            continue
-        
-        # Enforce 5-Point Landmark Affine Alignment for precise biometrics
+            return path, None
         h, w = img.shape[:2]
         lm5_template = np.array([
             [w * 0.3419, h * 0.4616],
@@ -81,12 +77,21 @@ def evaluate_accuracy(
             [w * 0.3710, h * 0.8247],
             [w * 0.6315, h * 0.8232]
         ], dtype=np.float32)
-        emb = embedder.get_embedding(img, landmarks=lm5_template)
-        if emb is not None and len(emb) > 0:
-            embedding_cache[img_path] = np.asarray(emb, dtype=np.float32).reshape(-1)
-            extracted_count += 1
-        else:
-            failed_count += 1
+        emb = embedder.get_embedding(img, landmarks=lm5_template, use_tta=False)
+        return path, emb
+
+    all_images_list = list(all_images)
+    total_imgs = len(all_images_list)
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for idx, (path, emb) in enumerate(executor.map(_extract_worker, all_images_list), 1):
+            if idx % 500 == 0 or idx == total_imgs:
+                print(f"  Processing image {idx}/{total_imgs} ({(idx/total_imgs)*100:.1f}%)...")
+                sys.stdout.flush()
+            if emb is not None and len(emb) > 0:
+                embedding_cache[path] = np.asarray(emb, dtype=np.float32).reshape(-1)
+                extracted_count += 1
+            else:
+                failed_count += 1
 
     extraction_duration = time.time() - start_time
     print(f"  Embedding extraction completed in {extraction_duration:.2f}s ({extracted_count} success, {failed_count} failed).")

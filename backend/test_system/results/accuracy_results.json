@@ -1,25 +1,25 @@
 {
   "dataset": "C:\\SCHOOL\\asian_celeb_112x112_folders",
-  "num_identities_evaluated": 100,
-  "total_images_processed": 1800,
-  "extraction_duration_sec": 126.61,
+  "num_identities_evaluated": 1000,
+  "total_images_processed": 4168,
+  "extraction_duration_sec": 228.83,
   "verification_1to1": {
-    "genuine_pairs_count": 1700,
-    "impostor_pairs_count": 200,
-    "eer_percentage": 15.91,
-    "optimal_cosine_threshold": 0.322,
-    "tar_at_far_1e3_percentage": 42.41,
-    "tar_at_far_1e4_percentage": 42.41,
-    "precision_percentage": 97.81,
-    "recall_percentage": 84.18,
-    "f1_score_percentage": 90.48,
-    "mean_genuine_similarity": 0.4846,
-    "mean_impostor_similarity": 0.204
+    "genuine_pairs_count": 3168,
+    "impostor_pairs_count": 2000,
+    "eer_percentage": 14.33,
+    "optimal_cosine_threshold": 0.326,
+    "tar_at_far_1e3_percentage": 46.37,
+    "tar_at_far_1e4_percentage": 44.92,
+    "precision_percentage": 90.41,
+    "recall_percentage": 85.73,
+    "f1_score_percentage": 88.01,
+    "mean_genuine_similarity": 0.5294,
+    "mean_impostor_similarity": 0.1946
   },
   "identification_1toN": {
-    "gallery_size": 100,
-    "probes_evaluated": 1700,
-    "rank1_accuracy_percentage": 57.06,
-    "rank5_accuracy_percentage": 77.53
+    "gallery_size": 1000,
+    "probes_evaluated": 3168,
+    "rank1_accuracy_percentage": 51.58,
+    "rank5_accuracy_percentage": 65.06
   }
 }

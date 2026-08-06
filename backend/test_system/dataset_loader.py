@@ -56,7 +56,7 @@ def load_dataset_pairs(
                     for e in entries
                     if e.is_file() and e.name.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))
                 ]
-            identity_map[identity] = imgs
+            identity_map[identity] = imgs[:5] if len(imgs) > 5 else imgs
         except Exception:
             continue
 

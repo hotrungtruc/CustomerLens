@@ -39,8 +39,26 @@ def generate_markdown_report(output_file: str = None) -> str:
 
 **Thời gian thực hiện**: `{timestamp_str}`  
 **Bộ dữ liệu Đánh giá**: `{acc_data.get('dataset', 'C:\\SCHOOL\\asian_celeb_112x112_folders')}`  
-**Số lượng nhân vật thử nghiệm (Identities)**: `{acc_data.get('num_identities_evaluated', 300)}` người ngẫu nhiên  
+**Số lượng nhân vật thử nghiệm (Identities)**: `{acc_data.get('num_identities_evaluated', 1000)}` người ngẫu nhiên  
 **Tổng số ảnh khuôn mặt xử lý**: `{acc_data.get('total_images_processed', 0)}` ảnh  
+
+---
+
+## 0. Thông số Môi trường Thực nghiệm (Experimental Environment Specifications)
+
+| Thông số | Giá trị Thực nghiệm (CPU Only Benchmark) |
+| :--- | :--- |
+| **CPU Gateway** | Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz (2 vCPU) |
+| **RAM Gateway** | 1.0 GB (908 MiB) |
+| **CPU mỗi AI Worker** | Intel(R) Xeon(R) Platinum 8259CL CPU @ 2.50GHz (2 vCPU) |
+| **RAM mỗi AI Worker** | 1.0 GB - 16.0 GB RAM |
+| **Số AI Worker** | **2 Workers** (Stateless Execution Pool) |
+| **Hệ điều hành & Phiên bản Docker** | Ubuntu 24.04 LTS / Windows 11 (Docker v29.1.3 & v29.6.1) |
+| **Phiên bản AdaFace & SCRFD** | AdaFace IR-18 (`adaface_ir18.onnx` 192MB) & SCRFD 500m (`scrfd_500m_bnkps.onnx`) |
+| **Execution Provider của ONNX Runtime** | **`CPUExecutionProvider`** (Chỉ dùng CPU) |
+| **Phiên bản PostgreSQL, pgvector, Redis & Redpanda** | PostgreSQL 16.1 (Supabase pgvector v0.7.0), Redis v7.2-alpine, Redpanda v23.3 |
+| **Độ phân giải camera & Chất lượng JPEG** | **1280 x 720 (720p HD)**, JPEG Quality **85%** |
+| **Băng thông & Độ trễ mạng giữa các nút** | AWS Inter-node Bandwidth **5 Gbps**, RTT Latency **~0.45 ms** |
 
 ---
 
