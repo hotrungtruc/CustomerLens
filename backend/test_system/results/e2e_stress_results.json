@@ -1,0 +1,78 @@
+{
+  "1_cameras": {
+    "num_cameras": 1,
+    "aggregate_system_fps": 30.89,
+    "avg_fps_per_camera": 30.89,
+    "total_frames_processed": 155,
+    "duration_sec": 5.02,
+    "worker_breakdown": [
+      {
+        "worker_id": 1,
+        "frames_processed": 155,
+        "duration_sec": 5.01,
+        "fps": 30.92,
+        "mean_latency_ms": 32.34
+      }
+    ]
+  },
+  "2_cameras": {
+    "num_cameras": 2,
+    "aggregate_system_fps": 48.07,
+    "avg_fps_per_camera": 24.04,
+    "total_frames_processed": 242,
+    "duration_sec": 5.03,
+    "worker_breakdown": [
+      {
+        "worker_id": 1,
+        "frames_processed": 121,
+        "duration_sec": 5.02,
+        "fps": 24.11,
+        "mean_latency_ms": 41.47
+      },
+      {
+        "worker_id": 2,
+        "frames_processed": 121,
+        "duration_sec": 5.03,
+        "fps": 24.08,
+        "mean_latency_ms": 41.53
+      }
+    ]
+  },
+  "4_cameras": {
+    "num_cameras": 4,
+    "aggregate_system_fps": 62.18,
+    "avg_fps_per_camera": 15.54,
+    "total_frames_processed": 314,
+    "duration_sec": 5.05,
+    "worker_breakdown": [
+      {
+        "worker_id": 4,
+        "frames_processed": 78,
+        "duration_sec": 5.01,
+        "fps": 15.55,
+        "mean_latency_ms": 64.28
+      },
+      {
+        "worker_id": 1,
+        "frames_processed": 78,
+        "duration_sec": 5.03,
+        "fps": 15.5,
+        "mean_latency_ms": 64.52
+      },
+      {
+        "worker_id": 2,
+        "frames_processed": 79,
+        "duration_sec": 5.03,
+        "fps": 15.69,
+        "mean_latency_ms": 63.73
+      },
+      {
+        "worker_id": 3,
+        "frames_processed": 79,
+        "duration_sec": 5.04,
+        "fps": 15.69,
+        "mean_latency_ms": 63.75
+      }
+    ]
+  }
+}

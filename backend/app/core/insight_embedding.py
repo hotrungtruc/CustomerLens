@@ -159,13 +159,33 @@ class InsightEmbedder:
             )
         return faces
 
-    def is_quality_ok(self, bbox, score):
+    def is_quality_ok(self, bbox, score, image_bgr=None, landmarks=None):
         left, top, right, bottom = map(int, bbox)
         width = max(0, right - left)
         height = max(0, bottom - top)
         min_size = system_settings.get("min_face_bbox_size", MIN_FACE_BBOX_SIZE)
         min_score = system_settings.get("min_detection_score", MIN_DETECTION_SCORE)
-        return width >= min_size and height >= min_size and float(score) >= min_score
+        if width < min_size or height < min_size or float(score) < min_score:
+            return False
+            
+        if image_bgr is not None and width > 0 and height > 0:
+            h, w = image_bgr.shape[:2]
+            crop = image_bgr[max(0, top):min(h, bottom), max(0, left):min(w, right)]
+            if crop.size > 0:
+                gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+                blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
+                if blur_score < 150.0:  # Production Quality Gate: Blur Score > 150
+                    return False
+
+        # Pose Gate: Check eye distance and head pose symmetry (yaw < 15°)
+        if landmarks is not None and len(landmarks) >= 2:
+            left_eye = landmarks[0]
+            right_eye = landmarks[1]
+            eye_dist = np.linalg.norm(left_eye - right_eye)
+            if eye_dist / width < 0.28:  # Filter out heavy side-face angles (> 15° yaw)
+                return False
+
+        return True
 
     def is_guest_quality_ok(self, bbox, score, landmarks):
         if not self.is_quality_ok(bbox, score):
@@ -341,22 +361,7 @@ class InsightEmbedder:
 
         return boxes_arr, landmarks_arr, scores_arr
 
-    def get_embedding(self, image_bgr, landmarks=None):
-        if landmarks is None or len(landmarks) == 0:
-            aligned = cv2.resize(image_bgr, FACE_SIZE)
-        else:
-            landmarks_arr = np.array(landmarks, dtype=np.float32)
-            template = EDGE_CROP_TEMPLATE if len(landmarks_arr) == 4 else ARC_FACE_TEMPLATE
-            matrix, _ = cv2.estimateAffinePartial2D(
-                landmarks_arr,
-                template,
-                method=cv2.LMEDS,
-            )
-            if matrix is None:
-                aligned = cv2.resize(image_bgr, FACE_SIZE)
-            else:
-                aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
-
+    def _forward_single_aligned(self, aligned):
         # Check input shape of the model to support NCHW vs NHWC dynamically
         input_shape = self.recognizer.get_inputs()[0].shape
         if input_shape[-1] == 3 or input_shape[-1] == "3":
@@ -368,7 +373,6 @@ class InsightEmbedder:
             blob = np.expand_dims(aligned_norm, axis=0)
         else:
             # NCHW format (e.g. MobileFaceNet, AdaFace)
-            # AdaFace models typically require BGR input, while InsightFace models require RGB
             is_adaface = "adaface" in getattr(self, "_model_name", "").lower()
             swap_rb = not is_adaface
 
@@ -389,8 +393,32 @@ class InsightEmbedder:
 
         self.recognizer.run_with_iobinding(io_binding)
         embedding = io_binding.copy_outputs_to_cpu()[0][0]
-
         return normalize_embedding(embedding)
+
+    def get_embedding(self, image_bgr, landmarks=None, use_tta=True):
+        if landmarks is None or len(landmarks) == 0:
+            aligned = cv2.resize(image_bgr, FACE_SIZE)
+        else:
+            landmarks_arr = np.array(landmarks, dtype=np.float32)
+            template = EDGE_CROP_TEMPLATE if len(landmarks_arr) == 4 else ARC_FACE_TEMPLATE
+            matrix, _ = cv2.estimateAffinePartial2D(
+                landmarks_arr,
+                template,
+                method=cv2.LMEDS,
+            )
+            if matrix is None:
+                aligned = cv2.resize(image_bgr, FACE_SIZE)
+            else:
+                aligned = cv2.warpAffine(image_bgr, matrix, FACE_SIZE, borderValue=0.0)
+
+        emb1 = self._forward_single_aligned(aligned)
+
+        if use_tta:
+            aligned_flip = cv2.flip(aligned, 1)
+            emb2 = self._forward_single_aligned(aligned_flip)
+            return normalize_embedding(emb1 + emb2)
+
+        return emb1
 
     def get_batch_embeddings(self, image_bgr, list_of_landmarks):
         """Batch extraction of face embeddings.

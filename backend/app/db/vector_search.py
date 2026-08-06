@@ -36,6 +36,10 @@ def search_similar_faces(
     vec_str = _embedding_to_pgvector_literal(query_embedding)
 
     cursor = conn.cursor()
+    try:
+        cursor.execute("SET LOCAL hnsw.ef_search = 200;")
+    except Exception:
+        pass
     cursor.execute(
         """
         SELECT customer_id,
