@@ -1,29 +1,29 @@
 {
   "iterations": 200,
   "feature_extraction_single": {
-    "mean_ms": 47.84,
-    "min_ms": 45.84,
-    "max_ms": 61.67,
-    "p50_ms": 47.45,
-    "p90_ms": 48.69,
-    "p99_ms": 59.22,
-    "fps": 20.9
+    "mean_ms": 49.98,
+    "min_ms": 47.04,
+    "max_ms": 64.92,
+    "p50_ms": 49.25,
+    "p90_ms": 53.37,
+    "p99_ms": 60.04,
+    "fps": 20.01
   },
   "scrfd_detection_720p": {
-    "mean_ms": 32.95,
-    "min_ms": 30.62,
-    "max_ms": 44.96,
-    "p50_ms": 32.7,
-    "p90_ms": 34.08,
-    "p99_ms": 42.75,
-    "fps": 30.35
+    "mean_ms": 32.49,
+    "min_ms": 29.07,
+    "max_ms": 43.84,
+    "p50_ms": 31.72,
+    "p90_ms": 34.58,
+    "p99_ms": 42.95,
+    "fps": 30.78
   },
   "pgvector_hnsw_search": {
-    "mean_ms": 285.76,
-    "min_ms": 282.99,
-    "max_ms": 304.27,
-    "p50_ms": 284.59,
-    "p90_ms": 289.05,
-    "p99_ms": 297.9
+    "mean_ms": 303.26,
+    "min_ms": 300.02,
+    "max_ms": 329.13,
+    "p50_ms": 301.88,
+    "p90_ms": 305.7,
+    "p99_ms": 320.46
   }
 }
