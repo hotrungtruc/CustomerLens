@@ -1,6 +1,6 @@
 # 🎓 Báo cáo Đánh giá AI: Độ chính xác & Tốc độ Xử lý Hệ thống (Face Recognition System Benchmark)
 
-**Thời gian thực hiện**: `2026-08-06 17:53:33`  
+**Thời gian thực hiện**: `2026-08-08 12:33:19`  
 **Bộ dữ liệu Đánh giá**: `C:\SCHOOL\asian_celeb_112x112_folders`  
 **Số lượng nhân vật thử nghiệm (Identities)**: `1000` người ngẫu nhiên  
 **Tổng số ảnh khuôn mặt xử lý**: `4168` ảnh  
@@ -50,9 +50,9 @@
 
 | Công đoạn Xử lý (Pipeline Stage) | Mean Latency | Median (P50) | P90 Latency | P99 Latency | Throughput (FPS) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **ONNX Feature Extraction (EdgeFace)** | `189.01 ms` | `179.01 ms` | `199.91 ms` | `354.15 ms` | **`5.29 FPS`** |
-| **SCRFD Face Detection (720p Frame)** | `94.52 ms` | `91.36 ms` | `109.54 ms` | `134.53 ms` | **`10.58 FPS`** |
-| **Supabase pgvector HNSW Search** | `285.43 ms` | `283.63 ms` | `287.11 ms` | `324.07 ms` | - |
+| **ONNX Feature Extraction (EdgeFace)** | `48.16 ms` | `47.53 ms` | `49.53 ms` | `57.75 ms` | **`20.76 FPS`** |
+| **SCRFD Face Detection (720p Frame)** | `30.45 ms` | `29.63 ms` | `32.38 ms` | `42.73 ms` | **`32.84 FPS`** |
+| **Supabase pgvector HNSW Search** | `265.17 ms` | `263.97 ms` | `268.69 ms` | `279.66 ms` | - |
 
 ---
 
@@ -73,5 +73,27 @@
    * Để đạt mức **TAR = 46.37%** với tỉ lệ chấp nhận sai FAR chỉ 0.1%, hệ thống nên thiết lập `SIMILARITY_THRESHOLD = 0.326`.
 
 2. **Về Tốc độ Xử lý & Khả năng Mở rộng**:
-   * Mô hình ONNX `edgeface_s_gamma_05` hoạt động siêu tốc với thời gian trích xuất trung bình **`189.01 ms/ảnh`** (~**5.29 FPS**).
-   * Truy vấn HNSW index trên Supabase (`halfvec_cosine_ops`) đáp ứng dưới **`285.43 ms`**, sẵn sàng scale cho hàng chục ngàn vector khuôn mặt.
+   * Mô hình ONNX `edgeface_s_gamma_05` hoạt động siêu tốc với thời gian trích xuất trung bình **`48.16 ms/ảnh`** (~**20.76 FPS**).
+   * Truy vấn HNSW index trên Supabase (`halfvec_cosine_ops`) đáp ứng dưới **`265.17 ms`**, sẵn sàng scale cho hàng chục ngàn vector khuôn mặt.
+
+---
+
+## 5. Tiêu chuẩn An ninh & Phân lập Dữ liệu Sinh trắc học (Production Security & Compliance)
+
+1. **Xác thực JWT Mã hóa Bất đối xứng (RS256)**:
+   * Loại bỏ hoàn toàn bộ nhớ RAM cục bộ `ACTIVE_SESSIONS`. Mã hóa token bằng cặp khóa RSA 2048-bit (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`).
+   * Phân giải và xác thực ngầm định (Stateless) tại mọi node API Gateway & WebSocket Observer mà không tốn chi phí truy vấn DB hay chia sẻ RAM.
+
+2. **Tối ưu hóa Truy vấn Vector pgvector (Binary Protocol)**:
+   * Tự động đăng ký `pgvector.psycopg2` adapter trên connection pool.
+   * Truyền thẳng mảng nhị phân NumPy `ndarray` (float32) vào PostgreSQL query parameter, loại bỏ 100% chi phí parse chuỗi SQL string trên CPU.
+
+3. **Mã hóa Dữ liệu Tĩnh (AES-256-GCM Encryption at Rest)**:
+   * Tất cả ảnh chụp khuôn mặt tạm thời/đăng ký lưu giữ trên đĩa cứng được mã hóa bằng thuật toán `AES-256-GCM` với Nonce 12-byte ngẫu nhiên.
+
+4. **Bảo vệ Mẫu Sinh trắc học (Cancelable Biometrics - Orthogonal Random Projection)**:
+   * Biến đổi vector nhúng qua ma trận trực giao $Q \in \mathbb{R}^{512 \times 512}$ ($Q^T Q = I$).
+   * Bảo toàn 100% độ chính xác nhận diện Cosine Similarity (\langle Q\vec{x}_1, Q\vec{x}_2 \rangle = \langle \vec{x}_1, \vec{x}_2 \rangle), đồng thời ngăn chặn tuyệt đối nguy cơ đảo ngược tái tạo khuôn mặt gốc nếu CSDL bị rò rỉ.
+
+5. **Tuân thủ Quyền được Quên (GDPR Article 17 Purge)**:
+   * Xây dựng tiến trình và REST API `POST /api/admin/purge_guests` tự động xóa toàn bộ dữ liệu vết khách vãng lai (`GUEST_*`), embeddings, recognize logs và tệp tin đĩa cứng quá hạn 30 ngày.

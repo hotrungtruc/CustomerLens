@@ -14,6 +14,7 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
    - Tự động cắt mặt (Edge Crop) với 25% padding và chỉ stream phần ảnh khuôn mặt (kèm `local_track_id`) qua **WebSocket** (Subprotocol: `camera-observer`) với tần suất tối ưu.
 2. **Gateway Tier (FastAPI Backend):**
    - Đóng vai trò là điểm cuối (endpoint) giao tiếp với người dùng (`routes.py`).
+   - Quản lý **Xác thực JWT RS256 Stateless**: Token được ký mã hóa bằng RSA Private Key và xác thực tức thì bằng RSA Public Key tại mọi instance Gateway.
    - Tiếp nhận luồng WebSocket, bóc tách protocol nhị phân (chứa siêu dữ liệu Edge Crop + ảnh JPEG) và đẩy vào hàng đợi thông qua **Redpanda** (Event Sourcing - topic `camera_frames`).
    - Xử lý gán nhãn thông tin hồ sơ bằng cách mapping `local_track_id` từ Worker trả về.
    - Chờ nhận kết quả từ Redis (qua cơ chế Pub/Sub) và truyền lại cho Frontend.
@@ -24,7 +25,7 @@ Hệ thống bao gồm 4 tầng (tiers) chính:
    - Dựa vào 5 điểm mốc, thuật toán Affine Transform sẽ căn chỉnh (Align) khuôn mặt trước khi đưa vào mô hình nhận diện **EdgeFace** để lấy Vector (Embedding).
    - Đẩy kết quả trở lại một kênh (channel) đặc thù của `connection_id` tương ứng trên Redis (Channel name: `worker_results_{connection_id}`).
 4. **Data Tier (Database & Cloud Storage):**
-   - **PostgreSQL (Supabase):** Kết hợp `pgvector` cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer. Dual-write fallback với SQLite.
+   - **PostgreSQL (Supabase):** Kết hợp `pgvector` và adapter `pgvector.psycopg2` (Native Binary Parameter Binding) cho việc tìm kiếm HNSW siêu tốc (Vector Similarity Search) áp dụng cho cả Guest và Customer. Dual-write fallback với SQLite.
    - **Supabase Storage:** Lưu trữ ảnh đại diện của khách hàng trên Cloud CDN.
 
 ---

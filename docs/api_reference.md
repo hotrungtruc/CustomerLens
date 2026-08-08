@@ -14,7 +14,7 @@ Tầng Backend của Front Door AI được xây dựng dựa trên FastAPI (`ba
 ### 1.2 Luồng Observer (Dashboard Client)
 - **Endpoint:** `WS /ws/observe/{camera_id}`
 - **Chức năng:** Sử dụng bởi Quản trị viên trên UI (Next.js) để xem luồng Camera và Bounding Box (khuôn mặt được AI đánh dấu).
-- **Xác thực:** Dựa trên Sub-protocol. Client khởi tạo với mảng `sec-websocket-protocol`: `["camera-observer", "<Authorization_Token>"]`.
+- **Xác thực:** Dựa trên Sub-protocol. Client khởi tạo với mảng `sec-websocket-protocol`: `["camera-observer", "<JWT_Bearer_Token>"]`. Máy chủ giải mã và xác thực chữ ký JWT bằng khóa công khai RSA (`JWT_PUBLIC_KEY`) một cách ngầm định (Stateless).
 - **Hoạt động:** Server đăng ký (Subscribe) vào kênh Redis `worker_results_{connection_id}` để lắng nghe kết quả trả về từ AI Worker và forward (chuyển tiếp) chúng tới UI (Client) dạng JSON.
 
 ## 2. Các RESTful APIs Chính
@@ -35,7 +35,7 @@ Tầng Backend của Front Door AI được xây dựng dựa trên FastAPI (`ba
 
 ### 2.3 Quản trị Hệ thống
 - **`POST /api/login`**
-  - **Mô tả:** Đăng nhập. Trả về Token (Tương đương API Key). Token này được lưu giữ tại một biến Dictionary RAM trên Gateway (`ACTIVE_SESSIONS`), cho phép phân giải User cực nhanh (Bỏ qua thao tác Query DB trên mỗi luồng request).
+  - **Mô tả:** Đăng nhập. Trả về **JSON Web Token (JWT)** mã hóa bất đối xứng **RS256**. Token được ký bằng khóa riêng tư (`JWT_PRIVATE_KEY`) trên máy chủ, cho phép phân giải và xác thực quyền hạn User tức thì (Stateless) tại mọi instance API Gateway mà không cần truy vấn DB hay chia sẻ RAM.
 - **`GET` & `POST /api/settings`**
   - **Mô tả:** Quản lý các biến môi trường của hệ thống (Thresholds như `MIN_DETECTION_SCORE`, IOU Config, v.v.).
 

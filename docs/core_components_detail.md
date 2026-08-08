@@ -37,4 +37,7 @@ WebSocket là trạng thái kết nối 2 chiều nhưng rất dễ bị đứt 
 
 - **LUA Script (`RENEW_CAMERA_LEASE_SCRIPT` & `TAKEOVER_CAMERA_LEASE_SCRIPT`):** Đảm bảo tính nhất quán (Atomic). Khi một connection yêu cầu "Renew", Redis đảm bảo chỉ có Connection sở hữu Lease (chìa khóa) hiện tại mới được phép gia hạn thêm `CAMERA_PRESENCE_TTL_SECONDS`.
 - Background task `_maintain_camera_lease`: Liên tục chạy ngầm trong suốt vòng đời WebSocket. Nếu Server sập hoặc mạng đứt, Redis sẽ tự động thu hồi Lease, giải phóng Camera ID cho một kết nối mới phục hồi (Takeover).
-- Cấu trúc `ACTIVE_SESSIONS`: Dùng bộ nhớ RAM cục bộ để lưu nhanh token của Admin (tránh đọc DB PostgreSQL ở mỗi frame), giảm độ trễ xuống ngưỡng vi giây (Microseconds).
+- **Xác thực JWT Mã hóa Bất đối xứng (RS256):** Thay thế biến lưu trữ RAM nội bộ bằng mã hóa JWT với cặp khóa RSA 2048-bit (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`). Token được ký bằng khóa riêng tư tại API Gateway và được giải mã, xác thực chữ ký tức thì (Stateless) bằng khóa công khai tại mọi instance API và WebSocket Observer không qua DB hay RAM.
+
+## 4. Module Vector DB: `vector_search.py` & `connection.py`
+- **Native pgvector Parameter Binding (`pgvector.psycopg2`):** Đã nâng cấp từ chuỗi SQL string thủ công sang cơ chế đăng ký adapter `register_vector` native. Cho phép tham số NumPy `ndarray` (float32) được truyền thẳng dưới dạng Binary Protocol sang PostgreSQL `vector` data type, loại bỏ chi phí format chuỗi SQL trên CPU và đảm bảo hiệu năng tìm kiếm HNSW dưới <5ms.

@@ -9,6 +9,12 @@ import psycopg2.pool
 from config import ENCODE_FILE, PRODUCTION_DB_PATH
 from db_config import DATABASE_URL, DB_TYPE, USE_SUPABASE
 
+try:
+    from pgvector.psycopg2 import register_vector
+    HAS_PGVECTOR = True
+except ImportError:
+    HAS_PGVECTOR = False
+
 DEFAULT_TIME = "1970-01-01 00:00:00"
 DEFAULT_MODEL = "edgeface_s_gamma_05"
 
@@ -100,6 +106,11 @@ def get_db_connection():
     if USE_SUPABASE:
         pool = _get_pg_pool()
         pg_conn = pool.getconn()
+        if HAS_PGVECTOR:
+            try:
+                register_vector(pg_conn)
+            except Exception:
+                pass
         return PostgresConnectionWrapper(pg_conn, pool=pool)
     else:
         conn = sqlite3.connect(str(PRODUCTION_DB_PATH))

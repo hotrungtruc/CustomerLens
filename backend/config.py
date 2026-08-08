@@ -71,3 +71,62 @@ def ensure_data_dirs():
 
 ensure_data_dirs()
 
+# JWT Configuration (Asymmetric RS256)
+import os
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+JWT_ALGORITHM = "RS256"
+JWT_EXPIRATION_MINUTES = 60 * 24  # 24 hours
+
+KEYS_DIR = DATA_DIR / "keys"
+PRIVATE_KEY_PATH = KEYS_DIR / "jwt_private_key.pem"
+PUBLIC_KEY_PATH = KEYS_DIR / "jwt_public_key.pem"
+
+
+def get_jwt_keys():
+    """Load or generate RSA keypair for JWT RS256 signing and verification."""
+    env_private = os.getenv("JWT_PRIVATE_KEY_PEM")
+    env_public = os.getenv("JWT_PUBLIC_KEY_PEM")
+
+    if env_private and env_public:
+        return env_private.encode("utf-8"), env_public.encode("utf-8")
+
+    KEYS_DIR.mkdir(parents=True, exist_ok=True)
+
+    if PRIVATE_KEY_PATH.exists() and PUBLIC_KEY_PATH.exists():
+        private_bytes = PRIVATE_KEY_PATH.read_bytes()
+        public_bytes = PUBLIC_KEY_PATH.read_bytes()
+        return private_bytes, public_bytes
+
+    # Auto-generate RSA 2048-bit keypair
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+    )
+    private_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_bytes = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+    try:
+        PRIVATE_KEY_PATH.write_bytes(private_bytes)
+        PUBLIC_KEY_PATH.write_bytes(public_bytes)
+    except Exception:
+        pass
+
+    return private_bytes, public_bytes
+
+
+JWT_PRIVATE_KEY, JWT_PUBLIC_KEY = get_jwt_keys()
+
+# Biometric Privacy & Security Configuration (GDPR / BIPA Compliance)
+GUEST_RETENTION_DAYS = 30
+BIOMETRIC_STORAGE_KEY_PATH = KEYS_DIR / "biometric_storage.key"
+BIOMETRIC_PROJECTION_MATRIX_PATH = KEYS_DIR / "biometric_projection.npy"
+

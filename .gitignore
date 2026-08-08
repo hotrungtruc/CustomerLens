@@ -73,3 +73,9 @@ frontend_server*.log
 
 # AI Agents
 .agents/
+
+# Runtime Key Files & Data
+backend/data/keys/
+*.key
+*.pem
+*.npy

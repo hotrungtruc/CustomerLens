@@ -76,7 +76,7 @@ Chứa toàn bộ mã nguồn xử lý logic máy chủ, thuật toán AI, cơ s
 - [init_redpanda.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/init_redpanda.py): Script khởi tạo Topic `camera_frames` trên Redpanda khi khởi động hệ thống.
 
 ##### 📂 `backend/app/api/`
-- [routes.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/api/routes.py): File chứa toàn bộ các API Endpoints của hệ thống:
+- [routes.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/api/routes.py): File chứa toàn bộ các API Endpoints và cơ chế **Xác thực JWT RS256 Stateless**:
   - WebSocket `/ws/stream/{camera_id}`: Tiếp nhận luồng video realtime từ camera client và gửi trả kết quả nhận diện.
   - Customer API: CRUD khách hàng (`/api/customers`), tải ảnh khuôn mặt mẫu.
   - History API: Đọc nhật ký lịch sử nhận diện (`/api/history`).
@@ -95,8 +95,8 @@ Chứa toàn bộ mã nguồn xử lý logic máy chủ, thuật toán AI, cơ s
 - [settings.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/core/settings.py): Quản lý lưu trữ và đọc các thông số cấu hình hệ thống (ví dụ: ngưỡng nhận diện Cosine threshold, số lượng frame bỏ qua...).
 
 ##### 📂 `backend/app/db/`
-- [connection.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/db/connection.py): Khởi tạo connection pool tới Supabase/PostgreSQL và cài đặt bảng cơ sở dữ liệu (`ensure_schema`).
-- [vector_search.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/db/vector_search.py): Xử lý truy vấn độ tương đồng Cosine giữa Embedding vừa thu được với danh sách khuôn mặt trong CSDL thông qua mở rộng `pgvector` và chỉ mục **HNSW Index**.
+- [connection.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/db/connection.py): Khởi tạo connection pool tới Supabase/PostgreSQL, đăng ký adapter `pgvector.psycopg2` và cài đặt bảng cơ sở dữ liệu (`ensure_schema`).
+- [vector_search.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/db/vector_search.py): Xử lý truy vấn độ tương đồng Cosine giữa Embedding bằng **Native pgvector Parameter Binding** (truyền tham số mảng NumPy nhị phân) với danh sách khuôn mặt trong CSDL thông qua mở rộng `pgvector` và chỉ mục **HNSW Index**.
 - [seed_data.py](file:///c:/SCHOOL/HK253/BigData/face-recognition-system/backend/app/db/seed_data.py): Tạo dữ liệu khởi tạo ban đầu (Tài khoản Administrator mặc định, dữ liệu mẫu).
 
 ##### 📂 `backend/app/utils/`

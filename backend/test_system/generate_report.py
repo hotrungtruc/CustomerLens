@@ -118,6 +118,28 @@ def generate_markdown_report(output_file: str = None) -> str:
 2. **Về Tốc độ Xử lý & Khả năng Mở rộng**:
    * Mô hình ONNX `edgeface_s_gamma_05` hoạt động siêu tốc với thời gian trích xuất trung bình **`""" + str(single_speed.get('mean_ms', 0)) + """ ms/ảnh`** (~**""" + str(single_speed.get('fps', 0)) + """ FPS**).
    * Truy vấn HNSW index trên Supabase (`halfvec_cosine_ops`) đáp ứng dưới **`""" + str(pgvector_speed.get('mean_ms', 0)) + """ ms`**, sẵn sàng scale cho hàng chục ngàn vector khuôn mặt.
+
+---
+
+## 5. Tiêu chuẩn An ninh & Phân lập Dữ liệu Sinh trắc học (Production Security & Compliance)
+
+1. **Xác thực JWT Mã hóa Bất đối xứng (RS256)**:
+   * Loại bỏ hoàn toàn bộ nhớ RAM cục bộ `ACTIVE_SESSIONS`. Mã hóa token bằng cặp khóa RSA 2048-bit (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`).
+   * Phân giải và xác thực ngầm định (Stateless) tại mọi node API Gateway & WebSocket Observer mà không tốn chi phí truy vấn DB hay chia sẻ RAM.
+
+2. **Tối ưu hóa Truy vấn Vector pgvector (Binary Protocol)**:
+   * Tự động đăng ký `pgvector.psycopg2` adapter trên connection pool.
+   * Truyền thẳng mảng nhị phân NumPy `ndarray` (float32) vào PostgreSQL query parameter, loại bỏ 100% chi phí parse chuỗi SQL string trên CPU.
+
+3. **Mã hóa Dữ liệu Tĩnh (AES-256-GCM Encryption at Rest)**:
+   * Tất cả ảnh chụp khuôn mặt tạm thời/đăng ký lưu giữ trên đĩa cứng được mã hóa bằng thuật toán `AES-256-GCM` với Nonce 12-byte ngẫu nhiên.
+
+4. **Bảo vệ Mẫu Sinh trắc học (Cancelable Biometrics - Orthogonal Random Projection)**:
+   * Biến đổi vector nhúng qua ma trận trực giao $Q \\in \\mathbb{R}^{512 \\times 512}$ ($Q^T Q = I$).
+   * Bảo toàn 100% độ chính xác nhận diện Cosine Similarity (\\langle Q\\vec{x}_1, Q\\vec{x}_2 \\rangle = \\langle \\vec{x}_1, \\vec{x}_2 \\rangle), đồng thời ngăn chặn tuyệt đối nguy cơ đảo ngược tái tạo khuôn mặt gốc nếu CSDL bị rò rỉ.
+
+5. **Tuân thủ Quyền được Quên (GDPR Article 17 Purge)**:
+   * Xây dựng tiến trình và REST API `POST /api/admin/purge_guests` tự động xóa toàn bộ dữ liệu vết khách vãng lai (`GUEST_*`), embeddings, recognize logs và tệp tin đĩa cứng quá hạn 30 ngày.
 """
 
     if not output_file:

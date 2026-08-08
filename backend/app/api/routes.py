@@ -33,8 +33,9 @@ async def close_kafka_producer():
     if kafka_producer:
         await kafka_producer.stop()
 
-# Session store mapping hex tokens to user dicts
-ACTIVE_SESSIONS = {}
+import jwt
+from datetime import datetime, timedelta, timezone
+from config import JWT_ALGORITHM, JWT_EXPIRATION_MINUTES, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_pool = aioredis.ConnectionPool.from_url(REDIS_URL, max_connections=200)
@@ -42,13 +43,33 @@ redis_pool = aioredis.ConnectionPool.from_url(REDIS_URL, max_connections=200)
 async def get_redis():
     return aioredis.Redis(connection_pool=redis_pool)
 
+def create_access_token(user_info: dict) -> str:
+    """Create a signed RS256 JWT token using private RSA key."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_info.get("id")),
+        "id": user_info.get("id"),
+        "username": user_info.get("username"),
+        "role": user_info.get("role"),
+        "cameras": user_info.get("cameras", []),
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=JWT_EXPIRATION_MINUTES)).timestamp()),
+    }
+    return jwt.encode(payload, JWT_PRIVATE_KEY, algorithm=JWT_ALGORITHM)
+
+def decode_access_token(token: str) -> dict:
+    """Statelessly decode and verify an RS256 JWT token using public RSA key."""
+    try:
+        payload = jwt.decode(token, JWT_PUBLIC_KEY, algorithms=[JWT_ALGORITHM])
+        return payload
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+
 def get_user_from_token(authorization: str | None = None):
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Session expired or invalid")
     token = authorization.split(" ")[1].strip()
-    if token not in ACTIVE_SESSIONS:
-        raise HTTPException(status_code=401, detail="Session expired or invalid")
-    return ACTIVE_SESSIONS[token]
+    return decode_access_token(token)
 
 def require_admin(authorization: str | None = None):
     user = get_user_from_token(authorization)
@@ -60,9 +81,8 @@ def require_admin(authorization: str | None = None):
 
 
 def revoke_user_sessions(user_id: int):
-    for token, session_user in list(ACTIVE_SESSIONS.items()):
-        if session_user.get("id") == user_id:
-            ACTIVE_SESSIONS.pop(token, None)
+    # In stateless RS256 JWT mode, tokens naturally expire via 'exp' claim.
+    pass
 
 from app.db.connection import (create_or_update_customer_profile,
                                camera_exists, close_camera_connection,
@@ -321,7 +341,11 @@ def _resolve_observer_user(websocket: WebSocket, camera_id: str):
     if len(protocols) != 2 or protocols[0] != OBSERVER_WS_SUBPROTOCOL:
         return None, "missing_observer_token"
 
-    user = ACTIVE_SESSIONS.get(protocols[1])
+    try:
+        user = decode_access_token(protocols[1])
+    except HTTPException:
+        return None, "invalid_observer_token"
+
     if not user or user.get("role") not in {"admin", "moderator"}:
         return None, "invalid_observer_token"
 
@@ -627,7 +651,6 @@ async def api_login(request: Request):
         if row["status"] != "active":
             raise HTTPException(status_code=403, detail="Account is disabled")
 
-        token = secrets.token_hex(16)
         cameras_list = []
         if row["cameras"]:
             cameras_list = [c.strip() for c in row["cameras"].split(",") if c.strip()]
@@ -638,7 +661,7 @@ async def api_login(request: Request):
             "role": row["role"],
             "cameras": cameras_list,
         }
-        ACTIVE_SESSIONS[token] = user_info
+        token = create_access_token(user_info)
 
         return {"success": True, "token": token, "user": user_info}
     finally:
@@ -1674,9 +1697,6 @@ async def update_camera_permissions(
             (",".join(camera_ids) or None, user_row["id"]),
         )
         conn.commit()
-        for session_user in ACTIVE_SESSIONS.values():
-            if session_user.get("id") == user_row["id"]:
-                session_user["cameras"] = camera_ids
         return {"status": "success", "username": username, "camera_ids": camera_ids}
     except HTTPException:
         conn.rollback()
@@ -1758,3 +1778,22 @@ async def websocket_observe(websocket: WebSocket, camera_id: str):
         await pubsub.unsubscribe()
         await pubsub.aclose()
         await r.aclose()
+
+
+from app.core.biometric_security import purge_expired_guests
+
+
+@router.post("/api/admin/purge_guests")
+def api_purge_guests(
+    retention_days: int | None = None,
+    authorization: str | None = Header(None),
+):
+    """GDPR Article 17 (Right to be Forgotten) Purge Endpoint for Guest Records."""
+    require_admin(authorization)
+    conn = get_db_connection()
+    try:
+        days = retention_days if retention_days is not None else 30
+        result = purge_expired_guests(conn, retention_days=days)
+        return {"status": "success", "data": result}
+    finally:
+        conn.close()

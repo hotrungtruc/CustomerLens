@@ -83,7 +83,6 @@ class CameraIdentityMigrationTests(unittest.IsolatedAsyncioTestCase):
         conn.close()
 
     def tearDown(self):
-        routes.ACTIVE_SESSIONS.clear()
         db.PRODUCTION_DB_PATH = self.original_db_path
         db.DB_TYPE = self.original_db_type
         db.USE_SUPABASE = self.original_use_supabase
@@ -161,13 +160,12 @@ class CameraIdentityMigrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(legacy["camera_ids"], [])
 
     async def test_admin_can_manage_users_permissions_and_camera_names(self):
-        token = "admin-test-token"
-        routes.ACTIVE_SESSIONS[token] = {
+        token = routes.create_access_token({
             "id": 999,
             "username": "admin",
             "role": "admin",
             "cameras": [],
-        }
+        })
         authorization = f"Bearer {token}"
 
         conn = db.get_db_connection()

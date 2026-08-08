@@ -11,3 +11,6 @@ psycopg2-binary
 redis
 aiokafka
 kafka-python
+PyJWT>=2.8.0
+cryptography>=42.0.0
+pgvector>=0.2.5

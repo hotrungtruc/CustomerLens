@@ -17,6 +17,7 @@ def _embedding_to_pgvector_literal(embedding: np.ndarray) -> str:
 
 
 from app.core.vector_cache import vector_cache_manager
+from app.core.biometric_security import biometric_protector
 
 
 def search_similar_faces(
@@ -25,14 +26,12 @@ def search_similar_faces(
     top_k: int = 5,
     threshold: float = 0.55,
 ):
-    """Find the top_k most similar face embeddings using L1 Redis Cache and HNSW index.
+    """Find the top_k most similar face embeddings using L1 Redis Cache and HNSW index."""
+    # Apply Cancelable Biometrics Orthogonal Projection
+    protected_embedding = biometric_protector.protect_embedding(query_embedding)
 
-    1. Checks L1 Redis Vector Cache (< 1ms). If matched, returns immediately.
-    2. Fallback to Supabase pgvector HNSW index query.
-    3. Caches DB results into L1 Redis Cache for sub-millisecond future queries.
-    """
     # 1. Fast L1 Local Vector Cache Search (< 1ms)
-    l1_hits = vector_cache_manager.search_l1_cache(query_embedding, top_k=top_k, threshold=threshold)
+    l1_hits = vector_cache_manager.search_l1_cache(protected_embedding, top_k=top_k, threshold=threshold)
     if l1_hits:
         return l1_hits
 
@@ -42,30 +41,44 @@ def search_similar_faces(
     # Sync cache if empty or stale
     try:
         vector_cache_manager.sync_from_database(conn)
-        l1_hits = vector_cache_manager.search_l1_cache(query_embedding, top_k=top_k, threshold=threshold)
+        l1_hits = vector_cache_manager.search_l1_cache(protected_embedding, top_k=top_k, threshold=threshold)
         if l1_hits:
             return l1_hits
     except Exception:
         pass
-
-    vec_str = _embedding_to_pgvector_literal(query_embedding)
 
     cursor = conn.cursor()
     try:
         cursor.execute("SET LOCAL hnsw.ef_search = 200;")
     except Exception:
         pass
-    cursor.execute(
-        """
-        SELECT customer_id,
-               1 - (embedding::halfvec(512) <=> %s::halfvec(512)) AS similarity
-        FROM customer_embeddings
-        WHERE embedding IS NOT NULL
-        ORDER BY embedding::halfvec(512) <=> %s::halfvec(512)
-        LIMIT %s
-        """,
-        (vec_str, vec_str, top_k),
-    )
+
+    try:
+        cursor.execute(
+            """
+            SELECT customer_id,
+                   1 - (embedding::halfvec(512) <=> %s::halfvec(512)) AS similarity
+            FROM customer_embeddings
+            WHERE embedding IS NOT NULL
+            ORDER BY embedding::halfvec(512) <=> %s::halfvec(512)
+            LIMIT %s
+            """,
+            (protected_embedding, protected_embedding, top_k),
+        )
+    except Exception:
+        vec_str = _embedding_to_pgvector_literal(protected_embedding)
+        cursor.execute(
+            """
+            SELECT customer_id,
+                   1 - (embedding::halfvec(512) <=> %s::halfvec(512)) AS similarity
+            FROM customer_embeddings
+            WHERE embedding IS NOT NULL
+            ORDER BY embedding::halfvec(512) <=> %s::halfvec(512)
+            LIMIT %s
+            """,
+            (vec_str, vec_str, top_k),
+        )
+
     rows = cursor.fetchall()
     results = [
         (row["customer_id"], float(row["similarity"]))
@@ -88,24 +101,32 @@ def insert_embedding_with_vector(
     dim: int = 512,
     model_name: str = "edgeface_s_gamma_05",
 ):
-    """Insert a new embedding row with both BYTEA and pgvector representations.
+    """Insert a new embedding row with both BYTEA and pgvector representations."""
+    protected_embedding = biometric_protector.protect_embedding(embedding_np)
+    protected_blob = np.asarray(protected_embedding, dtype=np.float32).tobytes()
 
-    This dual-write ensures backward compatibility with code that reads
-    the BYTEA column while enabling HNSW search on the vector column.
-    """
-    vec_str = _embedding_to_pgvector_literal(embedding_np)
     if DB_TYPE == "postgresql":
-        # Plain INSERT — customer_embeddings has no UNIQUE constraint on
-        # customer_id (it uses id SERIAL PK), so ON CONFLICT would crash.
-        conn.execute(
-            """
-            INSERT INTO customer_embeddings (
-                customer_id, embedding, updated_at
-            ) VALUES (%s, %s::vector, CURRENT_TIMESTAMP)
-            """,
-            (customer_id, vec_str),
-        )
+        try:
+            conn.execute(
+                """
+                INSERT INTO customer_embeddings (
+                    customer_id, embedding, updated_at
+                ) VALUES (%s, %s::vector, CURRENT_TIMESTAMP)
+                """,
+                (customer_id, protected_embedding),
+            )
+        except Exception:
+            vec_str = _embedding_to_pgvector_literal(protected_embedding)
+            conn.execute(
+                """
+                INSERT INTO customer_embeddings (
+                    customer_id, embedding, updated_at
+                ) VALUES (%s, %s::vector, CURRENT_TIMESTAMP)
+                """,
+                (customer_id, vec_str),
+            )
     else:
+        vec_str = _embedding_to_pgvector_literal(protected_embedding)
         conn.execute(
             """
             INSERT INTO customer_embeddings (
@@ -113,12 +134,12 @@ def insert_embedding_with_vector(
                 embedding, updated_at
             ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
-            (customer_id, face_embedding_blob, dim, model_name, vec_str),
+            (customer_id, protected_blob, dim, model_name, vec_str),
         )
 
     # Auto-populate into L1 Redis Vector Cache for <1ms sub-millisecond future lookups
     try:
-        vector_cache_manager.add_to_cache(customer_id, embedding_np)
+        vector_cache_manager.add_to_cache(customer_id, protected_embedding)
     except Exception:
         pass
 
