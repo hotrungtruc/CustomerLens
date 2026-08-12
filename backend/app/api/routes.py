@@ -51,12 +51,19 @@ def _trigger_kafka_reconnect():
 async def init_kafka_producer():
     global kafka_producer
     try:
+        from app.init_redpanda import init_topics
+        await asyncio.to_thread(init_topics)
+    except Exception as e:
+        print(f"Failed to auto-init Redpanda topic: {e}", flush=True)
+
+    try:
         kafka_producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
         await kafka_producer.start()
         print(f"Connected to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}", flush=True)
     except Exception as e:
         print(f"Failed to connect to Redpanda ({e}). Launching background auto-reconnect...", flush=True)
         _trigger_kafka_reconnect()
+
 
 async def close_kafka_producer():
     global kafka_producer, _reconnect_task

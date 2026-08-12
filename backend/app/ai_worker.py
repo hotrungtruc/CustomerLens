@@ -39,6 +39,13 @@ def main():
     frame_queue = "camera_frames_v2"
     frame_count = 0
     
+    # Ensure Redpanda topic is initialized
+    try:
+        from app.init_redpanda import init_topics
+        init_topics()
+    except Exception as e:
+        logger.warning(f"Could not auto-initialize Redpanda topics: {e}")
+
     def create_kafka_consumer():
         try:
             c = KafkaConsumer(
@@ -47,6 +54,7 @@ def main():
                 group_id="ai_workers",
                 auto_offset_reset='latest',
                 enable_auto_commit=True,
+                metadata_max_age_ms=2000,
                 consumer_timeout_ms=300,
             )
             logger.info(f"[SUCCESS] Connected to Redpanda at '{KAFKA_BOOTSTRAP_SERVERS}'")
@@ -56,6 +64,7 @@ def main():
             return None
 
     consumer = create_kafka_consumer()
+
     last_kafka_retry = time.time()
     
     while True:
