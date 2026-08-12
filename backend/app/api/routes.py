@@ -1398,6 +1398,20 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             if logs:
                 bulk_insert_recognize_logs(conn, logs)
                 
+                # Auto update attendance count & last visit for recognized customers
+                _last_checkin = getattr(process_tracking_and_db, "_last_checkin", {})
+                now_ts = time.time()
+                for face in tracked_faces:
+                    cid = face.get("customer_id")
+                    if cid and not str(cid).startswith("GUEST_"):
+                        if now_ts - _last_checkin.get(cid, 0) > CHECKIN_COOLDOWN_SECONDS:
+                            _last_checkin[cid] = now_ts
+                            try:
+                                update_attendance(conn, cid, last_attendance_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                            except Exception as e:
+                                print(f"Auto attendance update failed for {cid}: {e}", flush=True)
+                process_tracking_and_db._last_checkin = _last_checkin
+                
             return customers
         finally:
             conn.close()

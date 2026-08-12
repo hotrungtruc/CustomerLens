@@ -1479,8 +1479,11 @@ def get_recognize_logs(
             "customer_type": r[7], "loyalty_tier": r[8], "track_id": r[9],
             "bbox": r[10], "timestamp": str(r[11])
         }
+        cid = item.get("customer_id")
         if not item.get("customer_name"):
-            item["customer_name"] = "Khách lạ (Guest)" if item.get("customer_id") else "Không xác định"
+            item["customer_name"] = cid if (cid and not cid.startswith("GUEST_")) else "Khách mới"
+        if not item.get("customer_type"):
+            item["customer_type"] = "guest" if (not cid or cid.startswith("GUEST_")) else "customer"
         if not item.get("camera_name"):
             item["camera_name"] = item.get("camera_id") or "Camera Sảnh"
         logs.append(item)
