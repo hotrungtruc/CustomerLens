@@ -363,3 +363,20 @@ export async function exportRecognizeLogsCsv(params = {}) {
   a.remove();
 }
 
+export async function fetchReportsData(params = {}) {
+  const query = new URLSearchParams();
+  if (params.startDate) query.append("start_date", params.startDate);
+  if (params.endDate) query.append("end_date", params.endDate);
+  if (params.cameraId && params.cameraId !== "all") query.append("camera_id", params.cameraId);
+
+  const response = await apiFetch(`${API_BASE_URL}/api/reports?${query.toString()}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể nạp dữ liệu báo cáo thống kê");
+  }
+  return response.json();
+}
+
+

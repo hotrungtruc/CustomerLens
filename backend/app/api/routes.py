@@ -149,7 +149,7 @@ from app.db.connection import (create_or_update_customer_profile,
                                touch_device_credential, update_camera_display_name,
                                user_can_view_camera,
                                update_attendance, bulk_insert_recognize_logs,
-                               get_recognize_logs)
+                               get_recognize_logs, get_reports_data)
 from config import (CHECKIN_COOLDOWN_SECONDS, FRAME_HEIGHT, FRAME_WIDTH,
                     GUEST_CREATION_BUFFER_SIZE, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD)
 from app.core.settings import system_settings
@@ -1086,6 +1086,29 @@ def api_export_recognize_logs_csv(
         )
     except Exception as e:
         return Response(content=f"Error exporting CSV: {str(e)}", status_code=500)
+    finally:
+        conn.close()
+
+@router.get("/api/reports")
+def api_get_reports_data(
+    start_date: str = None,
+    end_date: str = None,
+    camera_id: str = None,
+):
+    """
+    Get real analytical reports data (hourly traffic flow, daily counts, loyalty distribution, top customers).
+    """
+    conn = get_db_connection()
+    try:
+        data = get_reports_data(
+            conn,
+            start_date=start_date,
+            end_date=end_date,
+            camera_id=camera_id,
+        )
+        return {"success": True, "data": data}
+    except Exception as e:
+        return {"success": False, "message": f"Error loading reports data: {str(e)}"}
     finally:
         conn.close()
 

@@ -1487,3 +1487,169 @@ def get_recognize_logs(
 
     return {"logs": logs, "total_count": total_count}
 
+
+def get_reports_data(conn, start_date=None, end_date=None, camera_id=None):
+    """
+    Computes real analytics and reporting metrics from recognize_logs and customers tables.
+    """
+    where_clauses = []
+    params = []
+
+    if start_date:
+        where_clauses.append("rl.timestamp >= ?")
+        params.append(start_date)
+    if end_date:
+        where_clauses.append("rl.timestamp <= ?")
+        params.append(end_date)
+    if camera_id and camera_id != "all":
+        where_clauses.append("rl.camera_id = ?")
+        params.append(camera_id)
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    # 1. Total & Segment Summaries
+    summary_sql = f"""
+        SELECT 
+            COUNT(*) as total_visits,
+            SUM(CASE WHEN c.customer_type IS NOT NULL AND c.customer_type NOT IN ('guest', 'temporary') THEN 1 ELSE 0 END) as vip_visits,
+            SUM(CASE WHEN c.customer_type IS NULL OR c.customer_type IN ('guest', 'temporary') THEN 1 ELSE 0 END) as guest_visits,
+            COUNT(DISTINCT rl.customer_id) as unique_customers
+        FROM recognize_logs rl
+        LEFT JOIN customers c ON rl.customer_id = c.customer_id
+        {where_sql}
+    """
+    cursor = conn.execute(summary_sql, tuple(params))
+    row = cursor.fetchone()
+
+    total_visits = (row["total_visits"] if isinstance(row, dict) else (row[0] if row else 0)) or 0
+    vip_visits = (row["vip_visits"] if isinstance(row, dict) else (row[1] if row else 0)) or 0
+    guest_visits = (row["guest_visits"] if isinstance(row, dict) else (row[2] if row else 0)) or 0
+    unique_customers = (row["unique_customers"] if isinstance(row, dict) else (row[3] if row else 0)) or 0
+
+    repeat_rate = round((vip_visits / total_visits * 100), 1) if total_visits > 0 else 0.0
+
+    # 2. Hourly Distribution (8h to 21h for F&B business hours)
+    if DB_TYPE == "postgresql":
+        hourly_sql = f"""
+            SELECT EXTRACT(HOUR FROM rl.timestamp)::int as hr, COUNT(*) as count
+            FROM recognize_logs rl
+            LEFT JOIN customers c ON rl.customer_id = c.customer_id
+            {where_sql}
+            GROUP BY hr ORDER BY hr
+        """
+    else:
+        hourly_sql = f"""
+            SELECT CAST(strftime('%H', rl.timestamp) AS INTEGER) as hr, COUNT(*) as count
+            FROM recognize_logs rl
+            LEFT JOIN customers c ON rl.customer_id = c.customer_id
+            {where_sql}
+            GROUP BY hr ORDER BY hr
+        """
+    cursor = conn.execute(hourly_sql, tuple(params))
+    hourly_rows = cursor.fetchall()
+    hourly_map = {h: 0 for h in range(24)}
+    for r in hourly_rows:
+        hr = r["hr"] if isinstance(r, dict) else r[0]
+        cnt = r["count"] if isinstance(r, dict) else r[1]
+        if hr is not None and 0 <= hr < 24:
+            hourly_map[hr] = cnt
+
+    hourly_data = [{"hour": f"{h}h", "count": hourly_map[h]} for h in range(8, 22)]
+    peak_hour_item = max(hourly_data, key=lambda x: x["count"]) if hourly_data else {"hour": "12h", "count": 0}
+
+    # 3. Daily Traffic Distribution
+    if DB_TYPE == "postgresql":
+        daily_sql = f"""
+            SELECT TO_CHAR(rl.timestamp, 'YYYY-MM-DD') as day_str, COUNT(*) as count
+            FROM recognize_logs rl
+            LEFT JOIN customers c ON rl.customer_id = c.customer_id
+            {where_sql}
+            GROUP BY day_str ORDER BY day_str DESC LIMIT 7
+        """
+    else:
+        daily_sql = f"""
+            SELECT DATE(rl.timestamp) as day_str, COUNT(*) as count
+            FROM recognize_logs rl
+            LEFT JOIN customers c ON rl.customer_id = c.customer_id
+            {where_sql}
+            GROUP BY day_str ORDER BY day_str DESC LIMIT 7
+        """
+    cursor = conn.execute(daily_sql, tuple(params))
+    daily_rows = cursor.fetchall()
+    daily_data = []
+    for r in reversed(daily_rows):
+        day_str = r["day_str"] if isinstance(r, dict) else r[0]
+        cnt = r["count"] if isinstance(r, dict) else r[1]
+        daily_data.append({"day": str(day_str or ""), "count": cnt})
+
+    if not daily_data:
+        daily_data = [
+            {"day": "T2", "count": 0}, {"day": "T3", "count": 0}, {"day": "T4", "count": 0},
+            {"day": "T5", "count": 0}, {"day": "T6", "count": 0}, {"day": "T7", "count": 0}, {"day": "CN", "count": 0}
+        ]
+
+    # 4. Loyalty Distribution
+    loyalty_sql = f"""
+        SELECT COALESCE(c.loyalty_tier, 'Guest') as tier, COUNT(*) as count
+        FROM recognize_logs rl
+        LEFT JOIN customers c ON rl.customer_id = c.customer_id
+        {where_sql}
+        GROUP BY tier
+    """
+    cursor = conn.execute(loyalty_sql, tuple(params))
+    loyalty_rows = cursor.fetchall()
+    loyalty_data = []
+    for r in loyalty_rows:
+        tier = r["tier"] if isinstance(r, dict) else r[0]
+        cnt = r["count"] if isinstance(r, dict) else r[1]
+        loyalty_data.append({"tier": tier or "Guest", "count": cnt})
+
+    # 5. Top Regular Customers
+    top_sql = f"""
+        SELECT 
+            c.customer_id,
+            c.name,
+            c.phone,
+            COALESCE(c.loyalty_tier, 'Standard') as loyalty_tier,
+            COUNT(*) as visit_count,
+            MAX(rl.timestamp) as last_seen
+        FROM recognize_logs rl
+        JOIN customers c ON rl.customer_id = c.customer_id
+        {where_sql}
+        WHERE c.customer_type NOT IN ('guest', 'temporary') OR c.customer_type IS NULL
+        GROUP BY c.customer_id, c.name, c.phone, c.loyalty_tier
+        ORDER BY visit_count DESC
+        LIMIT 5
+    """
+    cursor = conn.execute(top_sql, tuple(params))
+    top_rows = cursor.fetchall()
+    top_customers = []
+    for r in top_rows:
+        top_customers.append({
+            "id": r["customer_id"] if isinstance(r, dict) else r[0],
+            "name": r["name"] if isinstance(r, dict) else r[1],
+            "phone": r["phone"] if isinstance(r, dict) else r[2],
+            "loyalty_tier": r["loyalty_tier"] if isinstance(r, dict) else r[3],
+            "visit_count": r["visit_count"] if isinstance(r, dict) else r[4],
+            "last_seen": str(r["last_seen"] if isinstance(r, dict) else r[5]),
+        })
+
+    return {
+        "summary": {
+            "total_visits": total_visits,
+            "vip_visits": vip_visits,
+            "guest_visits": guest_visits,
+            "unique_customers": unique_customers,
+            "repeat_rate": repeat_rate,
+            "peak_hour": peak_hour_item["hour"],
+            "peak_count": peak_hour_item["count"],
+        },
+        "hourly_traffic": hourly_data,
+        "daily_traffic": daily_data,
+        "loyalty_distribution": loyalty_data,
+        "top_customers": top_customers,
+    }
+
+
