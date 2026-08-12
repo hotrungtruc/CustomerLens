@@ -124,18 +124,6 @@ def main():
                 latest_frames[key] = (item, data, meta_len)
 
             for key, (item, data, meta_len) in latest_frames.items():
-                # Drop frame if delayed > 500ms (realtime constraint)
-                timestamp_str = data.get("timestamp")
-                if timestamp_str:
-                    try:
-                        frame_time = datetime.fromisoformat(timestamp_str).timestamp()
-                        delay = time.time() - frame_time
-                        if delay > 0.5:
-                            logger.warning(f"Dropping stale frame (delay: {delay:.3f}s)")
-                            continue
-                    except Exception:
-                        pass
-                
                 # It's a frame (Binary Packed)
                 frame_count += 1
                 
