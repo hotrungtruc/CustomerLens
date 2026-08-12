@@ -23,8 +23,10 @@ logger = logging.getLogger("AIWorker")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.from_url(REDIS_URL)
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
 
 def main():
+
     parser = argparse.ArgumentParser(description="Stateless AI Worker for Face Recognition")
     parser.add_argument("--camera", type=str, default="default", help="(Deprecated) Camera ID - ignored in stateless mode")
     args = parser.parse_args()
