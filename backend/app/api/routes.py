@@ -18,20 +18,73 @@ from aiokafka import AIOKafkaProducer
 
 kafka_producer: AIOKafkaProducer = None
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
+_reconnect_task: asyncio.Task = None
+
+async def _kafka_reconnect_loop():
+    global kafka_producer
+    while True:
+        await asyncio.sleep(5)
+        if kafka_producer is not None:
+            break
+        try:
+            print(f"[RETRY] Attempting to reconnect to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}...", flush=True)
+            producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
+            await producer.start()
+            kafka_producer = producer
+            print(f"[SUCCESS] Reconnected to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}!", flush=True)
+            break
+        except Exception as e:
+            print(f"[RETRY FAILED] Redpanda unavailable: {e}", flush=True)
+
+def _trigger_kafka_reconnect():
+    global _reconnect_task, kafka_producer
+    kafka_producer = None
+    if _reconnect_task is None or _reconnect_task.done():
+        try:
+            loop = asyncio.get_running_loop()
+            _reconnect_task = loop.create_task(_kafka_reconnect_loop())
+        except RuntimeError:
+            pass
 
 async def init_kafka_producer():
     global kafka_producer
     try:
         kafka_producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
         await kafka_producer.start()
-        print(f"Connected to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}")
+        print(f"Connected to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}", flush=True)
     except Exception as e:
-        print(f"Failed to connect to Redpanda: {e}")
+        print(f"Failed to connect to Redpanda ({e}). Launching background auto-reconnect...", flush=True)
+        _trigger_kafka_reconnect()
 
 async def close_kafka_producer():
-    global kafka_producer
+    global kafka_producer, _reconnect_task
+    if _reconnect_task and not _reconnect_task.done():
+        _reconnect_task.cancel()
     if kafka_producer:
         await kafka_producer.stop()
+        kafka_producer = None
+
+async def send_camera_frame(redis_conn, packed_payload: bytes, camera_id: str):
+    """
+    Publishes camera frame to Redpanda. If Redpanda is down or errors out,
+    automatically falls back to Redis queue (camera_frames_fallback).
+    """
+    global kafka_producer
+    sent_via_kafka = False
+    if kafka_producer is not None:
+        try:
+            await kafka_producer.send_and_wait("camera_frames", packed_payload)
+            sent_via_kafka = True
+        except Exception as e:
+            print(f"[FALLBACK WARNING] Redpanda send error ({e}). Switching to Redis queue fallback.", flush=True)
+            _trigger_kafka_reconnect()
+
+    if not sent_via_kafka:
+        try:
+            await redis_conn.lpush("camera_frames_fallback", packed_payload)
+            await redis_conn.ltrim("camera_frames_fallback", 0, 50)
+        except Exception as e:
+            print(f"[ERROR] Redis fallback frame push error: {e}", flush=True)
 
 import jwt
 from datetime import datetime, timedelta, timezone
@@ -1453,11 +1506,8 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     
                     packed_payload = meta_len_out + meta_json + raw_image_bytes
                     
-                    # Push to global camera_frames queue via Redpanda
-                    if kafka_producer:
-                        await kafka_producer.send_and_wait("camera_frames", packed_payload)
-                    else:
-                        print("Warning: kafka_producer is not initialized!")
+                    # Push to Redpanda with automatic Redis Queue Fallback
+                    await send_camera_frame(r, packed_payload, camera_id)
             elif "text" in msg:
                 try:
                     text_data = msg["text"]

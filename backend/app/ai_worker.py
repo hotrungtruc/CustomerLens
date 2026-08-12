@@ -37,53 +37,80 @@ def main():
     frame_queue = "camera_frames_v2"
     frame_count = 0
     
-    KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
-    logger.info(f"Worker is ready and waiting for frames on Redpanda '{KAFKA_BOOTSTRAP_SERVERS}'...")
+    def create_kafka_consumer():
+        try:
+            c = KafkaConsumer(
+                "camera_frames",
+                bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+                group_id="ai_workers",
+                auto_offset_reset='latest',
+                enable_auto_commit=True,
+                consumer_timeout_ms=300,
+            )
+            logger.info(f"[SUCCESS] Connected to Redpanda at '{KAFKA_BOOTSTRAP_SERVERS}'")
+            return c
+        except Exception as e:
+            logger.warning(f"[RETRY NEEDED] Redpanda unavailable ({e}). Worker starting in Redis Fallback mode.")
+            return None
+
+    consumer = create_kafka_consumer()
+    last_kafka_retry = time.time()
     
-    try:
-        consumer = KafkaConsumer(
-            "camera_frames",
-            bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-            group_id="ai_workers",
-            auto_offset_reset='latest',
-            enable_auto_commit=True
-        )
-    except Exception as e:
-        logger.error(f"Failed to connect to Redpanda: {e}")
-        sys.exit(1)
-        
     while True:
         try:
-            # Batch Polling (Max 50 records)
-            records = consumer.poll(timeout_ms=1000, max_records=50)
-            
-            if not records:
+            # 1. Background retry connection to Redpanda if disconnected
+            if consumer is None and (time.time() - last_kafka_retry > 5):
+                last_kafka_retry = time.time()
+                consumer = create_kafka_consumer()
+
+            raw_items = []
+
+            # 2. Poll Redpanda if active
+            if consumer is not None:
+                try:
+                    records = consumer.poll(timeout_ms=200, max_records=50)
+                    if records:
+                        for topic_partition, messages in records.items():
+                            for msg in messages:
+                                raw_items.append(msg.value)
+                except Exception as e:
+                    logger.warning(f"Redpanda poll error ({e}). Re-entering reconnect mode.")
+                    try:
+                        consumer.close()
+                    except Exception:
+                        pass
+                    consumer = None
+
+            # 3. Pull frames from Redis Fallback Queue
+            while True:
+                fallback_val = redis_client.rpop("camera_frames_fallback")
+                if not fallback_val:
+                    break
+                raw_items.append(fallback_val)
+
+            if not raw_items:
+                time.sleep(0.01)
                 continue
                 
             # Deduplication: keep only the latest frame per (connection_id, local_track_id)
             latest_frames = {}
-            for topic_partition, messages in records.items():
-                for msg in messages:
-                    item = msg.value
-                    meta_len = int.from_bytes(item[:4], byteorder="big")
-                    try:
-                        meta_json = item[4:4+meta_len].decode("utf-8")
-                        data = json.loads(meta_json)
-                    except Exception as e:
-                        logger.error(f"Failed to parse metadata: {e}")
-                        continue
+            for item in raw_items:
+                meta_len = int.from_bytes(item[:4], byteorder="big")
+                try:
+                    meta_json = item[4:4+meta_len].decode("utf-8")
+                    data = json.loads(meta_json)
+                except Exception as e:
+                    logger.error(f"Failed to parse metadata: {e}")
+                    continue
+                
+                connection_id = data.get("connection_id")
+                local_track_id = data.get("local_track_id")
+                
+                if not connection_id:
+                    continue
                     
-                    connection_id = data.get("connection_id")
-                    local_track_id = data.get("local_track_id")
-                    
-                    if not connection_id:
-                        continue
-                        
-                    # If it's a full frame without track id, don't deduplicate by track id
-                    key = (connection_id, local_track_id) if local_track_id else (connection_id, id(msg))
-                    
-                    # Store the latest message for this key (messages are ordered by offset)
-                    latest_frames[key] = (item, data, meta_len)
+                key = (connection_id, local_track_id) if local_track_id else (connection_id, data.get("opeid"))
+                latest_frames[key] = (item, data, meta_len)
 
             for key, (item, data, meta_len) in latest_frames.items():
                 # Drop frame if delayed > 500ms (realtime constraint)
