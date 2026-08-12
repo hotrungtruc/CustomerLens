@@ -79,3 +79,7 @@ backend/data/keys/
 *.key
 *.pem
 *.npy
+
+# Test Outputs
+experiments/test_crop_output/
+

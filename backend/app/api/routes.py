@@ -95,7 +95,8 @@ from app.db.connection import (create_or_update_customer_profile,
                                retire_replaced_camera, revoke_camera_credentials,
                                touch_device_credential, update_camera_display_name,
                                user_can_view_camera,
-                               update_attendance, bulk_insert_recognize_logs)
+                               update_attendance, bulk_insert_recognize_logs,
+                               get_recognize_logs)
 from config import (CHECKIN_COOLDOWN_SECONDS, FRAME_HEIGHT, FRAME_WIDTH,
                     GUEST_CREATION_BUFFER_SIZE, MIN_DETECTION_SCORE, MIN_FACE_BBOX_SIZE, SIMILARITY_THRESHOLD, TRACK_BUFFER_SIZE, TRACK_IOU_THRESHOLD)
 from app.core.settings import system_settings
@@ -930,6 +931,108 @@ def api_check_in_by_id(customer_id: str):
         return {"success": False, "message": f"Please wait {remaining}s"}
     except Exception as e:
         return {"success": False, "message": f"Error: {str(e)}"}
+    finally:
+        conn.close()
+
+@router.get("/api/logs")
+def api_get_recognize_logs(
+    start_date: str = None,
+    end_date: str = None,
+    camera_id: str = None,
+    customer_type: str = None,
+    search: str = None,
+    page: int = 1,
+    limit: int = 50,
+):
+    """
+    Get recognition event logs with date range filtering, camera, customer_type, search and pagination.
+    """
+    conn = get_db_connection()
+    try:
+        offset = max(0, (page - 1) * limit)
+        result = get_recognize_logs(
+            conn,
+            start_date=start_date,
+            end_date=end_date,
+            camera_id=camera_id,
+            customer_type=customer_type,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "success": True,
+            "logs": result["logs"],
+            "total_count": result["total_count"],
+            "page": page,
+            "limit": limit,
+            "total_pages": math.ceil(result["total_count"] / limit) if limit > 0 else 1,
+        }
+    except Exception as e:
+        return {"success": False, "message": f"Error fetching logs: {str(e)}", "logs": [], "total_count": 0}
+    finally:
+        conn.close()
+
+
+@router.get("/api/logs/export")
+def api_export_recognize_logs_csv(
+    start_date: str = None,
+    end_date: str = None,
+    camera_id: str = None,
+    customer_type: str = None,
+    search: str = None,
+):
+    """
+    Export filtered recognition logs as CSV file (with UTF-8 BOM for Excel compatibility).
+    """
+    conn = get_db_connection()
+    try:
+        result = get_recognize_logs(
+            conn,
+            start_date=start_date,
+            end_date=end_date,
+            camera_id=camera_id,
+            customer_type=customer_type,
+            search=search,
+            limit=10000,
+            offset=0,
+        )
+        logs = result["logs"]
+
+        import csv
+        import io
+
+        output = io.StringIO()
+        output.write('\ufeff')
+        writer = csv.writer(output)
+        writer.writerow([
+            "Mã Log", "Thời Gian", "Camera ID", "Tên Camera", 
+            "Mã Khách hàng", "Tên Khách hàng", "Số Điện thoại", "Loại Khách", "Hạng Thành viên", "Track ID"
+        ])
+
+        for log in logs:
+            writer.writerow([
+                log.get("id") or "",
+                log.get("timestamp") or "",
+                log.get("camera_id") or "",
+                log.get("camera_name") or "",
+                log.get("customer_id") or "",
+                log.get("customer_name") or "",
+                log.get("customer_phone") or "",
+                log.get("customer_type") or "guest",
+                log.get("loyalty_tier") or "Standard",
+                log.get("track_id") or "",
+            ])
+
+        csv_data = output.getvalue()
+        filename = f"nhat_ky_nhan_dien_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        return Response(
+            content=csv_data,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    except Exception as e:
+        return Response(content=f"Error exporting CSV: {str(e)}", status_code=500)
     finally:
         conn.close()
 

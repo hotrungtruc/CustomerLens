@@ -1389,3 +1389,101 @@ def insert_guest_record(conn, guest_id):
         customer_type="guest",
         status="temporary",
     )
+
+
+def get_recognize_logs(
+    conn,
+    start_date=None,
+    end_date=None,
+    camera_id=None,
+    customer_type=None,
+    search=None,
+    limit=50,
+    offset=0,
+):
+    """
+    Retrieve recognition logs joined with customer and camera details.
+    Supports filtering by date range, camera, customer type, search query, and pagination.
+    """
+    where_clauses = []
+    params = []
+
+    if start_date:
+        where_clauses.append("rl.timestamp >= ?")
+        params.append(start_date)
+    if end_date:
+        where_clauses.append("rl.timestamp <= ?")
+        params.append(end_date)
+    if camera_id and camera_id != "all":
+        where_clauses.append("rl.camera_id = ?")
+        params.append(camera_id)
+    if customer_type and customer_type != "all":
+        if customer_type == "guest":
+            where_clauses.append("(c.customer_type = 'guest' OR c.customer_type IS NULL OR c.customer_type = 'temporary')")
+        elif customer_type in ["registered", "customer", "vip"]:
+            where_clauses.append("(c.customer_type != 'guest' AND c.customer_type != 'temporary' AND c.customer_type IS NOT NULL)")
+        else:
+            where_clauses.append("c.customer_type = ?")
+            params.append(customer_type)
+    if search and search.strip():
+        search_pattern = f"%{search.strip()}%"
+        where_clauses.append("(c.name LIKE ? OR c.phone LIKE ? OR rl.customer_id LIKE ? OR rl.camera_id LIKE ?)")
+        params.extend([search_pattern, search_pattern, search_pattern, search_pattern])
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    count_query = f"""
+        SELECT COUNT(*) as total
+        FROM recognize_logs rl
+        LEFT JOIN customers c ON rl.customer_id = c.customer_id
+        {where_sql}
+    """
+
+    cursor = conn.execute(count_query, tuple(params))
+    row = cursor.fetchone()
+    total_count = row["total"] if isinstance(row, dict) else (row[0] if row else 0)
+
+    data_query = f"""
+        SELECT 
+            rl.id,
+            rl.opeid,
+            rl.camera_id,
+            cam.display_name as camera_name,
+            rl.customer_id,
+            c.name as customer_name,
+            c.phone as customer_phone,
+            c.customer_type,
+            c.loyalty_tier,
+            rl.track_id,
+            rl.bbox,
+            rl.timestamp
+        FROM recognize_logs rl
+        LEFT JOIN customers c ON rl.customer_id = c.customer_id
+        LEFT JOIN cameras cam ON rl.camera_id = cam.camera_id
+        {where_sql}
+        ORDER BY rl.timestamp DESC
+        LIMIT ? OFFSET ?
+    """
+
+    data_params = list(params) + [int(limit), int(offset)]
+    cursor = conn.execute(data_query, tuple(data_params))
+    rows = cursor.fetchall()
+
+    logs = []
+    for r in rows:
+        item = dict(r) if hasattr(r, "keys") else {
+            "id": r[0], "opeid": r[1], "camera_id": r[2], "camera_name": r[3],
+            "customer_id": r[4], "customer_name": r[5], "customer_phone": r[6],
+            "customer_type": r[7], "loyalty_tier": r[8], "track_id": r[9],
+            "bbox": r[10], "timestamp": str(r[11])
+        }
+        if not item.get("customer_name"):
+            item["customer_name"] = "Khách lạ (Guest)" if item.get("customer_id") else "Không xác định"
+        if not item.get("camera_name"):
+            item["camera_name"] = item.get("camera_id") or "Camera Sảnh"
+        logs.append(item)
+
+    return {"logs": logs, "total_count": total_count}
+

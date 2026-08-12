@@ -317,3 +317,49 @@ export async function updateSettings(payload) {
   }
   return response.json();
 }
+
+export async function getRecognizeLogs(params = {}) {
+  const query = new URLSearchParams();
+  if (params.startDate) query.append("start_date", params.startDate);
+  if (params.endDate) query.append("end_date", params.endDate);
+  if (params.cameraId && params.cameraId !== "all") query.append("camera_id", params.cameraId);
+  if (params.customerType && params.customerType !== "all") query.append("customer_type", params.customerType);
+  if (params.search) query.append("search", params.search);
+  if (params.page) query.append("page", params.page);
+  if (params.limit) query.append("limit", params.limit);
+
+  const response = await apiFetch(`${API_BASE_URL}/api/logs?${query.toString()}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể nạp lịch sử nhận diện");
+  }
+  return response.json();
+}
+
+export async function exportRecognizeLogsCsv(params = {}) {
+  const query = new URLSearchParams();
+  if (params.startDate) query.append("start_date", params.startDate);
+  if (params.endDate) query.append("end_date", params.endDate);
+  if (params.cameraId && params.cameraId !== "all") query.append("camera_id", params.cameraId);
+  if (params.customerType && params.customerType !== "all") query.append("customer_type", params.customerType);
+  if (params.search) query.append("search", params.search);
+
+  const response = await apiFetch(`${API_BASE_URL}/api/logs/export?${query.toString()}`, {
+    headers: { ...getAuthHeaders() },
+  });
+  if (!response.ok) {
+    throw new Error("Xuất file CSV thất bại");
+  }
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `nhat_ky_nhan_dien_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  a.remove();
+}
+
