@@ -12,3 +12,6 @@ python-dotenv
 redis
 aiokafka
 kafka-python
+PyJWT
+cryptography
+
