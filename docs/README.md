@@ -1,6 +1,6 @@
-# Face Recognition System - Technical Documentation
+# CustomerLens - Technical Documentation
 
-Chào mừng bạn đến với tài liệu kỹ thuật của dự án **Front Door AI - Hệ thống Nhận diện Khuôn mặt Thời gian thực**. Tài liệu này được biên soạn dành cho các Software Engineers, AI Engineers và DevOps nhằm cung cấp cái nhìn sâu sắc, toàn diện về kiến trúc, luồng dữ liệu và các quyết định thiết kế (Design Decisions) của hệ thống.
+Chào mừng bạn đến với tài liệu kỹ thuật của dự án **CustomerLens - Hệ thống Nhận diện Khuôn mặt & Phân tích Khách hàng Thời gian thực**. Tài liệu này được biên soạn dành cho các Software Engineers, AI Engineers và DevOps nhằm cung cấp cái nhìn sâu sắc, toàn diện về kiến trúc, luồng dữ liệu và các quyết định thiết kế (Design Decisions) của hệ thống.
 
 ## Mục lục Tài liệu (Table of Contents)
 

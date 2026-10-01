@@ -1,6 +1,6 @@
-# GIẢI THÍCH CHI TIẾT DỰ ÁN FRONT DOOR AI (REAL-TIME FACE RECOGNITION SYSTEM)
+# GIẢI THÍCH CHI TIẾT DỰ ÁN CUSTOMERLENS (REAL-TIME FACE RECOGNITION & GUEST INTELLIGENCE SYSTEM)
 
-Tài liệu này cung cấp cái nhìn toàn diện và chi tiết về cấu trúc thư mục, chức năng của từng file mã nguồn, cũng như sơ đồ luồng dữ liệu và sự liên kết giữa các thành phần trong dự án **Front Door AI**.
+Tài liệu này cung cấp cái nhìn toàn diện và chi tiết về cấu trúc thư mục, chức năng của từng file mã nguồn, cũng như sơ đồ luồng dữ liệu và sự liên kết giữa các thành phần trong dự án **CustomerLens**.
 
 ---
 

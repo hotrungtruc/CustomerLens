@@ -139,6 +139,10 @@ def insert_embedding_with_vector(
 
     # Auto-populate into L1 Redis Vector Cache for <1ms sub-millisecond future lookups
     try:
+        conn.commit()
+    except Exception:
+        pass
+    try:
         vector_cache_manager.add_to_cache(customer_id, protected_embedding)
     except Exception:
         pass

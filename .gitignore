@@ -3,11 +3,17 @@
 venv/
 env/
 ENV/
+# Byte-compiled / cache directories
 __pycache__/
-
-# Python
+**/__pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.so
 .Python
 build/
@@ -42,6 +48,9 @@ MANIFEST
 
 # Large model files (use LFS or train locally)
 backend/models/
+edge/models/
+*.onnx
+*.task
 backend/data/encodings/EncodeFile.p
 
 # Temporary files
@@ -83,3 +92,6 @@ backend/data/keys/
 # Test Outputs
 experiments/test_crop_output/
 
+assets/dataset/
+assets/*.mp4
+*.mp4

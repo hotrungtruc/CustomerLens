@@ -57,7 +57,18 @@ class SCRFD:
         input_size = tuple(img.shape[0:2][::-1])
         blob = cv2.dnn.blobFromImage(img, 1.0/128, input_size, (127.5, 127.5, 127.5), swapRB=True)
         net_outs = self.session.run(self.output_names, {self.input_name: blob})
-        
+
+        # Normalize outputs: squeeze batch dim if 3D [batch, N, C] → [N, C]
+        # Also squeeze trailing dim-1 for scores: [N,1] → [N,]
+        def squeeze_out(arr):
+            if arr.ndim == 3:
+                arr = arr[0]   # [batch, N, C] → [N, C]
+            if arr.ndim == 2 and arr.shape[1] == 1:
+                arr = arr[:, 0]  # [N, 1] → [N,]
+            return arr
+
+        net_outs = [squeeze_out(o) for o in net_outs]
+
         input_height = blob.shape[2]
         input_width = blob.shape[3]
         fmc = self.fmc
@@ -67,8 +78,8 @@ class SCRFD:
             bbox_preds = bbox_preds * stride
             if self.use_kps:
                 kps_preds = net_outs[idx + fmc * 2] * stride
-            height = input_height // stride
-            width = input_width // stride
+            height = int(np.ceil(input_height / stride))
+            width = int(np.ceil(input_width / stride))
             K = height * width
             key = (height, width, stride)
             if key in self.center_cache:
@@ -94,7 +105,7 @@ class SCRFD:
                 kpss = kpss.reshape((kpss.shape[0], -1, 2))
                 pos_kpss = kpss[pos_inds]
                 kpss_list.append(pos_kpss)
-                
+
         return scores_list, bboxes_list, kpss_list
 
     def detect(self, img, input_size=None, max_num=0, metric='default'):
@@ -121,7 +132,7 @@ class SCRFD:
         if len(scores_list) == 0 or all(s.size == 0 for s in scores_list):
             return np.empty((0, 4)), np.empty((0, 5, 2)), np.empty((0,))
             
-        scores = np.vstack([s for s in scores_list if s.size > 0])
+        scores = np.concatenate([s.reshape(-1, 1) for s in scores_list if s.size > 0], axis=0)
         scores_ravel = scores.ravel()
         order = scores_ravel.argsort()[::-1]
         

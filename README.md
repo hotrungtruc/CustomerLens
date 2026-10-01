@@ -1,4 +1,4 @@
-# 🚀 Front Door AI — Real-Time Enterprise Face Recognition System
+# 🚀 CustomerLens — Real-Time Enterprise Face Recognition & Guest Intelligence System
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.12+-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python">
@@ -14,14 +14,14 @@
   <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
 </p>
 
-**Front Door AI** là một hệ thống **Nhận diện Khuôn mặt Thời gian thực (Real-time Face Recognition Platform)** chuẩn Enterprise, được thiết kế theo kiến trúc sự kiện phân tán (Distributed Event-Driven Architecture) với khả năng mở rộng ngang (Horizontal Scaling) vượt trội.
+**CustomerLens** là một hệ thống **Nhận diện Khuôn mặt Thời gian thực & Phân tích Khách hàng (Real-time Face Recognition & Guest Intelligence Platform)** chuẩn Enterprise, được thiết kế theo kiến trúc sự kiện phân tán (Distributed Event-Driven Architecture) với khả năng mở rộng ngang (Horizontal Scaling) vượt trội.
 
 Hệ thống cho phép giám sát luồng video camera trực tiếp với độ trễ siêu thấp (Sub-100ms End-to-End Latency), nhận diện khách hàng (VIP / Khách quen / Khách vãng lai), theo dõi tọa độ di chuyển đa mục tiêu (Multi-object Kalman Tracking), đồng thời tuân thủ nghiêm ngặt các tiêu chuẩn **An ninh & Bảo mật Sinh trắc học Quốc tế (GDPR Article 9 & 17, BIPA)**.
 
 ---
 
 <p align="center">
-  <img src="assets/06.13_demo.png" alt="Front Door AI Live Monitoring Demo" width="900" style="border-radius: 10px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);">
+  <img src="assets/06.13_demo.png" alt="CustomerLens Live Monitoring Demo" width="900" style="border-radius: 10px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);">
 </p>
 
 ---
@@ -120,8 +120,8 @@ flowchart TD
 
 ### 📦 Bước 2: Tải mã nguồn & Bật Redis
 ```bash
-git clone https://gitlab.com/hotrungtruc1706/face-recognition-system.git
-cd face-recognition-system
+git clone https://github.com/hotrungtruc/CustomerLens.git
+cd CustomerLens
 
 # Chạy container Redis
 docker run -d --name faceai-redis -p 6379:6379 redis:alpine
@@ -227,4 +227,4 @@ Dự án được phát triển cho mục đích nghiên cứu học thuật và
 
 * **Tác giả:** Hồ Trung Trực
 * **Email:** hotrungtruc1706@gmail.com
-* **GitLab Repository:** [face-recognition-system](https://gitlab.com/hotrungtruc1706/face-recognition-system)
+* **GitHub Repository:** [CustomerLens](https://github.com/hotrungtruc/CustomerLens)

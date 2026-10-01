@@ -119,14 +119,33 @@ class InsightEmbedder:
             self._mediapipe_tasks = False
             self._use_opencv = False
             logger.info("Using SCRFD for high-precision face detection")
+        elif mp is not None and FACE_LANDMARKER_TASK.exists():
+            # Fallback: dùng MediaPipe FaceLandmarker (face_landmarker.task đã có sẵn)
+            # OpenCV 5.0 không còn bundle haarcascades nên MediaPipe là fallback tốt hơn
+            logger.warning("SCRFD model not found at %s. Falling back to MediaPipe FaceLandmarker.", scrfd_path)
+            self._use_scrfd = False
+            self._use_opencv = False
+            self._mediapipe_tasks = True
+            base_options = mp.tasks.BaseOptions(model_asset_path=str(FACE_LANDMARKER_TASK))
+            options = mp.tasks.vision.FaceLandmarkerOptions(
+                base_options=base_options,
+                num_faces=10,
+                min_face_detection_confidence=0.5,
+                min_face_presence_confidence=0.5,
+                output_face_blendshapes=False,
+                output_facial_transformation_matrixes=False,
+                running_mode=mp.tasks.vision.RunningMode.IMAGE,
+            )
+            self.face_landmarker = mp.tasks.vision.FaceLandmarker.create_from_options(options)
+            logger.info("Using MediaPipe FaceLandmarker as fallback detector")
         else:
-            logger.warning("SCRFD model not found at %s. Falling back to OpenCV.", scrfd_path)
+            # Last resort: OpenCV Haar Cascade (có thể không hoạt động trên OpenCV 5.0)
+            logger.warning("SCRFD and MediaPipe not available. Falling back to OpenCV Cascade (may fail on OpenCV 5.0).")
             self._use_scrfd = False
             self._use_opencv = True
-            self.face_cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            )
             self._mediapipe_tasks = False
+            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml" if hasattr(cv2, 'data') else ""
+            self.face_cascade = cv2.CascadeClassifier(cascade_path) if cascade_path else cv2.CascadeClassifier()
         # store recognizer provider info only
         self.providers = {"recognizer": self.recognizer.get_providers()}
 

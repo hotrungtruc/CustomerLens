@@ -1,17 +1,15 @@
 import os
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 
-from app.api.routes import router
-from config import CORS_ORIGINS
-
-
-from contextlib import asynccontextmanager
+from app.api import router, init_kafka_producer, close_kafka_producer
+from app.api.edge_routes import router as edge_router
 from app.db.connection import get_db_connection, ensure_schema
+from config import ALLOWED_ORIGINS
 
-from app.api.routes import init_kafka_producer, close_kafka_producer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,26 +19,21 @@ async def lifespan(app: FastAPI):
         ensure_schema(conn)
     finally:
         conn.close()
-        
+
     await init_kafka_producer()
     yield
     await close_kafka_producer()
+
 
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://checkinface.me",
-        "https://www.checkinface.me",
-        "https://face-recognition-system-coral.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 app.include_router(router)
+app.include_router(edge_router, prefix="/api/v1/edge", tags=["edge"])

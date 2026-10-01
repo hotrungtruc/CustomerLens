@@ -15,15 +15,20 @@ from kafka import KafkaConsumer
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.insight_embedding import InsightEmbedder
-from config import PROCESS_EVERY_N_FRAMES
+from config import (
+    PROCESS_EVERY_N_FRAMES,
+    KAFKA_BOOTSTRAP_SERVERS,
+    REDIS_URL,
+    KAFKA_CAMERA_FRAMES_TOPIC,
+    REDIS_CAMERA_FRAMES_FALLBACK_QUEUE,
+)
 from app.core.settings import system_settings
+from app.messaging.kafka_client import init_topics
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("AIWorker")
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = redis.from_url(REDIS_URL)
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "redpanda:9092")
 
 def main():
 
@@ -36,12 +41,10 @@ def main():
     # Initialize Models
     embedder = InsightEmbedder()
     
-    frame_queue = "camera_frames_v2"
     frame_count = 0
     
     # Ensure Redpanda topic is initialized
     try:
-        from app.init_redpanda import init_topics
         init_topics()
     except Exception as e:
         logger.warning(f"Could not auto-initialize Redpanda topics: {e}")
@@ -49,7 +52,7 @@ def main():
     def create_kafka_consumer():
         try:
             c = KafkaConsumer(
-                "camera_frames",
+                KAFKA_CAMERA_FRAMES_TOPIC,
                 bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
                 group_id="ai_workers",
                 auto_offset_reset='latest',
@@ -94,7 +97,7 @@ def main():
 
             # 3. Pull frames from Redis Fallback Queue
             while True:
-                fallback_val = redis_client.rpop("camera_frames_fallback")
+                fallback_val = redis_client.rpop(REDIS_CAMERA_FRAMES_FALLBACK_QUEUE)
                 if not fallback_val:
                     break
                 raw_items.append(fallback_val)

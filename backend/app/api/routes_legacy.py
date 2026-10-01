@@ -195,6 +195,9 @@ def _apply_profile_to_payload(payload: dict, info: dict):
 
 router = APIRouter()
 
+from app.api.edge_routes import router as edge_router
+router.include_router(edge_router, prefix="/api/v1/edge", tags=["edge"])
+
 
 def _positive_int_env(name: str, default: int) -> int:
     try:
@@ -1304,6 +1307,21 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         )
         connection_state.track_manager = track_manager
         await asyncio.to_thread(track_manager.load_known_embeddings)
+
+        # Warm-up L1 Vector Cache ngay khi tracker khởi động để tránh cold-start penalty
+        async def _warmup_cache():
+            try:
+                from app.core.vector_cache import vector_cache_manager
+                warmup_conn = get_db_connection()
+                try:
+                    await asyncio.to_thread(vector_cache_manager.sync_from_database, warmup_conn)
+                    print(f"[CACHE WARMUP] L1 Vector Cache pre-populated for camera {camera_id}", flush=True)
+                finally:
+                    warmup_conn.close()
+            except Exception as _e:
+                print(f"[CACHE WARMUP] Warning: cache warmup failed: {_e}", flush=True)
+
+        asyncio.create_task(_warmup_cache())
 
         audit_conn = get_db_connection()
         try:

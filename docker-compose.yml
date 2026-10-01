@@ -13,11 +13,16 @@ services:
       # Persistent data outside the container - survives rebuilds
       - ./backend/models:/app/models:ro
       - ./backend/data:/app/data
+      - ./backend/scripts:/app/scripts:ro
       - ./backend/config.py:/app/config.py:ro
+      - ./backend/db_config.py:/app/db_config.py:ro
+      - ./backend/asgi.py:/app/asgi.py:ro
+      - ./backend/app:/app/app:ro
     env_file:
       - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
+      - RECOGNIZER_MODEL=edgeface
       - OMP_NUM_THREADS=2
       - OPENBLAS_NUM_THREADS=2
       - MKL_NUM_THREADS=2
@@ -56,11 +61,15 @@ services:
     volumes:
       - ./backend/models:/app/models:ro
       - ./backend/data:/app/data
+      - ./backend/scripts:/app/scripts:ro
       - ./backend/config.py:/app/config.py:ro
+      - ./backend/db_config.py:/app/db_config.py:ro
+      - ./backend/app:/app/app:ro
     env_file:
       - ./backend/.env
     environment:
       - PYTHONUNBUFFERED=1
+      - RECOGNIZER_MODEL=edgeface
       - OMP_NUM_THREADS=2
       - OPENBLAS_NUM_THREADS=2
       - MKL_NUM_THREADS=2

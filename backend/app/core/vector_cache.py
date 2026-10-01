@@ -13,7 +13,11 @@ import redis
 
 logger = logging.getLogger("VectorCache")
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+try:
+    from config import REDIS_URL
+except ImportError:
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+
 CACHE_KEY_PREFIX = "vec_cache:"
 CACHE_META_KEY = "vec_cache_ids"
 CACHE_TTL = 86400  # 24 hours
@@ -107,7 +111,7 @@ class VectorCacheManager:
 
     def sync_from_database(self, conn):
         """Pre-populate / refresh L1 Vector Cache from PostgreSQL Database."""
-        if time.time() - self._last_sync_time < 30:  # Rate limit sync to every 30s
+        if time.time() - self._last_sync_time < 10:  # Rate limit sync to every 10s (giảm từ 30s)
             return
 
         try:

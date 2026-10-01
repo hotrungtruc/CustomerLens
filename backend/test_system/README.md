@@ -1,6 +1,6 @@
-# 🧪 AI Test System: Face Recognition Accuracy & Speed Benchmarking
+# 🧪 CustomerLens AI Test System: Face Recognition Accuracy & Speed Benchmarking
 
-Hệ thống kiểm thử và đánh giá chuyên sâu độ chính xác (Biometrics Evaluation) và tốc độ xử lý (Latency & Throughput Benchmark) cho Hệ thống Nhận diện Khuôn mặt.
+Hệ thống kiểm thử và đánh giá chuyên sâu độ chính xác (Biometrics Evaluation) và tốc độ xử lý (Latency & Throughput Benchmark) cho CustomerLens.
 
 ---
 

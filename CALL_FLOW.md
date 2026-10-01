@@ -1,6 +1,6 @@
 # SƠ ĐỒ LUỒNG GỌI HÀM (CALL FLOW & FUNCTION GRAPH)
 
-Tài liệu này cung cấp chi tiết luồng thực thi (Call Stack), sự tương tác giữa các module và vòng đời dữ liệu trong hệ thống **Front Door AI**.
+Tài liệu này cung cấp chi tiết luồng thực thi (Call Stack), sự tương tác giữa các module và vòng đời dữ liệu trong hệ thống **CustomerLens**.
 
 ---
 

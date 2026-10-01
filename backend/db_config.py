@@ -14,6 +14,13 @@ load_dotenv()
 # SUPABASE_PORT=5432
 # SUPABASE_DB=postgres
 
+# Base data directories
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATABASE_DIR = DATA_DIR / "database"
+PRODUCTION_DB_PATH = DATABASE_DIR / "production.db"
+BACKUP_DIR = DATABASE_DIR / "backups"
+
 # ===== Choose your database =====
 USE_SUPABASE = os.getenv("USE_SUPABASE", "false").lower() == "true"
 
@@ -37,8 +44,6 @@ if USE_SUPABASE:
     DB_TYPE = "postgresql"
 else:
     # SQLite Configuration (Local Development)
-    DATA_DIR = Path(__file__).parent / "data"
-    PRODUCTION_DB_PATH = DATA_DIR / "database" / "production.db"
     DATABASE_URL = f"sqlite:///{PRODUCTION_DB_PATH}"
     DB_TYPE = "sqlite"
 
