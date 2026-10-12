@@ -1,0 +1,32 @@
+services:
+  ai_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: customerlens-backend:latest
+    container_name: customerlens_worker
+    restart: unless-stopped
+    command: python app/ai_worker.py
+    volumes:
+      - ./backend/models:/app/models:ro
+      - ./backend/data:/app/data
+      - ./backend/scripts:/app/scripts:ro
+      - ./backend/config.py:/app/config.py:ro
+      - ./backend/db_config.py:/app/db_config.py:ro
+      - ./backend/app:/app/app:ro
+    env_file:
+      - ./backend/.env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - RECOGNIZER_MODEL=edgeface
+      - OMP_NUM_THREADS=2
+      - OPENBLAS_NUM_THREADS=2
+      - MKL_NUM_THREADS=2
+    # Memory limits suited for t3.micro with 2GB swap
+    mem_limit: 800m
+    mem_reservation: 400m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"

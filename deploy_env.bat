@@ -1,31 +1,34 @@
 @echo off
-echo Dang copy file backend/.env len cac server EC2...
-echo.
 echo ========================================================
-echo LUU Y: TRUOC KHI CHAY SCRIPT NAY, HAY DAM BAO FILE backend/.env
-echo CUA BAN DA CAU HINH CAC BIEN SAU TRO DEN MASTER IP (15.134.121.250):
-echo REDIS_URL=redis://15.134.121.250:6379/0
-echo KAFKA_BOOTSTRAP_SERVERS=15.134.121.250:9092
+echo   CustomerLens - Deploy Environment Variables to EC2
 echo ========================================================
 echo.
 
-echo [1/3] Copying to Master (15.134.121.250)...
-scp -i "C:\Users\hotru\Downloads\master.pem" -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL "backend\.env" ubuntu@15.134.121.250:~/face-recognition-system/backend/.env
+set MASTER_IP=15.134.121.250
+set WORKER1_IP=54.253.192.210
+set WORKER2_IP=54.252.191.145
+
+set MASTER_KEY="C:\Users\hotru\Downloads\MASTER.pem"
+set WORKERS_KEY="C:\Users\hotru\Downloads\WORKERS.pem"
+
+echo [1/3] Copying .env.production to Master (%MASTER_IP%)...
+scp -i %MASTER_KEY% -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL "backend\.env.production" ubuntu@%MASTER_IP%:~/CustomerLens/backend/.env
 
 echo.
-echo [2/3] Copying to Worker 1 (3.26.147.158)...
-scp -i "C:\Users\hotru\Downloads\workers_2.pem" -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL "backend\.env" ubuntu@3.26.147.158:~/face-recognition-system/backend/.env
+echo [2/3] Copying .env.production to Worker 1 (%WORKER1_IP%)...
+scp -i %WORKERS_KEY% -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL "backend\.env.production" ubuntu@%WORKER1_IP%:~/CustomerLens/backend/.env
 
 echo.
-echo [3/3] Copying to Worker 2 (3.27.136.134)...
-scp -i "C:\Users\hotru\Downloads\workers_2.pem" -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL "backend\.env" ubuntu@3.27.136.134:~/face-recognition-system/backend/.env
+echo [3/3] Copying .env.production to Worker 2 (%WORKER2_IP%)...
+scp -i %WORKERS_KEY% -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL "backend\.env.production" ubuntu@%WORKER2_IP%:~/CustomerLens/backend/.env
 
 echo.
-echo Hoan thanh qua trinh copy. Kiem tra cac thong bao loi (neu co) o tren.
-echo.
-echo Neu can SSH thu cong:
-echo - Master: ssh -i "C:\Users\hotru\Downloads\master.pem" ubuntu@15.134.121.250
-echo - Worker 1: ssh -i "C:\Users\hotru\Downloads\workers_2.pem" ubuntu@3.26.147.158
-echo - Worker 2: ssh -i "C:\Users\hotru\Downloads\workers_2.pem" ubuntu@3.27.136.134
+echo ========================================================
+echo   Hoan thanh copy .env!
+echo   SSH Manual Commands:
+echo   - Master:   ssh -i %MASTER_KEY% ubuntu@%MASTER_IP%
+echo   - Worker 1: ssh -i %WORKERS_KEY% ubuntu@%WORKER1_IP%
+echo   - Worker 2: ssh -i %WORKERS_KEY% ubuntu@%WORKER2_IP%
+echo ========================================================
 echo.
 pause
