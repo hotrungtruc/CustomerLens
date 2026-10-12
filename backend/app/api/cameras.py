@@ -143,6 +143,38 @@ async def remove_camera(
         conn.close()
 
 
+@router.post("/api/cameras/{camera_id}/disconnect")
+async def disconnect_camera(
+    camera_id: str,
+    authorization: str | None = Header(default=None),
+):
+    """Admin endpoint to forcefully disconnect/revoke an active publisher session for a camera."""
+    require_admin(authorization)
+    r = await get_redis()
+    try:
+        presence_key = _camera_presence_key(camera_id)
+        raw_owner = await r.get(presence_key)
+        connection_id = _decode_redis_value(raw_owner)
+        if connection_id:
+            await r.delete(presence_key)
+            await r.publish(
+                f"connection_control:{connection_id}",
+                '{"type": "connection_taken_over"}',
+            )
+            return {
+                "status": "success",
+                "message": f"Phiên phát của camera {camera_id} đã được thu hồi thành công.",
+                "camera_id": camera_id,
+            }
+        return {
+            "status": "success",
+            "message": f"Camera {camera_id} hiện không có phiên phát nào hoạt động.",
+            "camera_id": camera_id,
+        }
+    finally:
+        await r.aclose()
+
+
 # ---------------------------------------------------------------------------
 # User management routes
 # ---------------------------------------------------------------------------

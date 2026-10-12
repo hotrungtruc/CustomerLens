@@ -37,21 +37,32 @@ PRODUCTION_DB_PATH = DATABASE_DIR / "production.db"
 BACKUP_DIR = DATABASE_DIR / "backups"
 
 MODELS_DIR = BASE_DIR / "models"
+EDGEFACE_INT8_PATH = MODELS_DIR / "edgeface_int8.onnx"
 EDGEFACE_PATH = MODELS_DIR / "edgeface_s_gamma_05.onnx"
 GHOSTFACE_PATH = MODELS_DIR / "ghostface_int8.onnx"
 ADAFACE_PATH = MODELS_DIR / "adaface_ir18.onnx"
 
-# Configure default face recognizer model (prioritizing EdgeFace)
+# Configure default face recognizer model (prioritizing EdgeFace int8)
 RECOGNIZER_MODEL = os.getenv("RECOGNIZER_MODEL", "edgeface").lower()
-if RECOGNIZER_MODEL == "edgeface" and EDGEFACE_PATH.exists():
-    RECOGNIZER_PATH = EDGEFACE_PATH
-    RECOGNIZER_FLOAT_PATH = EDGEFACE_PATH
+if RECOGNIZER_MODEL == "edgeface":
+    if EDGEFACE_INT8_PATH.exists():
+        RECOGNIZER_PATH = EDGEFACE_INT8_PATH
+        RECOGNIZER_FLOAT_PATH = EDGEFACE_PATH
+    elif EDGEFACE_PATH.exists():
+        RECOGNIZER_PATH = EDGEFACE_PATH
+        RECOGNIZER_FLOAT_PATH = EDGEFACE_PATH
+    else:
+        RECOGNIZER_PATH = ADAFACE_PATH
+        RECOGNIZER_FLOAT_PATH = ADAFACE_PATH
 elif RECOGNIZER_MODEL == "adaface" and ADAFACE_PATH.exists():
     RECOGNIZER_PATH = ADAFACE_PATH
     RECOGNIZER_FLOAT_PATH = ADAFACE_PATH
 elif RECOGNIZER_MODEL == "ghostface" and GHOSTFACE_PATH.exists():
     RECOGNIZER_PATH = GHOSTFACE_PATH
     RECOGNIZER_FLOAT_PATH = MODELS_DIR / "ghostface_fp32.onnx" if (MODELS_DIR / "ghostface_fp32.onnx").exists() else GHOSTFACE_PATH
+elif EDGEFACE_INT8_PATH.exists():
+    RECOGNIZER_PATH = EDGEFACE_INT8_PATH
+    RECOGNIZER_FLOAT_PATH = EDGEFACE_PATH
 elif EDGEFACE_PATH.exists():
     RECOGNIZER_PATH = EDGEFACE_PATH
     RECOGNIZER_FLOAT_PATH = EDGEFACE_PATH

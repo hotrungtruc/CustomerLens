@@ -34,6 +34,7 @@ from app.core.tracking.voting import (
     vote_pgvector,
     _best_guest_match,
 )
+from app.core.biometric_security import biometric_protector
 from app.db.connection import get_db_connection, insert_guest_record
 from app.utils.logger import get_logger
 from config import (
@@ -96,7 +97,7 @@ class GuestTrackManager:
         iou_threshold: float = 0.36,
         min_bbox_size: int = 100,
         min_detection_score: float = 0.85,
-        guest_prefix: str = "GUEST",
+        guest_prefix: str = "LN",
     ):
         self.buffer_size = buffer_size
         self.guest_creation_buffer_size = guest_creation_buffer_size
@@ -198,13 +199,14 @@ class GuestTrackManager:
 
     def search_identity(self, embedding) -> tuple[str | None, float]:
         norm_emb = normalize_embedding(embedding)
+        protected_emb = biometric_protector.protect_embedding(norm_emb)
         if self.use_pgvector:
             results = self._query_pgvector(norm_emb, top_k=1, threshold=self.similarity_threshold)
             if results and results[0][1] >= self.similarity_threshold:
                 return results[0]
             # Also check in-memory guests
             best_id, best_sim = _best_guest_match(
-                self.guest_embeddings, self.guest_ids, norm_emb, self.similarity_threshold
+                self.guest_embeddings, self.guest_ids, protected_emb, self.similarity_threshold
             )
             return best_id, best_sim
         else:
@@ -212,7 +214,7 @@ class GuestTrackManager:
             combined_ids = list(self.known_ids) + list(self.guest_ids)
             if not combined:
                 return None, 0.0
-            sims = cosine_similarities(combined, norm_emb)
+            sims = cosine_similarities(combined, protected_emb)
             if sims.size == 0:
                 return None, 0.0
             best_idx = int(np.argmax(sims))
@@ -268,13 +270,20 @@ class GuestTrackManager:
     # ------------------------------------------------------------------
 
     def _create_guest_id(self) -> str:
-        return f"{self.guest_prefix}_{self.frame_index}_{self.next_track_id:04d}"
+        try:
+            from app.core.customer_code import generate_next_guest_id
+            conn = self._get_cached_conn()
+            return generate_next_guest_id(conn=conn, prefix="LN")
+        except Exception as e:
+            logger.warning("generate_next_guest_id fallback: %s", e)
+            return f"LN{self.next_track_id}"
 
     def _register_guest(self, embedding: np.ndarray, track_state: TrackState) -> str:
         guest_id = self._create_guest_id()
         track_state.resolved_customer_id = guest_id
         normalized = normalize_embedding(embedding)
-        self.guest_embeddings.append(normalized)
+        protected = biometric_protector.protect_embedding(normalized)
+        self.guest_embeddings.append(protected)
         self.guest_ids.append(guest_id)
         self._insert_guest_into_main_db_async(guest_id, normalized)
         return guest_id
@@ -319,7 +328,9 @@ class GuestTrackManager:
         existing_customer_id = track_state.resolved_customer_id
 
         # Already resolved as a registered customer — skip
-        if existing_customer_id and not str(existing_customer_id).startswith("GUEST_"):
+        if existing_customer_id and not (
+            str(existing_customer_id).startswith("GUEST_") or str(existing_customer_id).startswith("LN")
+        ):
             return existing_customer_id
 
         embedding = record.get("embedding")
@@ -347,6 +358,7 @@ class GuestTrackManager:
         # Run voting (per-frame)
         if track_state.embeddings:
             current_emb = track_state.embeddings[-1]
+            protected_emb = biometric_protector.protect_embedding(current_emb)
 
             if self.use_pgvector:
                 resolved = vote_pgvector(
@@ -360,7 +372,7 @@ class GuestTrackManager:
             else:
                 resolved = vote_in_memory(
                     track_state,
-                    current_emb,
+                    protected_emb,
                     self.known_embeddings,
                     self.known_ids,
                     self.guest_embeddings,
@@ -377,23 +389,24 @@ class GuestTrackManager:
             avg_embedding = calculate_robust_mean_embedding(
                 track_state.embeddings[-self.buffer_size:]
             )
+            avg_protected = biometric_protector.protect_embedding(avg_embedding) if avg_embedding is not None else None
             if self.use_pgvector:
                 results = self._query_pgvector(
                     avg_embedding, top_k=1, threshold=self.similarity_threshold
                 )
                 if results and results[0][1] >= self.similarity_threshold:
                     resolved_customer_id = results[0][0]
-                if not resolved_customer_id:
+                if not resolved_customer_id and avg_protected is not None:
                     best_id, _ = _best_guest_match(
                         self.guest_embeddings, self.guest_ids,
-                        avg_embedding, self.similarity_threshold,
+                        avg_protected, self.similarity_threshold,
                     )
                     resolved_customer_id = best_id
             else:
                 combined = list(self.known_embeddings) + list(self.guest_embeddings)
                 combined_ids = list(self.known_ids) + list(self.guest_ids)
-                if combined:
-                    sims = cosine_similarities(combined, avg_embedding)
+                if combined and avg_protected is not None:
+                    sims = cosine_similarities(combined, avg_protected)
                     if sims.size > 0:
                         best_idx = int(np.argmax(sims))
                         if float(sims[best_idx]) >= self.similarity_threshold:

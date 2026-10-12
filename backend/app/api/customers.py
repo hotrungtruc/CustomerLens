@@ -48,12 +48,14 @@ def _apply_profile_to_payload(payload: dict, info: dict):
     def safe_iso(val):
         return val.isoformat() if isinstance(val, datetime) else val
 
+    from app.core.customer_code import compute_segment_code
+    code, label, desc = compute_segment_code(info)
+
     payload.update(
         {
             "id": info["customer_id"],
             "name": info["name"] or "Khach moi",
             "email": info.get("email"),
-            "occupation": info.get("occupation", "General"),
             "registered_at": safe_iso(info.get("registered_at")),
             "tenure": info.get("tenure", 0),
             "loyalty_tier": info.get("loyalty_tier", "Standard"),
@@ -65,6 +67,9 @@ def _apply_profile_to_payload(payload: dict, info: dict):
             "customer_tenure_years": info.get("customer_tenure_years", 0),
             "customer_type": info.get("customer_type", "guest"),
             "customer_status": info.get("status", "active"),
+            "segment_code": code,
+            "segment_label": label,
+            "segment_desc": desc,
             "has_face_embedding": info.get("has_face_embedding"),
             "face_embedding_dim": info.get("face_embedding_dim"),
             "face_embedding_model": info.get("face_embedding_model"),
@@ -126,7 +131,6 @@ def api_customer_info(camera_id: str | None = None):
             "name": customer_info["name"],
             "phone": customer_info.get("phone"),
             "email": customer_info.get("email"),
-            "occupation": customer_info.get("occupation"),
             "registered_at": customer_info.get("registered_at"),
             "tenure": customer_info.get("tenure"),
             "loyalty_tier": customer_info.get("loyalty_tier"),
@@ -235,6 +239,7 @@ async def api_customer_profile(
             writable_id.startswith("T")
             or writable_id.startswith("GUEST_")
             or writable_id.startswith("test_")
+            or writable_id.startswith("LN")
         ):
             writable_id = None
 
@@ -255,7 +260,7 @@ async def api_customer_profile(
         except ValueError as exc:
             return {"success": False, "message": str(exc)}
 
-        if (source_id.startswith("GUEST_") or source_id.startswith("test_")) and final_id != source_id:
+        if (source_id.startswith("GUEST_") or source_id.startswith("test_") or source_id.startswith("LN")) and final_id != source_id:
             camera_id = "default"
             parts = source_id.split("_")
             if len(parts) >= 3:
@@ -270,6 +275,11 @@ async def api_customer_profile(
             )
             with CAMERA_STATES_LOCK:
                 for cid in CAMERA_STATES.keys():
+                    if cid != camera_id:
+                        await r.publish(
+                            f"camera_control:{cid}",
+                            json.dumps({"action": "promote_guest", "guest_id": source_id, "new_id": final_id}),
+                        )
                     await r.publish(
                         f"camera_control:{cid}",
                         json.dumps({"action": "reload_embeddings"}),
@@ -288,7 +298,6 @@ async def api_customer_profile(
                 "name": customer_info["name"],
                 "phone": customer_info.get("phone"),
                 "email": customer_info.get("email"),
-                "occupation": customer_info.get("occupation"),
                 "registered_at": customer_info.get("registered_at"),
                 "tenure": customer_info.get("tenure"),
                 "loyalty_tier": customer_info.get("loyalty_tier"),
@@ -431,6 +440,11 @@ async def api_promote_guest(
     )
     with CAMERA_STATES_LOCK:
         for cid in CAMERA_STATES.keys():
+            if cid != camera_id:
+                await r.publish(
+                    f"camera_control:{cid}",
+                    json.dumps({"action": "promote_guest", "guest_id": guest_id, "new_id": new_id}),
+                )
             await r.publish(
                 f"camera_control:{cid}",
                 json.dumps({"action": "reload_embeddings"}),

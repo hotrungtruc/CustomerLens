@@ -114,10 +114,6 @@ def _migrate_legacy_customer_data(conn):
     )
 
     # Legacy one-table fields from earlier student/customer experiments
-    if "major" in cols:
-        conn.execute(
-            "UPDATE customers SET occupation = COALESCE(NULLIF(occupation, ''), NULLIF(major, ''))"
-        )
     if "starting_year" in cols:
         conn.execute(
             "UPDATE customers SET registered_at = COALESCE(NULLIF(registered_at, ''), "
@@ -161,7 +157,6 @@ def _migrate_legacy_customer_data(conn):
                     name = COALESCE(NULLIF(?, ''), name),
                     phone = COALESCE(NULLIF(?, ''), phone),
                     note = COALESCE(NULLIF(?, ''), note),
-                    occupation = COALESCE(NULLIF(?, ''), occupation),
                     registered_at = COALESCE(NULLIF(?, ''), registered_at),
                     tenure = CASE WHEN ? IS NULL THEN tenure ELSE ? END,
                     loyalty_tier = COALESCE(NULLIF(?, ''), loyalty_tier),
@@ -174,7 +169,6 @@ def _migrate_legacy_customer_data(conn):
                     data.get("name"),
                     data.get("phone"),
                     data.get("note"),
-                    data.get("service_category"),
                     str(data.get("service_start_year")) if data.get("service_start_year") else None,
                     data.get("customer_tenure_years"),
                     data.get("customer_tenure_years"),
@@ -364,7 +358,6 @@ def _ensure_schema_postgresql(conn):
             name VARCHAR(255) NOT NULL,
             phone VARCHAR(50) DEFAULT NULL,
             email VARCHAR(255) DEFAULT NULL,
-            occupation VARCHAR(255) DEFAULT NULL,
             registered_at TIMESTAMP DEFAULT NULL,
             tenure INTEGER NOT NULL DEFAULT 0,
             loyalty_tier VARCHAR(50) NOT NULL DEFAULT 'Standard',
@@ -382,7 +375,6 @@ def _ensure_schema_postgresql(conn):
         "updated_at": "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
         "phone": "VARCHAR(50) DEFAULT NULL",
         "email": "VARCHAR(255) DEFAULT NULL",
-        "occupation": "VARCHAR(255) DEFAULT NULL",
         "registered_at": "TIMESTAMP DEFAULT NULL",
         "tenure": "INTEGER NOT NULL DEFAULT 0",
         "loyalty_tier": "VARCHAR(50) NOT NULL DEFAULT 'Standard'",
@@ -533,7 +525,6 @@ def _ensure_schema_sqlite(conn):
             name TEXT NOT NULL,
             phone TEXT DEFAULT NULL,
             email TEXT DEFAULT NULL,
-            occupation TEXT DEFAULT NULL,
             registered_at TEXT DEFAULT NULL,
             tenure INTEGER NOT NULL DEFAULT 0,
             loyalty_tier TEXT NOT NULL DEFAULT 'Standard',
@@ -549,7 +540,6 @@ def _ensure_schema_sqlite(conn):
     _add_missing_columns(conn, "customers", {
         "phone": "TEXT DEFAULT NULL",
         "email": "TEXT DEFAULT NULL",
-        "occupation": "TEXT DEFAULT NULL",
         "registered_at": "TEXT DEFAULT NULL",
         "tenure": "INTEGER NOT NULL DEFAULT 0",
         "loyalty_tier": "TEXT NOT NULL DEFAULT 'Standard'",
@@ -596,6 +586,10 @@ def _ensure_schema_sqlite(conn):
             FROM customer_embeddings_old
             """)
         conn.execute("DROP TABLE customer_embeddings_old")
+
+    _add_missing_columns(conn, "customer_embeddings", {
+        "embedding": "TEXT DEFAULT NULL",
+    })
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS recognize_logs (

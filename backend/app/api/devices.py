@@ -566,12 +566,19 @@ def _apply_profile_to_payload(payload: dict, info: dict):
     def safe_iso(val):
         return val.isoformat() if isinstance(val, datetime) else val
 
+    from app.core.customer_code import compute_segment_code, format_display_customer_id
+    seg = compute_segment_code(info)
+    code = seg[0] if seg else "LN"
+    label = seg[1] if seg else "Budget • New Guest"
+    desc = seg[2] if seg else "Khách mới chưa đăng ký (Mặc định)"
+    disp_id = format_display_customer_id(info) or info["customer_id"]
+
     payload.update(
         {
             "id": info["customer_id"],
-            "name": info["name"] or "Khach moi",
+            "display_id": disp_id,
+            "name": info["name"] or f"Khách {disp_id}",
             "email": info.get("email"),
-            "occupation": info.get("occupation", "General"),
             "registered_at": safe_iso(info.get("registered_at")),
             "tenure": info.get("tenure", 0),
             "loyalty_tier": info.get("loyalty_tier", "Standard"),
@@ -583,6 +590,9 @@ def _apply_profile_to_payload(payload: dict, info: dict):
             "customer_tenure_years": info.get("customer_tenure_years", 0),
             "customer_type": info.get("customer_type", "guest"),
             "customer_status": info.get("status", "active"),
+            "segment_code": code,
+            "segment_label": label,
+            "segment_desc": desc,
             "has_face_embedding": info.get("has_face_embedding"),
             "face_embedding_dim": info.get("face_embedding_dim"),
             "face_embedding_model": info.get("face_embedding_model"),
@@ -671,7 +681,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             iou_threshold=system_settings.get("track_iou_threshold", TRACK_IOU_THRESHOLD),
             min_bbox_size=system_settings.get("min_face_bbox_size", MIN_FACE_BBOX_SIZE),
             min_detection_score=system_settings.get("min_detection_score", MIN_DETECTION_SCORE),
-            guest_prefix=f"GUEST_{camera_id}",
+            guest_prefix="LN",
         )
         connection_state.track_manager = track_manager
         await asyncio.to_thread(track_manager.load_known_embeddings)
@@ -765,9 +775,13 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     "bbox": (x1, y1, x2, y2),
                     "detected": bool(customer_id),
                     "id": customer_id,
-                    "name": "Khách mới",
-                    "customer_type": "guest",
-                    "customer_status": "temporary",
+                    "display_id": customer_id,
+                    "name": "Đang nhận diện..." if not customer_id else "Khách mới",
+                    "customer_type": "unknown" if not customer_id else "guest",
+                    "customer_status": "extracting" if not customer_id else "temporary",
+                    "segment_code": None if not customer_id else "LN",
+                    "segment_label": None if not customer_id else "Budget • New Guest",
+                    "segment_desc": None if not customer_id else "Khách mới chưa đăng ký (Mặc định)",
                 }
 
                 if customer_id:
@@ -799,7 +813,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                 now_ts = time.time()
                 for face in tracked_faces:
                     cid = face.get("customer_id")
-                    if cid and not str(cid).startswith("GUEST_"):
+                    if cid:
                         if now_ts - _last_checkin.get(cid, 0) > CHECKIN_COOLDOWN_SECONDS:
                             _last_checkin[cid] = now_ts
                             try:
@@ -807,6 +821,9 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                                     conn, cid,
                                     last_attendance_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                                 )
+                                tid = face.get("track_id")
+                                if tid and tid in track_manager.tracks:
+                                    track_manager.tracks[tid].cached_profile = None
                             except Exception as e:
                                 print(f"Auto attendance update failed for {cid}: {e}", flush=True)
                 process_tracking_and_db._last_checkin = _last_checkin

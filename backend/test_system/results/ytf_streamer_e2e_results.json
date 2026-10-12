@@ -1,0 +1,32 @@
+{
+  "benchmark": "Virtual Camera Streamer E2E (YTF)",
+  "timestamp": "2026-10-12 19:56:00",
+  "source_video": "Aaron_Eckhart_0.npz",
+  "target_fps": 20.0,
+  "effective_fps": 11.02,
+  "streamed_frames": 79,
+  "dropped_frames": 0,
+  "drop_rate_pct": 0.0,
+  "total_hud_cards": 79,
+  "latency_stats_ms": {
+    "mean": 90.77,
+    "median": 87.83,
+    "p95": 108.32,
+    "max": 138.37
+  },
+  "sample_hud_card": {
+    "track_id": 1,
+    "customer_id": "LN7",
+    "display_id": "HL7",
+    "segment_code": "HL",
+    "segment_desc": "VIP • Loyal",
+    "bbox": [
+      95.58734130859375,
+      58.728851318359375,
+      167.86546325683594,
+      156.61422729492188
+    ],
+    "score": null
+  },
+  "stream_status": "STREAMING SUCCESSFUL (REAL-TIME DELIVERED)"
+}

@@ -36,7 +36,7 @@ export function useProfilePrefetch(customers) {
 
       // Skip guest/unrecognized faces — only prefetch real customers
       const idStr = String(id);
-      if (idStr.startsWith("GUEST_") || idStr.startsWith("T")) continue;
+      if (idStr.startsWith("GUEST_") || idStr.startsWith("T") || idStr.startsWith("LN")) continue;
 
       // Skip if already in-flight
       if (inflightRef.current.has(idStr)) continue;

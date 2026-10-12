@@ -1,0 +1,50 @@
+{
+  "benchmark": "Speed, Latency & Stress Test (YTF)",
+  "timestamp": "2026-10-12 19:47:24",
+  "total_frames": 79,
+  "total_duration_sec": 2.6,
+  "throughput_fps": 30.34,
+  "realtime_capable_ge_15fps": true,
+  "stages_latency_ms": {
+    "scrfd_detection": {
+      "min_ms": 2.02,
+      "mean_ms": 2.31,
+      "median_ms": 2.16,
+      "p95_ms": 2.88,
+      "p99_ms": 4.12,
+      "max_ms": 4.35
+    },
+    "edgeface_embedding": {
+      "min_ms": 27.01,
+      "mean_ms": 29.61,
+      "median_ms": 28.29,
+      "p95_ms": 35.35,
+      "p99_ms": 41.14,
+      "max_ms": 41.57
+    },
+    "biometric_security": {
+      "min_ms": 0.06,
+      "mean_ms": 0.09,
+      "median_ms": 0.07,
+      "p95_ms": 0.14,
+      "p99_ms": 0.55,
+      "max_ms": 0.55
+    },
+    "kalman_tracker": {
+      "min_ms": 0.19,
+      "mean_ms": 0.27,
+      "median_ms": 0.21,
+      "p95_ms": 0.33,
+      "p99_ms": 1.37,
+      "max_ms": 2.58
+    },
+    "end_to_end_frame": {
+      "min_ms": 29.59,
+      "mean_ms": 32.29,
+      "median_ms": 30.95,
+      "p95_ms": 38.13,
+      "p99_ms": 45.89,
+      "max_ms": 46.7
+    }
+  }
+}

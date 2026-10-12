@@ -563,3 +563,14 @@ def cosine_similarities(known_embeddings, embedding):
         return np.array([])
 
     return np.dot(arr, embedding)
+
+
+_EMBEDDER_INSTANCE = None
+
+def get_embedder() -> InsightEmbedder:
+    """Singleton getter for InsightEmbedder with SCRFD 500M and EdgeFace int8."""
+    global _EMBEDDER_INSTANCE
+    if _EMBEDDER_INSTANCE is None:
+        _EMBEDDER_INSTANCE = InsightEmbedder()
+    return _EMBEDDER_INSTANCE
+

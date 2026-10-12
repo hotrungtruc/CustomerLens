@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
 import CameraViewer from "../../components/CameraViewer";
-import { Maximize2, Pencil, RefreshCw, X, Wifi, WifiOff, Settings, MonitorPlay } from "lucide-react";
+import { Maximize2, Pencil, RefreshCw, X, Wifi, WifiOff, Settings, MonitorPlay, Unplug } from "lucide-react";
 import {
   createDeviceEnrollment,
   fetchCameras,
   renameCamera,
   deleteCamera,
+  disconnectCamera,
 } from "../../services/api";
 
 /* ── Session badge (top-left overlay) ───────────────────────────────────── */
@@ -39,7 +40,7 @@ function CameraBadge({ camera }) {
 }
 
 /* ── Camera tile ────────────────────────────────────────────────────────── */
-function CameraTile({ camera, onExpand, onPair, onRename, onDelete, canManage }) {
+function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect, canManage }) {
   const [showSettings, setShowSettings] = useState(false);
   const settingsRef = useRef(null);
 
@@ -99,11 +100,21 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, canManage })
           </button>
           
           {showSettings && (
-            <div className="absolute bottom-full left-0 mb-1 flex w-36 flex-col overflow-hidden rounded-md border border-slate-700 bg-slate-800 shadow-xl">
+            <div className="absolute bottom-full left-0 mb-1 flex w-40 flex-col overflow-hidden rounded-md border border-slate-700 bg-slate-800 shadow-xl z-30">
+              {camera.active && (
+                <button
+                  type="button"
+                  onClick={() => { setShowSettings(false); onDisconnect(); }}
+                  className="px-3 py-2 text-left text-[11px] font-medium text-amber-300 hover:bg-slate-700 hover:text-amber-200 flex items-center gap-1.5"
+                >
+                  <Unplug className="h-3.5 w-3.5" />
+                  Ngắt phiên phát
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => { setShowSettings(false); onRename(); }}
-                className="px-3 py-2 text-left text-[11px] font-medium text-white hover:bg-slate-700"
+                className="px-3 py-2 text-left text-[11px] font-medium text-white hover:bg-slate-700 border-t border-slate-700/50"
               >
                 Đổi tên
               </button>
@@ -130,7 +141,7 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, canManage })
 }
 
 /* ── Expanded modal ─────────────────────────────────────────────────────── */
-function ExpandedModal({ camera, onClose }) {
+function ExpandedModal({ camera, onClose, onDisconnect, canManage }) {
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === "Escape") onClose();
@@ -167,14 +178,26 @@ function ExpandedModal({ camera, onClose }) {
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="shrink-0 rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-            aria-label="Đóng phóng to"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {canManage && camera.active && (
+              <button
+                type="button"
+                onClick={onDisconnect}
+                className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition"
+              >
+                <Unplug className="h-3.5 w-3.5" />
+                Ngắt phiên phát
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+              aria-label="Đóng phóng to"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         <div className="h-[calc(82dvh-49px)] min-h-[320px] bg-slate-950">
@@ -391,6 +414,24 @@ export default function CameraPage() {
     }
   };
 
+  const handleDisconnectCamera = async (camera) => {
+    if (
+      !window.confirm(
+        `Bạn có chắc chắn muốn ngắt phiên kết nối trực tiếp của ${camera.computedName}? Thiết bị đang phát sẽ bị ngắt kết nối ngay lập tức.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const result = await disconnectCamera(camera.camera_id);
+      alert(result.message || "Đã ngắt phiên phát thành công");
+      await loadCameras();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Không thể ngắt phiên phát");
+    }
+  };
+
   // Dynamic grid columns based on session count
   const gridCols =
     shown.length <= 1
@@ -469,6 +510,7 @@ export default function CameraPage() {
                   onPair={() => handleCreatePairingCode(camera)}
                   onRename={() => handleRenameCamera(camera)}
                   onDelete={() => handleDeleteCamera(camera)}
+                  onDisconnect={() => handleDisconnectCamera(camera)}
                   canManage={role === "admin"}
                 />
               ))}
@@ -481,6 +523,8 @@ export default function CameraPage() {
         <ExpandedModal
           camera={expandedCamera}
           onClose={() => setExpandedId(null)}
+          onDisconnect={() => handleDisconnectCamera(expandedCamera)}
+          canManage={role === "admin"}
         />
       ) : null}
 

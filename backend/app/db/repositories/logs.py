@@ -167,10 +167,11 @@ def get_recognize_logs(
             "bbox": r[10], "timestamp": str(r[11]),
         }
         cid = item.get("customer_id")
+        is_guest = not cid or str(cid).startswith("GUEST_") or str(cid).startswith("LN")
         if not item.get("customer_name"):
-            item["customer_name"] = cid if (cid and not cid.startswith("GUEST_")) else "Khách mới"
+            item["customer_name"] = "Khách mới" if is_guest else (cid or "Khách hàng")
         if not item.get("customer_type"):
-            item["customer_type"] = "guest" if (not cid or cid.startswith("GUEST_")) else "customer"
+            item["customer_type"] = "guest" if is_guest else "customer"
         if not item.get("camera_name"):
             item["camera_name"] = item.get("camera_id") or "Camera Sảnh"
         logs.append(item)

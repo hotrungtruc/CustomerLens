@@ -14,7 +14,8 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 BACKEND_MODELS_DIR = EDGE_ROOT.parent / "backend" / "models"
 
 SCRFD_MODEL_NAME = "scrfd_500m_bnkps.onnx"
-EDGEFACE_MODEL_NAME = "edgeface_s_gamma_05.onnx"
+EDGEFACE_MODEL_NAME = "edgeface_int8.onnx"
+FACE_LANDMARKER_MODEL_NAME = "face_landmarker.task"
 
 def get_model_path(filename: str) -> Path:
     local_path = MODELS_DIR / filename
@@ -27,6 +28,10 @@ def get_model_path(filename: str) -> Path:
 
 SCRFD_MODEL_PATH = get_model_path(SCRFD_MODEL_NAME)
 EDGEFACE_MODEL_PATH = get_model_path(EDGEFACE_MODEL_NAME)
+FACE_LANDMARKER_MODEL_PATH = get_model_path(FACE_LANDMARKER_MODEL_NAME)
+
+# Detector Type: Default to MediaPipe FaceLandmarker Tasks API ("mediapipe_landmarker" or "scrfd")
+DEFAULT_DETECTOR_TYPE = os.getenv("DETECTOR_TYPE", "mediapipe_landmarker")
 
 # Cloud Connection
 DEFAULT_CLOUD_URL = os.getenv("CLOUD_URL", "http://localhost:8000")
@@ -35,20 +40,32 @@ DEFAULT_DEVICE_ID = os.getenv("DEVICE_ID", "edge_box_01")
 DEVICE_AUTH_TOKEN = os.getenv("DEVICE_AUTH_TOKEN", "edge_secret_token")
 
 # Quality & Detection Gates
-DET_THRESHOLD = float(os.getenv("DET_THRESHOLD", "0.5"))
+DET_THRESHOLD = float(os.getenv("DET_THRESHOLD", "0.4"))
 NMS_THRESHOLD = float(os.getenv("NMS_THRESHOLD", "0.4"))
-MIN_FACE_SIZE = int(os.getenv("MIN_FACE_SIZE", "60"))        # Minimum width/height in pixels
-MIN_BLUR_VAR = float(os.getenv("MIN_BLUR_VAR", "100.0"))     # Laplacian variance threshold
-MIN_POSE_RATIO = float(os.getenv("MIN_POSE_RATIO", "0.26"))  # Eye distance / bbox width
+MIN_FACE_SIZE = int(os.getenv("MIN_FACE_SIZE", "50"))        # Minimum width/height in pixels
+MIN_BLUR_VAR = float(os.getenv("MIN_BLUR_VAR", "80.0"))     # Laplacian variance threshold
+MIN_POSE_RATIO = float(os.getenv("MIN_POSE_RATIO", "0.25"))  # Eye distance / bbox width
 
-# Tracking & Smart Event Dispatching
+# Face Crop with Padding (25% margin around bounding box sent to backend)
+CROP_PADDING_RATIO = float(os.getenv("CROP_PADDING_RATIO", "0.25"))
+
+# Tracking Configuration (Observation-Centric SORT / OC-SORT)
+TRACKER_TYPE = os.getenv("TRACKER_TYPE", "oc_sort")  # "oc_sort" or "iou"
+OC_SORT_DET_THRESH = float(os.getenv("OC_SORT_DET_THRESH", "0.35"))
+OC_SORT_MAX_AGE = int(os.getenv("OC_SORT_MAX_AGE", "30"))
+OC_SORT_MIN_HITS = int(os.getenv("OC_SORT_MIN_HITS", "2"))
+OC_SORT_IOU_THRESHOLD = float(os.getenv("OC_SORT_IOU_THRESHOLD", "0.3"))
+OC_SORT_DELTA_T = int(os.getenv("OC_SORT_DELTA_T", "3"))
+OC_SORT_INERTIA = float(os.getenv("OC_SORT_INERTIA", "0.2"))
+
 IOU_THRESHOLD = 0.35
 MAX_LOST_FRAMES = 15
 FIRST_SHOT_QUALITY_THRESHOLD = 0.50
 BEST_SHOT_DELTA = 0.15           # Must be this much better to trigger an update
-SEND_THUMBNAIL = True            # Send 112x112 JPEG thumbnail for audit log
-THUMBNAIL_JPEG_QUALITY = 80
+SEND_THUMBNAIL = True            # Send JPEG thumbnail for audit log
+THUMBNAIL_JPEG_QUALITY = 85
 
 # Telemetry
 HEARTBEAT_INTERVAL = 10.0        # Seconds between heartbeats
 OFFLINE_QUEUE_MAX = 500          # Max events kept in memory while offline
+

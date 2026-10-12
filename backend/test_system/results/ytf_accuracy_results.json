@@ -1,0 +1,41 @@
+{
+  "dataset": "YouTube Faces Dataset (YTF)",
+  "timestamp": "2026-10-12 19:17:57",
+  "total_identities": 60,
+  "total_videos_analyzed": 155,
+  "genuine_pairs_evaluated": 95,
+  "impostor_pairs_evaluated": 180,
+  "similarity_statistics": {
+    "genuine_mean": 0.5299932956695557,
+    "genuine_std": 0.1928751915693283,
+    "genuine_min": -0.15090692043304443,
+    "genuine_max": 0.9186354875564575,
+    "impostor_mean": 0.0060292258858680725,
+    "impostor_std": 0.11417438089847565,
+    "impostor_min": -0.2690032422542572,
+    "impostor_max": 0.3412778973579407
+  },
+  "verification_metrics": {
+    "EER": 7.3,
+    "EER_threshold": 0.166,
+    "TAR_at_FAR_1pct": 86.32,
+    "threshold_at_FAR_1pct": 0.331,
+    "TAR_at_FAR_01pct": 85.26,
+    "threshold_at_FAR_01pct": 0.342,
+    "current_system_threshold": {
+      "threshold": 0.55,
+      "accuracy": 82.18,
+      "precision": 100.0,
+      "recall": 48.42,
+      "F1_score": 65.25,
+      "false_acceptance_rate": 0.0,
+      "false_rejection_rate": 51.58
+    }
+  },
+  "identification_metrics": {
+    "gallery_size": 60,
+    "probe_queries": 95,
+    "rank1_accuracy": 87.37,
+    "rank5_accuracy": 91.58
+  }
+}

@@ -36,7 +36,35 @@ def search_similar_faces(
         return l1_hits
 
     if DB_TYPE != "postgresql":
-        return []
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT customer_id, face_embedding FROM customer_embeddings WHERE face_embedding IS NOT NULL")
+            rows = cursor.fetchall()
+            results = []
+            q_norm = protected_embedding / (np.linalg.norm(protected_embedding) or 1.0)
+            import pickle
+            for row in rows:
+                cid = row["customer_id"]
+                blob = row["face_embedding"]
+                emb = None
+                if isinstance(blob, bytes):
+                    try:
+                        emb = pickle.loads(blob)
+                    except Exception:
+                        emb = np.frombuffer(blob, dtype=np.float32)
+                if emb is not None and len(emb) == 512:
+                    emb = np.asarray(emb, dtype=np.float32)
+                    emb_norm = emb / (np.linalg.norm(emb) or 1.0)
+                    sim = float(np.dot(emb_norm, q_norm))
+                    if sim >= threshold:
+                        results.append((cid, sim))
+            results.sort(key=lambda x: x[1], reverse=True)
+            for cid, _ in results:
+                vector_cache_manager.add_to_cache(cid, protected_embedding)
+            return results[:top_k]
+        except Exception as e:
+            return []
+
 
     # Sync cache if empty or stale
     try:
@@ -198,7 +226,7 @@ def fetch_all_embeddings_from_db(conn):
             emb_list = [float(x) for x in emb_text[1:-1].split(",")]
             emb_np = np.array(emb_list, dtype=np.float32)
 
-            if str(c_id).startswith("GUEST_"):
+            if str(c_id).startswith("GUEST_") or str(c_id).startswith("LN"):
                 guest_embeddings.append(emb_np)
                 guest_ids.append(c_id)
             else:

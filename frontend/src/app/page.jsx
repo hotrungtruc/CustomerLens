@@ -229,10 +229,13 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 
 function formatGuestId(id) {
   if (!id) return "—";
-  if (typeof id === "string" && id.startsWith("GUEST_")) {
-    const parts = id.split("_");
-    const suffix = parts[parts.length - 1];
-    return `GUEST #${suffix}`;
+  if (typeof id === "string") {
+    if (id.startsWith("LN")) return id;
+    if (id.startsWith("GUEST_")) {
+      const parts = id.split("_");
+      const suffix = parts[parts.length - 1];
+      return `LN${suffix}`;
+    }
   }
   return id;
 }
@@ -491,6 +494,7 @@ export default function DashboardPage() {
                 framed={false}
                 fullHeight={true}
                 onCustomersChange={handleCustomersChange}
+                onCustomerClick={handleCardClick}
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-slate-300">

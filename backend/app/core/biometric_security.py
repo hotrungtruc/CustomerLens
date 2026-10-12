@@ -131,7 +131,7 @@ def purge_expired_guests(conn, retention_days: int = GUEST_RETENTION_DAYS) -> di
         rows = conn.execute(
             """
             SELECT customer_id FROM customers
-            WHERE customer_id LIKE 'GUEST_%'
+            WHERE (customer_id LIKE 'GUEST_%' OR customer_id LIKE 'LN%' OR customer_type = 'guest')
               AND (registered_at < ? OR last_visit < ? OR registered_at IS NULL)
             """,
             (cutoff_str, cutoff_str),
@@ -140,7 +140,7 @@ def purge_expired_guests(conn, retention_days: int = GUEST_RETENTION_DAYS) -> di
         rows = conn.execute(
             """
             SELECT customer_id FROM customers
-            WHERE customer_id LIKE 'GUEST_%'
+            WHERE customer_id LIKE 'GUEST_%' OR customer_id LIKE 'LN%' OR customer_type = 'guest'
             """
         ).fetchall()
 

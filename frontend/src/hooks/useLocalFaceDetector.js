@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 
 function calculateIoU(boxA, boxB) {
   const xA = Math.max(boxA.left, boxB.left);
@@ -19,8 +19,8 @@ function generateUUID() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
     return crypto.randomUUID();
   }
-  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
-    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+    (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16),
   );
 }
 
@@ -37,23 +37,42 @@ export function useLocalFaceDetector(videoRef) {
     async function initDetector() {
       try {
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm",
         );
-        const faceDetector = await FaceDetector.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          minDetectionConfidence: 0.3,
-          minSuppressionThreshold: 0.3
-        });
+
+        let faceLandmarker = null;
+        try {
+          // Priority 1: Load local face_landmarker.task from /models/
+          faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: "/models/face_landmarker.task",
+              delegate: "GPU",
+            },
+            runningMode: "VIDEO",
+            numFaces: 5,
+            minFaceDetectionConfidence: 0.35,
+            minFacePresenceConfidence: 0.35,
+          });
+        } catch (gpuErr) {
+          console.warn("GPU init failed, trying CPU fallback for FaceLandmarker:", gpuErr);
+          faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+              delegate: "CPU",
+            },
+            runningMode: "VIDEO",
+            numFaces: 5,
+            minFaceDetectionConfidence: 0.35,
+            minFacePresenceConfidence: 0.35,
+          });
+        }
 
         if (isMounted) {
-          faceDetectorRef.current = faceDetector;
+          faceDetectorRef.current = faceLandmarker;
+          console.log("✓ MediaPipe FaceLandmarker Tasks API initialized on edge web client");
         }
       } catch (err) {
-        console.error("Failed to initialize MediaPipe FaceDetector:", err);
+        console.error("Failed to initialize MediaPipe FaceLandmarker:", err);
       }
     }
 
@@ -62,7 +81,9 @@ export function useLocalFaceDetector(videoRef) {
     return () => {
       isMounted = false;
       if (faceDetectorRef.current) {
-        faceDetectorRef.current.close();
+        try {
+          faceDetectorRef.current.close();
+        } catch (_) {}
       }
     };
   }, []);
@@ -78,65 +99,74 @@ export function useLocalFaceDetector(videoRef) {
           lastVideoTimeRef.current = video.currentTime;
 
           try {
-            const detections = faceDetectorRef.current.detectForVideo(video, startTimeMs);
-            if (detections && detections.detections) {
+            const results = faceDetectorRef.current.detectForVideo(video, startTimeMs);
+            if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
               const sw = video.videoWidth;
               const sh = video.videoHeight;
 
-              const mappedFaces = detections.detections.map(d => {
-                const { originX, originY, width, height } = d.boundingBox;
+              const mappedFaces = results.faceLandmarks.map((landmarks) => {
+                let minX = 1.0, minY = 1.0, maxX = 0.0, maxY = 0.0;
+                for (let i = 0; i < landmarks.length; i++) {
+                  const pt = landmarks[i];
+                  if (pt.x < minX) minX = pt.x;
+                  if (pt.x > maxX) maxX = pt.x;
+                  if (pt.y < minY) minY = pt.y;
+                  if (pt.y > maxY) maxY = pt.y;
+                }
 
-                // Edge detection margin (5% of width/height)
-                const marginX = sw * 0.05;
-                const marginY = sh * 0.05;
+                const rawW = (maxX - minX) * sw;
+                const rawH = (maxY - minY) * sh;
+                const mx = rawW * 0.06;
+                const my = rawH * 0.06;
 
-                // Check if face touches the edge
+                const originX = Math.max(0, minX * sw - mx);
+                const originY = Math.max(0, minY * sh - my);
+                const width = Math.min(sw - originX, rawW + mx * 2);
+                const height = Math.min(sh - originY, rawH + my * 2);
+
+                // Margin check (touching borders)
+                const marginX = sw * 0.04;
+                const marginY = sh * 0.04;
                 const isAtEdge =
                   originX < marginX ||
                   originY < marginY ||
                   originX + width > sw - marginX ||
                   originY + height > sh - marginY;
 
-                // 1. Check Confidence Score
-                const score = d.categories && d.categories.length > 0 ? d.categories[0].score : 1;
-                const isHighConfidence = score > 0.4;
+                // Extract Key Reference Points
+                // 468/33: Left Eye, 473/263: Right Eye, 1: Nose Tip, 61: Left Mouth, 291: Right Mouth
+                const leftEye = landmarks[468] || landmarks[33] || landmarks[133];
+                const rightEye = landmarks[473] || landmarks[263] || landmarks[362];
+                const nose = landmarks[1];
+                const mouthL = landmarks[61];
+                const mouthR = landmarks[291];
 
-                // 2. Check for valid landmarks (MediaPipe returns at least 4 keypoints for a clear face)
-                const hasValidLandmarks = d.keypoints && d.keypoints.length >= 4;
+                const mouthCenter = (mouthL && mouthR)
+                  ? { x: (mouthL.x + mouthR.x) / 2.0, y: (mouthL.y + mouthR.y) / 2.0 }
+                  : (mouthL || nose);
 
-                // 3. Check for extreme profile (Yaw angle & Eye distance)
+                const keypoints = [leftEye, rightEye, nose, mouthCenter];
+
+                // Pose Gate: Yaw and Eye Distance Symmetry
                 let isExtremeProfile = false;
                 let isEyesWideEnough = true;
 
-                if (hasValidLandmarks) {
-                  // Indices: 0: Right Eye, 1: Left Eye, 2: Nose Tip
-                  const rightEye = d.keypoints[0];
-                  const leftEye = d.keypoints[1];
-                  const nose = d.keypoints[2];
+                if (leftEye && rightEye && nose) {
+                  const distRight = Math.sqrt(Math.pow((rightEye.x - nose.x) * sw, 2) + Math.pow((rightEye.y - nose.y) * sh, 2));
+                  const distLeft = Math.sqrt(Math.pow((leftEye.x - nose.x) * sw, 2) + Math.pow((leftEye.y - nose.y) * sh, 2));
+                  const ratio = distRight > 0 ? distLeft / distRight : 999;
 
-                  if (rightEye && leftEye && nose) {
-                    const distRight = Math.sqrt(Math.pow(rightEye.x - nose.x, 2) + Math.pow(rightEye.y - nose.y, 2));
-                    const distLeft = Math.sqrt(Math.pow(leftEye.x - nose.x, 2) + Math.pow(leftEye.y - nose.y, 2));
+                  if (ratio > 1.85 || ratio < 0.54) {
+                    isExtremeProfile = true;
+                  }
 
-                    const ratio = distRight > 0 ? distLeft / distRight : 999;
-
-                    // 1.8 threshold (stricter: nose can't be twice as far from one eye)
-                    if (ratio > 1.8 || ratio < 0.55) {
-                      isExtremeProfile = true;
-                    }
-
-                    // Check Inter-Ocular Distance relative to face width
-                    const eyeDist = Math.sqrt(Math.pow(rightEye.x - leftEye.x, 2) + Math.pow(rightEye.y - leftEye.y, 2));
-                    // MediaPipe's boundingBox width is absolute pixels, sw is videoWidth
-                    const boxWidthNorm = width / sw;
-                    // Eyes should be at least 20% of the box width apart
-                    if (eyeDist < boxWidthNorm * 0.2) {
-                      isEyesWideEnough = false;
-                    }
+                  const eyeDist = Math.sqrt(Math.pow((rightEye.x - leftEye.x) * sw, 2) + Math.pow((rightEye.y - leftEye.y) * sh, 2));
+                  if (eyeDist < width * 0.22) {
+                    isEyesWideEnough = false;
                   }
                 }
 
-                const isGoodQuality = !isAtEdge && hasValidLandmarks && !isExtremeProfile && isHighConfidence && isEyesWideEnough;
+                const isGoodQuality = !isAtEdge && !isExtremeProfile && isEyesWideEnough && width >= 45 && height >= 45;
 
                 return {
                   left: (originX / sw) * 100,
@@ -144,20 +174,20 @@ export function useLocalFaceDetector(videoRef) {
                   width: (width / sw) * 100,
                   height: (height / sh) * 100,
                   pixelBox: { originX, originY, width, height },
-                  keypoints: d.keypoints || [],
-                  isGoodQuality // Flag for sending crop
+                  keypoints,
+                  isGoodQuality,
                 };
               });
 
-              // IoU Tracking
+              // Tracking Association (IoU matching)
               const currentTracks = trackedFacesRef.current;
               const newTracks = [];
 
-              mappedFaces.forEach(face => {
+              mappedFaces.forEach((face) => {
                 let bestMatch = null;
                 let bestIoU = 0;
-                currentTracks.forEach(track => {
-                  if (track.matched) return; // Prevent double matching
+                currentTracks.forEach((track) => {
+                  if (track.matched) return;
                   const iou = calculateIoU(face, track);
                   if (iou > 0.3 && iou > bestIoU) {
                     bestIoU = iou;
@@ -188,7 +218,7 @@ export function useLocalFaceDetector(videoRef) {
               setLocalFaces([]);
             }
           } catch (err) {
-            console.error("Face detection error:", err);
+            console.error("FaceLandmarker detection error:", err);
           }
         }
       }

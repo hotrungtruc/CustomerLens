@@ -93,5 +93,7 @@ backend/data/keys/
 experiments/test_crop_output/
 
 assets/dataset/
+assets/YTF/
+*.npz
 assets/*.mp4
 *.mp4

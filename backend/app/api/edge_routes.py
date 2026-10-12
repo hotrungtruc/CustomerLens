@@ -31,6 +31,9 @@ ATTENDANCE_DEBOUNCE: Dict[str, float] = {}  # {customer_id: last_checkin_timesta
 DEBOUNCE_SECONDS = 60.0  # Cooldown between attendance increments for the same person
 
 
+import base64
+import cv2
+
 class EdgeFaceEvent(BaseModel):
     camera_id: str
     device_id: str = "edge_default"
@@ -39,7 +42,7 @@ class EdgeFaceEvent(BaseModel):
     timestamp: float = Field(default_factory=time.time)
     bbox: List[float]  # [x1, y1, x2, y2]
     quality_score: float = 1.0
-    embedding: List[float]  # 512 float values
+    embedding: Optional[List[float]] = None  # Optional 512 float values
     crop_image_base64: Optional[str] = None
     frame_size: Optional[Dict[str, int]] = None  # {"width": 640, "height": 480}
 
@@ -62,6 +65,11 @@ ALLOWED_MODEL_FILES = {
     "scrfd_500m_bnkps.onnx": {
         "description": "SCRFD-500M Face Detector with 5 Keypoints",
         "sha256": "a3562ef62592bf387f6ef19151282ac127518e51c77696e62e0661bee95ba1ad",
+        "version": "1.0.0",
+    },
+    "edgeface_int8.onnx": {
+        "description": "EdgeFace INT8 Quantized Lightweight Feature Extractor (512-D)",
+        "sha256": "dynamic_int8",
         "version": "1.0.0",
     },
     "edgeface_s_gamma_05.onnx": {
@@ -91,27 +99,65 @@ def _calculate_file_sha256(path: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1. Ingestion Endpoint: Receive Face Embedding + Metadata from Edge Device
+# 1. Ingestion Endpoint: Receive Face Crop / Embedding from Edge Device
 # ---------------------------------------------------------------------------
 @router.post("/events")
 async def receive_edge_face_event(event: EdgeFaceEvent):
     """
-    Ingest a face embedding event sent by an Edge device.
-    1. Validates embedding length (512D).
+    Ingest a face event sent by an Edge device.
+    1. If crop_image_base64 is sent without embedding, extracts 5 landmarks via SCRFD 500M
+       and generates 512-D embedding via EdgeFace (int8).
     2. Runs vector search against Identity DB (pgvector / L1 cache).
     3. If recognized, updates attendance and recognize logs.
     4. Broadcasts recognition update to Dashboard observer via Redis PubSub.
     """
-    if len(event.embedding) != 512:
+    from app.core.insight_embedding import get_embedder
+
+    emb_arr = None
+    if event.embedding and len(event.embedding) == 512:
+        emb_arr = np.asarray(event.embedding, dtype=np.float32)
+    elif event.crop_image_base64:
+        try:
+            crop_bytes = base64.b64decode(event.crop_image_base64)
+            crop_arr = np.frombuffer(crop_bytes, dtype=np.uint8)
+            crop_bgr = cv2.imdecode(crop_arr, cv2.IMREAD_COLOR)
+            if crop_bgr is not None and crop_bgr.size > 0:
+                embedder = get_embedder()
+                # Run SCRFD 500M on the padded crop to detect facial landmarks
+                detections = embedder.detect(crop_bgr)
+                landmark = None
+                if len(detections[0]) > 0 and len(detections[1]) > 0:
+                    landmark = detections[1][0]
+                else:
+                    # Fallback landmark approximation based on crop geometry
+                    ch, cw = crop_bgr.shape[:2]
+                    landmark = np.array([
+                        [cw * 0.35, ch * 0.38],
+                        [cw * 0.65, ch * 0.38],
+                        [cw * 0.50, ch * 0.55],
+                        [cw * 0.38, ch * 0.75],
+                        [cw * 0.62, ch * 0.75],
+                    ], dtype=np.float32)
+
+                emb = embedder.get_embedding(crop_bgr, landmark)
+                if emb is not None:
+                    emb_arr = np.asarray(emb, dtype=np.float32)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to process crop image on server: {e}",
+            )
+
+    if emb_arr is None or len(emb_arr) != 512:
         raise HTTPException(
             status_code=422,
-            detail=f"Invalid embedding dimension: expected 512, got {len(event.embedding)}",
+            detail="Either valid 512D embedding or crop_image_base64 must be provided",
         )
 
-    emb_arr = np.asarray(event.embedding, dtype=np.float32)
     norm = np.linalg.norm(emb_arr)
     if norm > 0:
         emb_arr = emb_arr / norm
+
 
     threshold = float(system_settings.get("similarity_threshold", SIMILARITY_THRESHOLD))
     conn = get_db_connection()

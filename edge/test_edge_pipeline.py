@@ -31,17 +31,18 @@ def test_edge_to_cloud():
     )
 
     # 2. Load test image with enrolled face (Ho Trung Truc - ID 003)
-    img_path = str(root_dir / "backend" / "data" / "images" / "images.jpg")
+    img_path = str(root_dir / "backend" / "data" / "images" / "test_face.jpg")
     print(f"\n[2] Loading test image from: {img_path}...")
     img = cv2.imread(img_path)
     assert img is not None, f"Failed to load test image: {img_path}"
 
-    # 3. Process frame through Edge Pipeline
-    print("\n[3] Processing frame through SCRFD + 5-point Align + EdgeFace + Tracker...")
+    # 3. Process frame through Edge Pipeline (MediaPipe Tasks + OC-SORT + Padded Crop)
+    print("\n[3] Processing frame through MediaPipe FaceLandmarker + OC-SORT + 25% Padded Crop...")
     # Feed the frame twice to trigger track creation and first_shot dispatch
     annotated1, tracks1 = pipeline.process_frame(img)
     time.sleep(0.1)
     annotated2, tracks2 = pipeline.process_frame(img)
+
 
     print(f"    - Frame processed successfully!")
     print(f"    - Active tracks detected: {len(tracks2)}")

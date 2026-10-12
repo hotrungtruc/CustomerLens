@@ -6,18 +6,38 @@ Authentication helpers and routes.
 """
 
 import hashlib
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
+import redis
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.db.connection import get_db_connection
 from app.messaging.kafka_client import get_redis
 from app.core.settings import system_settings
-from config import JWT_ALGORITHM, JWT_EXPIRATION_MINUTES, JWT_PRIVATE_KEY, JWT_PUBLIC_KEY
+from config import (
+    JWT_ALGORITHM,
+    JWT_EXPIRATION_MINUTES,
+    JWT_PRIVATE_KEY,
+    JWT_PUBLIC_KEY,
+    REDIS_URL,
+)
+
+logger = logging.getLogger("Auth")
 
 router = APIRouter()
+
+_redis_sync_client: redis.Redis | None = None
+
+
+def get_sync_redis_client() -> redis.Redis:
+    global _redis_sync_client
+    if _redis_sync_client is None:
+        _redis_sync_client = redis.from_url(REDIS_URL, decode_responses=True)
+    return _redis_sync_client
+
 
 # ---------------------------------------------------------------------------
 # JWT helpers (imported by other route modules)
@@ -39,11 +59,30 @@ def create_access_token(user_info: dict) -> str:
 
 
 def decode_access_token(token: str) -> dict:
-    """Statelessly decode and verify an RS256 JWT token using public RSA key."""
+    """Statelessly decode and verify an RS256 JWT token using public RSA key,
+    with fast Redis revocation check."""
     try:
-        return jwt.decode(token, JWT_PUBLIC_KEY, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, JWT_PUBLIC_KEY, algorithms=[JWT_ALGORITHM])
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         raise HTTPException(status_code=401, detail="Session expired or invalid")
+
+    user_id = payload.get("id")
+    token_iat = payload.get("iat", 0)
+
+    if user_id:
+        try:
+            r = get_sync_redis_client()
+            revoked_at = r.get(f"user_revoked_at:{user_id}")
+            if revoked_at is not None and int(token_iat) <= int(revoked_at):
+                raise HTTPException(
+                    status_code=401, detail="Session has been revoked. Please log in again."
+                )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("Could not verify session revocation in Redis: %s", exc)
+
+    return payload
 
 
 def get_user_from_token(authorization: str | None = None):
@@ -63,8 +102,19 @@ def require_admin(authorization: str | None = None):
 
 
 def revoke_user_sessions(user_id: int):
-    # In stateless RS256 JWT mode, tokens naturally expire via 'exp' claim.
-    pass
+    """
+    Revoke all active sessions for user_id by recording a revocation timestamp in Redis.
+    Any token issued at or before this timestamp will be rejected by decode_access_token.
+    TTL is set to JWT_EXPIRATION_MINUTES * 60 so keys automatically expire.
+    """
+    try:
+        r = get_sync_redis_client()
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        ttl_seconds = int(JWT_EXPIRATION_MINUTES * 60)
+        r.set(f"user_revoked_at:{user_id}", str(now_ts), ex=ttl_seconds)
+        logger.info("Revoked all sessions for user_id=%s at timestamp %s", user_id, now_ts)
+    except Exception as exc:
+        logger.error("Failed to revoke sessions for user_id=%s in Redis: %s", user_id, exc)
 
 
 # ---------------------------------------------------------------------------
@@ -133,3 +183,11 @@ async def update_settings(
         "message": "Settings updated successfully",
         "settings": system_settings.get_all(),
     }
+
+
+@router.post("/api/logout")
+async def api_logout(authorization: str | None = Header(default=None)):
+    user = get_user_from_token(authorization)
+    revoke_user_sessions(user["id"])
+    return {"status": "success", "message": "Logged out successfully"}
+

@@ -31,10 +31,10 @@ def _row_to_customer(row):
         return None
     data = dict(row)
     data.setdefault("id", data.get("customer_id"))
-    data.setdefault("service_category", data.get("occupation"))
+    data.setdefault("service_category", "General")
     data.setdefault("service_start_year", data.get("registered_at"))
     data.setdefault("customer_tenure_years", data.get("tenure"))
-    data.setdefault("major", data.get("occupation"))
+    data.setdefault("major", "")
     data.setdefault("starting_year", data.get("registered_at"))
     data.setdefault("year", data.get("tenure"))
     data.setdefault("standing", data.get("loyalty_tier"))
@@ -54,7 +54,7 @@ def get_customer_info(conn, customer_id):
     cursor.execute(
         """
         SELECT
-            c.customer_id, c.name, c.phone, c.email, c.occupation, c.registered_at,
+            c.customer_id, c.name, c.phone, c.email, c.registered_at,
             c.tenure, c.loyalty_tier, c.total_visits, c.last_visit, c.total_spending,
             c.note, c.customer_type, c.status, c.created_at, c.updated_at,
             CASE WHEN e.customer_id IS NULL THEN 0 ELSE 1 END AS has_face_embedding,
@@ -78,13 +78,13 @@ def create_or_update_customer_profile(
     note=None,
     source_id=None,
     email=None,
-    occupation=None,
     registered_at=None,
     tenure=None,
     loyalty_tier=None,
     service_category=None,
     service_start_year=None,
     customer_tenure_years=None,
+    **legacy_kwargs,
 ):
     clean_id = (customer_id or "").strip()
     clean_name = (name or "").strip()
@@ -92,11 +92,15 @@ def create_or_update_customer_profile(
         raise ValueError("Customer name is required")
 
     # Field aliases
-    occupation = occupation if occupation is not None else service_category
     registered_at = registered_at if registered_at is not None else service_start_year
     tenure = tenure if tenure is not None else customer_tenure_years
 
-    if clean_id.startswith("T") or clean_id.startswith("GUEST_") or clean_id.startswith("test_"):
+    if (
+        clean_id.startswith("T")
+        or clean_id.startswith("GUEST_")
+        or clean_id.startswith("test_")
+        or clean_id.startswith("LN")
+    ):
         clean_id = ""
 
     existing = get_customer_info(conn, clean_id) if clean_id else None
@@ -107,16 +111,15 @@ def create_or_update_customer_profile(
         conn.execute(
             """
             INSERT INTO customers (
-                customer_id, name, phone, email, occupation, registered_at,
+                customer_id, name, phone, email, registered_at,
                 tenure, loyalty_tier, note, customer_type, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'registered', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'registered', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """,
             (
                 final_id,
                 clean_name,
                 phone,
                 email,
-                occupation or "General",
                 registered_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 int(tenure or 0),
                 loyalty_tier or "Standard",
@@ -136,7 +139,6 @@ def upsert_customer(
     conn,
     customer_id,
     name,
-    occupation="General",
     registered_at=None,
     total_visits=0,
     loyalty_tier="Standard",
@@ -151,7 +153,6 @@ def upsert_customer(
     **legacy_kwargs,
 ):
     """Upsert a customer record, accepting legacy field names via kwargs."""
-    occupation = legacy_kwargs.get("service_category", occupation)
     registered_at = legacy_kwargs.get("service_start_year", registered_at)
     tenure = legacy_kwargs.get("customer_tenure_years", tenure)
     total_visits = legacy_kwargs.get("total_attendance", total_visits)
@@ -163,15 +164,14 @@ def upsert_customer(
     conn.execute(
         """
         INSERT INTO customers (
-            customer_id, name, phone, email, occupation, registered_at, tenure,
+            customer_id, name, phone, email, registered_at, tenure,
             loyalty_tier, total_visits, last_visit, total_spending, note,
             customer_type, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         ON CONFLICT(customer_id) DO UPDATE SET
             name = excluded.name,
             phone = excluded.phone,
             email = excluded.email,
-            occupation = excluded.occupation,
             registered_at = excluded.registered_at,
             tenure = excluded.tenure,
             loyalty_tier = excluded.loyalty_tier,
@@ -185,7 +185,6 @@ def upsert_customer(
         """,
         (
             customer_id, name, phone, email,
-            occupation or "General",
             str(registered_at or DEFAULT_TIME),
             int(tenure or 0),
             loyalty_tier or "Standard",
@@ -203,7 +202,6 @@ def insert_guest_record(conn, guest_id):
         conn,
         guest_id,
         "Guest",
-        occupation="Walk-in customer",
         registered_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         total_visits=0,
         loyalty_tier="Standard",

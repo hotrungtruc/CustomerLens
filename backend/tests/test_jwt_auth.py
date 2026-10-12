@@ -1,9 +1,21 @@
 import unittest
 import time
+import os
+import sys
+from pathlib import Path
+
+# Add backend directory to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from fastapi import HTTPException
 import jwt
 
-from app.api.routes import create_access_token, decode_access_token, get_user_from_token
+from app.api.auth import (
+    create_access_token,
+    decode_access_token,
+    get_user_from_token,
+    revoke_user_sessions,
+)
 from config import JWT_ALGORITHM, JWT_PUBLIC_KEY, JWT_PRIVATE_KEY
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
@@ -82,6 +94,31 @@ class TestJWTAuthentication(unittest.TestCase):
             decode_access_token(fake_token)
         self.assertEqual(ctx.exception.status_code, 401)
 
+    def test_revoke_user_sessions(self):
+        user_id = 999
+        user_data = {"id": user_id, "username": "revoked_user", "role": "user", "cameras": []}
+        
+        # Token generated before revocation
+        old_token = create_access_token(user_data)
+        payload = decode_access_token(old_token)
+        self.assertEqual(payload["username"], "revoked_user")
+
+        # Revoke user sessions
+        revoke_user_sessions(user_id)
+
+        # Old token should now be rejected
+        with self.assertRaises(HTTPException) as ctx:
+            decode_access_token(old_token)
+        self.assertEqual(ctx.exception.status_code, 401)
+        self.assertIn("revoked", ctx.exception.detail.lower())
+
+        # Simulate new login after revocation (iat after revocation timestamp)
+        time.sleep(1.1)
+        new_token = create_access_token(user_data)
+        new_payload = decode_access_token(new_token)
+        self.assertEqual(new_payload["username"], "revoked_user")
+
 
 if __name__ == "__main__":
     unittest.main()
+

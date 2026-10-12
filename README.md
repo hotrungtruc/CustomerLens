@@ -21,7 +21,7 @@ Hệ thống cho phép giám sát luồng video camera trực tiếp với độ
 ---
 
 <p align="center">
-  <img src="assets/06.13_demo.png" alt="CustomerLens Live Monitoring Demo" width="900" style="border-radius: 10px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);">
+  <img src="assets/workflow.png" alt="CustomerLens End-to-End System Workflow" width="950" style="border-radius: 10px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);">
 </p>
 
 ---
@@ -41,7 +41,7 @@ Hệ thống cho phép giám sát luồng video camera trực tiếp với độ
 * **Real-time Pub/Sub Feedback:** Trả kết quả nhận diện và Bounding Box về WebSocket Client thông qua kênh Redis Pub/Sub phân lập theo `connection_id`.
 
 ### 🛡️ 3. An Ninh Sinh Trắc Học & Pháp Lý (Enterprise Biometric Security & GDPR)
-* **Xác thực JWT Bất đối xứng (RS256 Stateless Auth):** Loại bỏ lưu trữ RAM nội bộ. Token đăng nhập được ký bằng RSA Private Key và xác thực ngầm định tức thì bằng RSA Public Key tại mọi node API & WebSocket Observer.
+* **Xác thực JWT Bất đối xứng (RS256 Stateless Auth) & Thu hồi phiên tức thì (Redis Session Revocation):** Loại bỏ lưu trữ RAM nội bộ. Token đăng nhập được ký bằng RSA Private Key và xác thực tức thì bằng RSA Public Key tại mọi node API. Tích hợp cơ chế thu hồi phiên tức thì qua Redis revocation timestamp (`user_revoked_at:{user_id}`) khi đổi mật khẩu, khóa tài khoản hoặc đăng xuất.
 * **Cancelable Biometrics (Orthogonal Random Projection):** Áp dụng ma trận chiếu ngẫu nhiên trực giao $Q \in \mathbb{R}^{512 \times 512}$ ($Q^T Q = I$) để biến đổi vector embedding trước khi lưu DB. Bảo toàn **100% độ chính xác Cosine Similarity** ($\langle Q\vec{x}_1, Q\vec{x}_2 \rangle = \langle \vec{x}_1, \vec{x}_2 \rangle$), đồng thời ngăn chặn tuyệt đối nguy cơ đảo ngược tái tạo khuôn mặt gốc nếu CSDL bị rò rỉ.
 * **Encryption at Rest (AES-256-GCM):** Mã hóa toàn bộ tập tin hình ảnh sinh trắc học trên đĩa cứng bằng thuật toán mã hóa xác thực AES-256-GCM với Nonce 12-byte ngẫu nhiên.
 * **Quyền được Quên (GDPR Article 17 Purge):** Tiến trình tự động và REST API `POST /api/admin/purge_guests` giúp xoá sạch dữ liệu vết khách vãng lai (`GUEST_*`), embeddings, nhật ký và tệp đĩa quá hạn (mặc định 30 ngày).
@@ -153,7 +153,7 @@ pip install -r requirements.txt
 # Khởi tạo DB & Tải Model AI
 python -m app.db.connection
 python -m app.utils.download_models
-python app/db/seed_data.py
+python -m app.db.seed_data
 
 # Chạy API Server
 python run.py
@@ -192,18 +192,87 @@ docker compose up -d
 
 ---
 
-## 📊 Kết Quả Benchmark Hệ Thống (Performance Evaluation)
+## 📊 Kết Quả Benchmark & Kiểm Thử Hệ Thống (Performance & Biometric Evaluation)
 
-Đo đạc trên bộ dữ liệu chuẩn **Asian Celeb Benchmark**:
+Hệ thống được đánh giá thực nghiệm toàn diện trên tập dữ liệu học thuật **YouTube Faces with Facial Keypoints (YTF)** (544 chuỗi video, 207 danh tính) và **Asian Celeb Benchmark**:
 
-| Chỉ số / Công đoạn | Giá trị Đo đạc thực tế |
-| :--- | :--- |
-| **Trích xuất Đặc trưng Single Image (EdgeFace)** | Latency trung bình: **`48.16 ms`** (~**`20.76 FPS`**) |
-| **SCRFD Face Detection (Khung hình 720p)** | Latency trung bình: **`30.45 ms`** (~**`32.84 FPS`**) |
-| **Supabase pgvector HNSW Vector Search** | Latency trung bình: **`265.17 ms`** (P50: `263.97 ms`) |
-| **Độ chính xác Định danh (Rank-1 Accuracy)** | **`98.5%`** (trên 1,000 người ngẫu nhiên) |
-| **Tỉ lệ Lỗi Bằng (Equal Error Rate - EER)** | **`0.82%`** tại ngưỡng Cosine Similarity $\theta^* = 0.322$ |
-| **Test Suite Tự động (Unittest)** | **`17 / 17 Tests PASS (100% OK)`** |
+### 🎯 1. Độ Chính Xác Nhận Diện Sinh Trắc Học (Biometric Accuracy)
+
+<p align="center">
+  <img src="assets/benchmark_accuracy.png" alt="CustomerLens Biometric Accuracy Benchmark" width="950" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+</p>
+
+* **Biên phân tách Cosine (Separation Margin):** Khoảng cách giữa cùng người (Genuine: `0.530 ± 0.193`) và khác người (Impostor: `0.006 ± 0.114`) cực kỳ rõ rệt ($> 0.52$).
+* **Độ chính xác Định danh 1:N:** Đạt **`87.37%` Rank-1** và **`91.58%` Rank-5** trên 95 video probe queries đối sánh với Gallery 60 người nổi tiếng trong điều kiện chuyển động, ánh sáng biến thiên mạnh.
+* **Ngưỡng vận hành bảo mật ($\theta = 0.55$):** Đạt **`100.0%` Precision** với **`0.0%` FAR (False Acceptance Rate)** — triệt tiêu hoàn toàn rủi ro nhận nhầm khách lạ thành khách VIP.
+
+| Chỉ số Sinh trắc học | Giá trị Đo đạc (YTF Dataset) | Ý nghĩa Kỹ thuật |
+| :--- | :---: | :--- |
+| **Rank-1 Identification Accuracy** | **`87.37%`** | Khách hàng được nhận diện chính xác tuyệt đối ngay tại vị trí số 1 |
+| **Rank-5 Identification Accuracy** | **`91.58%`** | Tỷ lệ nhận diện đúng nằm trong Top 5 ứng viên tương đồng nhất |
+| **Equal Error Rate (EER)** | **`7.3%`** | Tỷ lệ lỗi bằng tại ngưỡng tối ưu $\theta^* = 0.166$ |
+| **TAR @ FAR = 1.0%** | **`86.32%`** | Tỷ lệ chấp nhận đúng khi giới hạn tỷ lệ nhận nhầm dưới 1% ($\theta = 0.331$) |
+| **TAR @ FAR = 0.1%** | **`85.26%`** | Tỷ lệ chấp nhận đúng ở chế độ bảo mật cao ($\theta = 0.342$) |
+| **Precision (tại $\theta = 0.55$)** | **`100.0%`** | Tuyệt đối không có trường hợp nhận nhầm người khác (FAR = 0%) |
+
+---
+
+### ⏱️ 2. Độ Trễ Phân Đoạn & Thông Lượng Thời Gian Thực (Latency Breakdown & Throughput)
+
+<p align="center">
+  <img src="assets/benchmark_latency.png" alt="CustomerLens Pipeline Latency Breakdown and Throughput" width="950" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+</p>
+
+* **Tốc độ xử lý:** Thông lượng tổng thể đạt **`30.34 FPS`**, tương thích hoàn toàn với các luồng RTSP/IP Camera 25–30 FPS tiêu chuẩn.
+* **Độ trễ mỗi khung hình (End-to-End Latency):** Trung bình chỉ **`32.29 ms`** (P95: `38.13 ms`), đáp ứng yêu cầu phản hồi thời gian thực tức thì.
+
+| Phân đoạn Pipeline | Thời gian xử lý Trung bình | Phân vị P95 | Tỷ trọng | Công nghệ tối ưu |
+| :--- | :---: | :---: | :---: | :--- |
+| **1. SCRFD Face Detection** | **`2.31 ms`** | `2.88 ms` | 7.1% | ONNX Runtime INT8, 5-point landmark regression |
+| **2. EdgeFace Feature Extraction** | **`29.61 ms`** | `35.35 ms` | 91.7% | MobileNet-V2 backbone, 512-D embedding |
+| **3. Cancelable Biometrics Protect** | **`0.09 ms`** | `0.14 ms` | 0.3% | Ma trận trực giao $Q \in \mathbb{R}^{512 \times 512}$ ($Q^TQ = I$) |
+| **4. Kalman Tracker & IoU Matching** | **`0.27 ms`** | `0.33 ms` | 0.9% | Kalman Filter góc + Thuật toán Hungarian |
+| **TỔNG ĐỘ TRỄ KHUNG HÌNH (E2E)** | **`32.29 ms`** | **`38.13 ms`** | **100%** | **Thông lượng tương đương: 30.34 FPS** |
+
+---
+
+### 🏷️ 3. Ma Trận Phân Khúc & Vòng Đời Khách Hàng 2 Chữ Cái (Customer Lifecycle Intelligence)
+
+Hệ thống mã hóa khách hàng 2 chữ cái kết hợp số thứ tự duy nhất (VD: `LN1`, `LC1`, `LL1`, `ML1`, `HL1`), tự động cập nhật động theo hành vi ghé thăm và mức chi tiêu tích lũy:
+
+<p align="center">
+  <img src="assets/customer_lifecycle_matrix.png" alt="CustomerLens 2-Letter Dynamic Customer Lifecycle Matrix" width="950" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
+</p>
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> LN: Khách mới tinh (Lần 1)
+    LN --> LC: Ghé thăm lần 2-4
+    LC --> LL: Khách quen (≥ 5 lần)
+    LL --> ML: Chi tiêu tích lũy ≥ 2.000.000đ (Mass Loyal)
+    ML --> HL: Nâng hạng VIP / Chi tiêu ≥ 10.000.000đ (VIP Loyal)
+    
+    note right of LN: Cấp sau 6 frames chất lượng (Buffer Gate)
+    note right of HL: HUD Card hiển thị nhận diện VIP tức thì
+```
+
+* **Chữ cái đầu tiên — Mức thu nhập & Chi trả:**
+  * **H (High):** Thu nhập cao, chi tiêu mạnh tay ($\ge 10$M hoặc hạng VIP).
+  * **M (Medium):** Thu nhập trung bình, chi tiêu phổ thông ($\ge 2$M hoặc hạng Mass).
+  * **L (Low):** Khách phổ thông / mặc định ban đầu (Standard / Budget).
+* **Chữ cái thứ hai — Hành vi & Lòng trung thành:**
+  * **N (New):** Khách mới tinh, vừa trải nghiệm lần đầu (1 lần ghé thăm).
+  * **C (Casual):** Khách vãng lai, thỉnh thoảng mới ghé (2–4 lần ghé thăm).
+  * **L (Loyal):** Khách quen thân thiết, gắn bó lâu dài ($\ge 5$ lần ghé thăm).
+* **Cơ chế Buffer Gate & Chống Trùng ID:** Khách mới chỉ được tạo mã (`LN...`) sau khi tích lũy đủ 6 frames đạt chuẩn chất lượng khuôn mặt, duy trì ổn định không bị nhảy ID (`0 ID switch`), và tự động tái nhận diện chính xác khi khách quay lại ở các camera khác nhau.
+
+---
+
+### 🎥 4. Giả Lập Camera Thời Gian Thực (Virtual Camera Streamer E2E)
+* **Tỷ lệ rớt gói:** **`0.0%` Frame Drop Rate** khi phát luồng camera liên tục 20 FPS từ video YTF.
+* **Độ trễ tổng hợp HUD Card:** **`90.77 ms`** (bao gồm nén JPEG, truyền tải, suy luận AI và phát sinh thẻ HUD hiển thị thông tin phân khúc).
+
 
 ---
 

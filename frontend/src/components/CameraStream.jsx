@@ -1,10 +1,10 @@
-"use client";
-
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCamera } from "../hooks/useCamera";
 import { useLocalFaceDetector } from "../hooks/useLocalFaceDetector";
 import { useVideoBbox } from "../hooks/useVideoBbox";
-import { getTrackBadge } from "../lib/trackBadge";
+import HudCard from "./HudCard";
+import { formatCustomerDisplayId, getCustomerDisplayName } from "../lib/customerCode";
+
 
 
 
@@ -25,6 +25,7 @@ export default function CameraStream({
   compact = false,
   fullHeight = false,
   onCustomersChange = null,
+  onCustomerClick = null,
 }) {
   const {
     videoRef,
@@ -44,6 +45,25 @@ export default function CameraStream({
 
   const mapBbox = useVideoBbox(videoRef, frameSize.width, frameSize.height);
   const localFaces = useLocalFaceDetector(videoRef);
+  const [hoveredTrackId, setHoveredTrackId] = useState(null);
+  const hoverTimeoutRef = useRef(null);
+
+  const handleFaceMouseEnter = (id) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+    setHoveredTrackId(id);
+  };
+
+  const handleFaceMouseLeave = () => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+    }
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredTrackId(null);
+    }, 350);
+  };
 
   // Lift customers + frameSize to parent whenever they change
   useEffect(() => {
@@ -134,17 +154,6 @@ export default function CameraStream({
               </span>
             </span>
 
-            {(wsStatus === "disconnected" ||
-              wsStatus === "error" ||
-              wsStatus === "taken_over") && (
-              <button
-                type="button"
-                onClick={takeOver}
-                className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100"
-              >
-                Tiếp quản camera
-              </button>
-            )}
 
             {/* Camera selector */}
             <select
@@ -181,51 +190,167 @@ export default function CameraStream({
           }
         />
 
-        {/* Bounding box overlays - HIDDEN AS REQUESTED */}
-        {/*
-        <div className="pointer-events-none absolute inset-0">
+        {/* Bounding box overlays with UNK tag and HUD Card on Hover */}
+        <div className="absolute inset-0 pointer-events-none">
           {mergedFaces.map((face) => {
-            const isHl = face.backendMatch && highlightedTrackId === face.backendMatch.track_id;
-            
-             let symbol = null;
-            let theme = null;
-            if (face.backendMatch) {
-               const badge = getTrackBadge(face.backendMatch.local_track_id || face.id);
-               symbol = badge.symbol;
-               theme = badge.theme;
-            }
+            const isHovered =
+              hoveredTrackId === face.id ||
+              (Boolean(hoveredTrackId) && mergedFaces.length === 1);
+
+            const displayCustomerId = formatCustomerDisplayId(face.backendMatch, face);
+            const customerName = getCustomerDisplayName(face.backendMatch, face);
+
+            const isResolved = Boolean(displayCustomerId);
+            const isIdentified = Boolean(
+              isResolved &&
+                face.backendMatch &&
+                face.backendMatch.detected &&
+                face.backendMatch.customer_type !== "guest" &&
+                face.backendMatch.name &&
+                face.backendMatch.name.trim() !== "" &&
+                face.backendMatch.name !== "Guest" &&
+                face.backendMatch.name !== "Khách mới"
+            );
+
+            // Smart Popover Direction & Alignment
+            const direction = face.left < 50 ? "right" : "left";
+            const verticalAlign = face.top > 50 ? "bottom" : "top";
 
             return (
               <div
                 key={face.id}
-                className={`absolute rounded-2xl border-2 bg-white/5 backdrop-blur-[1px] transition-all duration-100 ease-linear ${
-                  isHl
-                    ? "border-white shadow-[0_0_0_4px_rgba(255,255,255,0.35)]"
-                    : face.backendMatch?.detected
-                      ? "border-white/80"
-                      : "border-slate-300"
-                }`}
+                className="absolute pointer-events-auto transition-all duration-75 ease-out cursor-pointer"
                 style={{
                   left: `${face.left}%`,
                   top: `${face.top}%`,
                   width: `${Math.max(face.width, 6)}%`,
                   height: `${Math.max(face.height, 8)}%`,
                 }}
+                onMouseEnter={() => handleFaceMouseEnter(face.id)}
+                onMouseLeave={handleFaceMouseLeave}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onCustomerClick) {
+                    const targetCustomer = face.backendMatch || {
+                      id: face.id,
+                      track_id: face.id,
+                      name: customerName,
+                      customer_type: "guest",
+                    };
+                    onCustomerClick(targetCustomer);
+                  }
+                }}
               >
-                {face.backendMatch && theme && symbol && (
+                {/* ── Bounding Box Frame: Amber khi đang nhận diện, Xanh lục khi có hồ sơ, Xanh biển khi đã nhận diện khách vãng lai ── */}
+                <div
+                  className={`w-full h-full rounded-sm border transition-all duration-150 relative ${
+                    !isResolved
+                      ? isHovered
+                        ? "border-amber-300 bg-amber-500/15 shadow-[0_0_14px_rgba(245,158,11,0.5)]"
+                        : "border-amber-400/80 bg-amber-500/5 hover:border-amber-300 hover:bg-amber-500/10"
+                      : isIdentified
+                      ? isHovered
+                        ? "border-emerald-300 bg-emerald-500/15 shadow-[0_0_16px_rgba(52,211,153,0.55)]"
+                        : "border-emerald-400 bg-emerald-500/10 shadow-[0_0_10px_rgba(52,211,153,0.35)] hover:border-emerald-300"
+                      : isHovered
+                      ? "border-sky-300 bg-sky-500/10 shadow-[0_0_12px_rgba(56,189,248,0.45)]"
+                      : "border-sky-400/80 bg-sky-500/5 hover:border-sky-300 hover:bg-sky-500/10"
+                  }`}
+                >
+                  {/* 4 Corner Sci-Fi Brackets */}
                   <div
-                    className={`-mt-3 ml-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white ring-2 ring-white/40 ${theme.base} ${theme.ring} ${
-                      isHl ? "scale-110" : ""
+                    className={`absolute -top-[2px] -left-[2px] w-2.5 h-2.5 border-t-2 border-l-2 ${
+                      !isResolved
+                        ? "border-amber-400"
+                        : isIdentified
+                        ? "border-emerald-300"
+                        : "border-sky-300"
                     }`}
-                  >
-                    {symbol}
+                  />
+                  <div
+                    className={`absolute -top-[2px] -right-[2px] w-2.5 h-2.5 border-t-2 border-r-2 ${
+                      !isResolved
+                        ? "border-amber-400"
+                        : isIdentified
+                        ? "border-emerald-300"
+                        : "border-sky-300"
+                    }`}
+                  />
+                  <div
+                    className={`absolute -bottom-[2px] -left-[2px] w-2.5 h-2.5 border-b-2 border-l-2 ${
+                      !isResolved
+                        ? "border-amber-400"
+                        : isIdentified
+                        ? "border-emerald-300"
+                        : "border-sky-300"
+                    }`}
+                  />
+                  <div
+                    className={`absolute -bottom-[2px] -right-[2px] w-2.5 h-2.5 border-b-2 border-r-2 ${
+                      !isResolved
+                        ? "border-amber-400"
+                        : isIdentified
+                        ? "border-emerald-300"
+                        : "border-sky-300"
+                    }`}
+                  />
+
+                  {/* ── Top Badge: Hiện "ĐANG NHẬN DIỆN..." khi chưa lưu vector, chỉ đổi sang LN/MN/LL/LC khi đã lưu và nhận diện được ── */}
+                  <div className="absolute -top-6 left-0 flex items-center">
+                    {!isResolved ? (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm bg-slate-950/90 border border-amber-400/80 text-amber-300 text-[10px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(245,158,11,0.35)] backdrop-blur-sm animate-pulse">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                        ĐANG NHẬN DIỆN...
+                      </div>
+                    ) : !isIdentified ? (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm bg-slate-950/85 border border-sky-400/70 text-sky-300 text-[10px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(56,189,248,0.3)] backdrop-blur-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                        {displayCustomerId}
+                      </div>
+                    ) : (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm bg-slate-950/85 border border-emerald-400/80 text-emerald-200 text-[10px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(52,211,153,0.4)] backdrop-blur-sm">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        {customerName}
+                        <span className="text-emerald-300/80 text-[9px] font-mono">
+                          [{displayCustomerId}]
+                        </span>
+                        {face.backendMatch?.loyalty_tier && (
+                          <span className="text-amber-400 text-[9px] font-extrabold uppercase">
+                            • {face.backendMatch.loyalty_tier}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
+                </div>
+
+                {/* ── HUD DATA Card (hiện khi hover vào bbox) ── */}
+                {isHovered && (
+                  <HudCard
+                    customer={face.backendMatch}
+                    face={face}
+                    direction={direction}
+                    verticalAlign={verticalAlign}
+                    onMouseEnter={() => handleFaceMouseEnter(face.id)}
+                    onMouseLeave={handleFaceMouseLeave}
+                    onEditProfile={(customer, face) => {
+                      if (onCustomerClick) {
+                        const targetCustomer = customer || {
+                          id: face.id,
+                          track_id: face.id,
+                          name: customerName,
+                          customer_type: "guest",
+                        };
+                        onCustomerClick(targetCustomer);
+                      }
+                    }}
+                  />
                 )}
               </div>
             );
           })}
         </div>
-        */}
+
 
         {/* Hidden capture canvas */}
         <canvas ref={canvasRef} className="hidden" />

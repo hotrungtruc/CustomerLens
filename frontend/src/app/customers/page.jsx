@@ -130,14 +130,15 @@ export default function CustomersPage() {
   const mappedCustomers = dbCustomers.map((c) => {
     const isPresent = liveCustomers.some((lc) => lc.id === c.id);
     let status = "Đã ra về";
+    const isGuest = c.id.startsWith("GUEST_") || c.id.startsWith("LN");
     if (isPresent) {
       status = "Đang ở";
-    } else if (c.id.startsWith("GUEST_")) {
+    } else if (isGuest) {
       status = "Chờ xác nhận";
     }
 
     const rank = rankLabel(c.visit_count);
-    const displayId = c.id.startsWith("GUEST_") ? c.id : `CLIENT_${c.id} `;
+    const displayId = isGuest ? c.id : `CLIENT_${c.id} `;
 
     return {
       id: c.id,

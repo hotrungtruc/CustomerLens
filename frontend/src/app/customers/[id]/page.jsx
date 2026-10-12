@@ -128,9 +128,9 @@ export default function CustomerDetailPage() {
   }, [id]);
 
   const rank = customer ? rankLabel(customer.visit_count) : "Guest";
-  const stars = rankStars(rank);
+  const isGuestId = id && (String(id).startsWith("GUEST_") || String(id).startsWith("LN"));
   const displayId = id
-    ? String(id).startsWith("GUEST_")
+    ? isGuestId
       ? id
       : `CLIENT_${id}`
     : "—";

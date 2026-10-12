@@ -1,0 +1,64 @@
+{
+  "benchmark": "YTF Tracker State Machine & Lifecycle Transitions",
+  "timestamp": "2026-10-12 19:44:45",
+  "test_1_buffer_gate": {
+    "passed": true,
+    "created_at_frame": 6,
+    "created_guest_id": "LN7",
+    "id_switches": 0,
+    "continuity_passed": true
+  },
+  "test_2_cross_video_reid": {
+    "passed": true,
+    "matched_frames": 28,
+    "total_frames": 30
+  },
+  "test_3_lifecycle_transitions": {
+    "passed": true,
+    "stages": [
+      {
+        "stage": "1. First Visit (New Guest)",
+        "visits": 1,
+        "tier": "Standard",
+        "code": "LN",
+        "display_id": "LN7",
+        "desc": "Budget • New Guest"
+      },
+      {
+        "stage": "2. 2nd Visit (Casual Guest)",
+        "visits": 2,
+        "tier": "Standard",
+        "code": "LC",
+        "display_id": "LC7",
+        "desc": "Budget • Casual"
+      },
+      {
+        "stage": "3. 5th Visit (Loyal Guest)",
+        "visits": 5,
+        "tier": "Standard",
+        "code": "LL",
+        "display_id": "LL7",
+        "desc": "Budget • Loyal"
+      },
+      {
+        "stage": "4. Spending 3.5M (Mass Loyal)",
+        "visits": 5,
+        "tier": "Mass",
+        "spending": 3500000,
+        "code": "ML",
+        "display_id": "ML7",
+        "desc": "Mass • Loyal"
+      },
+      {
+        "stage": "5. VIP Tier Upgrade (VIP Loyal)",
+        "visits": 5,
+        "tier": "VIP",
+        "spending": 25000000,
+        "code": "HL",
+        "display_id": "HL7",
+        "desc": "VIP • Loyal"
+      }
+    ]
+  },
+  "overall_status": "ALL TESTS PASSED"
+}

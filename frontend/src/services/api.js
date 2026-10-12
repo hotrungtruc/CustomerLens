@@ -193,6 +193,21 @@ export async function deleteCamera(cameraId) {
   return response.json();
 }
 
+export async function disconnectCamera(cameraId) {
+  const response = await apiFetch(
+    `${API_BASE_URL}/api/cameras/${encodeURIComponent(cameraId)}/disconnect`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    },
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail || "Không thể ngắt phiên phát camera");
+  }
+  return response.json();
+}
+
 export async function fetchUsers() {
   const response = await apiFetch(`${API_BASE_URL}/api/users`, {
     headers: getAuthHeaders(),
