@@ -9,13 +9,16 @@ export async function apiFetch(url, options = {}) {
   return response;
 }
 
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_URL ||
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-    ? "http://localhost:8000"
-    : "https://api.checkinface.me")
-).replace(/\/+$/, "");
+export const API_BASE_URL = (() => {
+  let url = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "";
+  if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && !url) {
+    return "http://localhost:8000";
+  }
+  if (!url || (url.includes("checkinface.me") && !url.includes("api.checkinface.me"))) {
+    return "https://api.checkinface.me";
+  }
+  return url.replace(/\/+$/, "");
+})();
 
 function getAuthHeaders() {
   const headers = {};
