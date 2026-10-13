@@ -1,10 +1,14 @@
+# docker-compose.worker.yml
+# Chạy trên EC2 Worker nodes (172.31.2.93, 172.31.4.195)
+# Usage: docker compose -f docker-compose.worker.yml up -d
+#
+# Worker chỉ chạy ai_worker — không chạy backend API hay Redis
+# Redis & Redpanda được expose từ Master qua private IP
+
 services:
   ai_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    image: customerlens-backend:latest
-    container_name: customerlens_worker
+    image: face-recognition-system-backend:latest
+    container_name: faceai_worker
     restart: unless-stopped
     command: python app/ai_worker.py
     volumes:
@@ -22,8 +26,11 @@ services:
       - OMP_NUM_THREADS=2
       - OPENBLAS_NUM_THREADS=2
       - MKL_NUM_THREADS=2
-    # Memory limits suited for t3.micro with 2GB swap
-    mem_limit: 800m
+      # Worker kết nối Redis & Redpanda trên Master qua private IP
+      - REDIS_URL=redis://172.31.9.172:6379/0
+      - KAFKA_BOOTSTRAP_SERVERS=172.31.9.172:9092
+    # Limit memory tránh OOM trên t3.micro (có 2GB swap)
+    mem_limit: 700m
     mem_reservation: 400m
     logging:
       driver: "json-file"

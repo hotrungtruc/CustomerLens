@@ -70,8 +70,10 @@ frontend/node_modules/
 frontend/.next/
 frontend/.env.local
 backend/.env
+backend/.env.production*
 backend/data/settings.json
 .env
+*.pem
 
 # Local manual backups
 local_backups/

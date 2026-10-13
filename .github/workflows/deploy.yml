@@ -1,0 +1,137 @@
+name: Production CI/CD Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production_deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to EC2 Master & Workers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      MASTER_IP: "15.134.121.250"
+      WORKER_IPS: "3.26.147.158 3.27.136.134"
+      EC2_USER: "ubuntu"
+      VERCEL_HOOK_URL: "https://api.vercel.com/v1/integrations/deploy/prj_Vmv6iLCAw6ZytseXSJWfnc9lQuUh/gb78OB9lIG"
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure SSH Keys & Known Hosts
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          # Master SSH Key
+          echo "${{ secrets.MASTER_SSH_KEY }}" | tr -d '\r' > ~/.ssh/master.pem
+          chmod 400 ~/.ssh/master.pem
+
+          # Workers SSH Key
+          echo "${{ secrets.WORKERS_SSH_KEY }}" | tr -d '\r' > ~/.ssh/workers.pem
+          chmod 400 ~/.ssh/workers.pem
+
+          # Scan host keys
+          ssh-keyscan -H "$MASTER_IP" >> ~/.ssh/known_hosts 2>/dev/null
+          for IP in $WORKER_IPS; do
+            ssh-keyscan -H "$IP" >> ~/.ssh/known_hosts 2>/dev/null
+          done
+
+      - name: Deploy Master Node (Backend, Redis, Redpanda, Nginx)
+        run: |
+          echo "=== 1/3. Deploying to Master Node ($MASTER_IP) ==="
+          ssh -i ~/.ssh/master.pem -o StrictHostKeyChecking=no "$EC2_USER@$MASTER_IP" '
+            set -e
+
+            # Auto-detect project directory
+            if [ -d "/home/ubuntu/CustomerLens" ]; then
+              APP_DIR="/home/ubuntu/CustomerLens"
+            elif [ -d "/home/ubuntu/face-recognition-system" ]; then
+              APP_DIR="/home/ubuntu/face-recognition-system"
+            else
+              echo "Error: Application directory not found on Master!" && exit 1
+            fi
+
+            echo "Target directory: $APP_DIR"
+            cd "$APP_DIR"
+
+            echo "--- Fetching latest code from origin/main ---"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "--- Rebuilding & restarting Docker services ---"
+            sudo docker compose down --timeout 30 || true
+            sudo docker compose up --build -d backend redis redpanda ai_worker
+            sudo docker image prune -f
+
+            echo "--- Checking Nginx configuration ---"
+            if command -v nginx &>/dev/null; then
+              sudo nginx -t && sudo systemctl reload nginx || true
+            fi
+
+            echo "--- Waiting for backend health check ---"
+            sleep 8
+            curl -sf http://127.0.0.1:8000/docs >/dev/null && echo "Master backend healthy!" || echo "Warning: Backend starting up..."
+          '
+
+      - name: Deploy Worker Nodes (Inference Engine)
+        run: |
+          echo "=== 2/3. Deploying to Worker Nodes ($WORKER_IPS) ==="
+          for WORKER_IP in $WORKER_IPS; do
+            echo "--- Deploying to Worker: $WORKER_IP ---"
+            ssh -i ~/.ssh/workers.pem -o StrictHostKeyChecking=no "$EC2_USER@$WORKER_IP" '
+              set -e
+
+              # Auto-detect project directory
+              if [ -d "/home/ubuntu/CustomerLens" ]; then
+                APP_DIR="/home/ubuntu/CustomerLens"
+              elif [ -d "/home/ubuntu/face-recognition-system" ]; then
+                APP_DIR="/home/ubuntu/face-recognition-system"
+              else
+                echo "Error: Application directory not found on Worker!" && exit 1
+              fi
+
+              echo "Target directory: $APP_DIR"
+              cd "$APP_DIR"
+
+              echo "--- Fetching latest code on Worker ---"
+              git fetch origin main
+              git reset --hard origin/main
+
+              # Option A: Systemd service (face-api)
+              if sudo systemctl is-active --quiet face-api; then
+                echo "Restarting Systemd service face-api..."
+                sudo systemctl restart face-api
+              fi
+
+              # Option B: Docker Compose worker
+              if [ -f "docker-compose.worker.yml" ]; then
+                echo "Restarting Docker Compose ai_worker..."
+                sudo docker compose -f docker-compose.worker.yml down --timeout 15 || true
+                sudo docker compose -f docker-compose.worker.yml up -d --build ai_worker || true
+                sudo docker image prune -f
+              elif [ -f "docker-compose.yml" ]; then
+                sudo docker compose up -d --build ai_worker || true
+                sudo docker image prune -f
+              fi
+            '
+          done
+
+      - name: Trigger Vercel Frontend Deployment
+        run: |
+          echo "=== 3/3. Triggering Vercel Frontend Deployment Hook ==="
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$VERCEL_HOOK_URL")
+          echo "Vercel Deploy Hook response code: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Vercel deploy triggered successfully."
+          else
+            echo "Warning: Vercel deploy hook returned $HTTP_CODE"
+          fi

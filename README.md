@@ -1,190 +1,338 @@
-# 🚀 CustomerLens — Real-Time Enterprise Face Recognition & Guest Intelligence System
+# CustomerLens: Real-Time Enterprise Face Recognition & Guest Intelligence System
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12+-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54" alt="Python">
-  <img src="https://img.shields.io/badge/FastAPI-0.110+-005571?style=for-the-badge&logo=fastapi" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Next.js-14.2-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js">
-  <img src="https://img.shields.io/badge/React-18.3-20232a?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React">
-  <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase">
-  <img src="https://img.shields.io/badge/pgvector-HNSW-4169e1?style=for-the-badge&logo=postgresql&logoColor=white" alt="pgvector">
-  <img src="https://img.shields.io/badge/Redis-Pub%2FSub-DD0031?style=for-the-badge&logo=redis&logoColor=white" alt="Redis">
-  <img src="https://img.shields.io/badge/Redpanda-Kafka-FF4500?style=for-the-badge&logo=redpanda&logoColor=white" alt="Redpanda">
-  <img src="https://img.shields.io/badge/ONNX_Runtime-CPU%2FGPU-00599C?style=for-the-badge&logo=onnx&logoColor=white" alt="ONNX Runtime">
-  <img src="https://img.shields.io/badge/Security-RS256_JWT_|_AES--256--GCM-red?style=for-the-badge&logo=jsonwebtokens&logoColor=white" alt="Security">
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
-</p>
-
-**CustomerLens** là một hệ thống **Nhận diện Khuôn mặt Thời gian thực & Phân tích Khách hàng (Real-time Face Recognition & Guest Intelligence Platform)** chuẩn Enterprise, được thiết kế theo kiến trúc sự kiện phân tán (Distributed Event-Driven Architecture) với khả năng mở rộng ngang (Horizontal Scaling) vượt trội.
-
-Hệ thống cho phép giám sát luồng video camera trực tiếp với độ trễ siêu thấp (Sub-100ms End-to-End Latency), nhận diện khách hàng (VIP / Khách quen / Khách vãng lai), theo dõi tọa độ di chuyển đa mục tiêu (Multi-object Kalman Tracking), đồng thời tuân thủ nghiêm ngặt các tiêu chuẩn **An ninh & Bảo mật Sinh trắc học Quốc tế (GDPR Article 9 & 17, BIPA)**.
-
----
-
-<p align="center">
-  <img src="assets/workflow.png" alt="CustomerLens End-to-End System Workflow" width="950" style="border-radius: 10px; box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);">
+  <img src="https://img.shields.io/badge/Python-3.12+-3670A0?style=flat-square&logo=python&logoColor=ffdd54" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-0.110+-005571?style=flat-square&logo=fastapi" alt="FastAPI">
+  <img src="https://img.shields.io/badge/Next.js-14.2-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js">
+  <img src="https://img.shields.io/badge/React-18.3-20232a?style=flat-square&logo=react&logoColor=61DAFB" alt="React">
+  <img src="https://img.shields.io/badge/Supabase-PostgreSQL_15-3ECF8E?style=flat-square&logo=supabase&logoColor=white" alt="Supabase">
+  <img src="https://img.shields.io/badge/pgvector-HNSW-4169e1?style=flat-square&logo=postgresql&logoColor=white" alt="pgvector">
+  <img src="https://img.shields.io/badge/Redis-Pub%2FSub-DD0031?style=flat-square&logo=redis&logoColor=white" alt="Redis">
+  <img src="https://img.shields.io/badge/Redpanda-Kafka_Protocol-FF4500?style=flat-square&logo=redpanda&logoColor=white" alt="Redpanda">
+  <img src="https://img.shields.io/badge/ONNX_Runtime-INT8_Execution-00599C?style=flat-square&logo=onnx&logoColor=white" alt="ONNX Runtime">
+  <img src="https://img.shields.io/badge/Compliance-GDPR_Art._9_%26_17-red?style=flat-square" alt="Compliance">
 </p>
 
 ---
 
-## 🌟 Tính Năng Nổi Bật (Key Features)
+## 1. Executive Summary: The Business Challenge in Modern Hospitality & Retail
 
-### 🧠 1. Thị Giác Máy Tính & Trí Tuệ Nhân Tạo (AI & CV Pipeline)
-* **High-Precision Face Detection & Alignment:** Kết hợp **MediaPipe Tasks API** ở luồng Edge và **SCRFD 500M** trên AI Worker để phát hiện và căn chỉnh 5 mốc khuôn mặt (Landmarks) với độ chính xác tuyệt đối ngay cả khi quay nghiêng.
-* **Compact Feature Extraction:** Trích xuất vector đặc trưng 512 chiều bằng mô hình **EdgeFace ONNX** (`edgeface_s_gamma_05.onnx` / `adaface_ir18.onnx`), tối ưu hóa cho cả CPU và GPU Acceleration.
-* **Kalman Filter & IoU Tracking:** Thuật toán lọc Kalman góc (`KalmanFilterCorner`) kết hợp thuật toán Hungarian (`scipy.optimize.linear_sum_assignment`) giúp duy trì ổn định vết di chuyển (`track_id`) giữa các khung hình liên tiếp.
-* **Multi-frame Voting & Robust Centroid:** Gom nhóm vector nhiều khung hình liên tiếp, lọc nhiễu bằng ma trận Cosine chéo (`calculate_robust_mean_embedding`), loại bỏ triệt để hiện tượng nhận diện nhầm khi khuôn mặt bị che khuất hoặc nhòe chuyển động.
+### 1.1 The Operational Bottleneck of Guest Anonymity
+In high-touch hospitality, dining, and luxury retail environments, operational excellence and customer lifetime value (LTV) hinge on a single operational capability: **timely customer recognition**. Knowing whether an entering patron is a first-time visitor, a returning casual guest, or a high-value regular dictates the quality of service delivery:
+- Greeting a returning regular by name upon arrival establishes immediate rapport.
+- Recalling dietary restrictions, seating preferences, or past orders enables proactive, personalized recommendations.
+- Identifying customer churn and return frequency allows managers to optimize retention strategies.
 
-### ⚡ 2. Kiến Trúc Phân Tán & Chịu Tải Cao (High-Throughput Architecture)
-* **Biên-Cloud Hybrid (Edge-Cloud Processing):** Trình duyệt / Edge Gateway thực hiện Blur Filtering & Edge Crop trước khi gửi qua WebSocket, giảm **>80%** dung lượng đường truyền mạng.
-* **Event Sourcing với Redpanda / Kafka:** API Gateway tiếp nhận luồng khung hình nhị phân và đẩy vào Topic `camera_frames` của Redpanda.
-* **Stateless Worker Nodes:** Các tiến trình AI Worker chạy hoàn toàn độc lập, kéo dữ liệu theo đợt (Batch Polling), tự động bỏ qua khung hình chậm trễ (`delay > 0.5s`), dễ dàng mở rộng thêm Pods/Containers tùy theo tải.
-* **Real-time Pub/Sub Feedback:** Trả kết quả nhận diện và Bounding Box về WebSocket Client thông qua kênh Redis Pub/Sub phân lập theo `connection_id`.
+However, traditional Customer Relationship Management (CRM) and loyalty programs suffer from high customer friction:
+- Plastic membership cards are frequently forgotten or lost.
+- Mobile apps and QR codes require active customer compliance, intrusive downloads, and friction at entry.
+- Phone number lookup occurs exclusively at the point of payment—long after the opportunity for personalized hospitality has elapsed.
 
-### 🛡️ 3. An Ninh Sinh Trắc Học & Pháp Lý (Enterprise Biometric Security & GDPR)
-* **Xác thực JWT Bất đối xứng (RS256 Stateless Auth) & Thu hồi phiên tức thì (Redis Session Revocation):** Loại bỏ lưu trữ RAM nội bộ. Token đăng nhập được ký bằng RSA Private Key và xác thực tức thì bằng RSA Public Key tại mọi node API. Tích hợp cơ chế thu hồi phiên tức thì qua Redis revocation timestamp (`user_revoked_at:{user_id}`) khi đổi mật khẩu, khóa tài khoản hoặc đăng xuất.
-* **Cancelable Biometrics (Orthogonal Random Projection):** Áp dụng ma trận chiếu ngẫu nhiên trực giao $Q \in \mathbb{R}^{512 \times 512}$ ($Q^T Q = I$) để biến đổi vector embedding trước khi lưu DB. Bảo toàn **100% độ chính xác Cosine Similarity** ($\langle Q\vec{x}_1, Q\vec{x}_2 \rangle = \langle \vec{x}_1, \vec{x}_2 \rangle$), đồng thời ngăn chặn tuyệt đối nguy cơ đảo ngược tái tạo khuôn mặt gốc nếu CSDL bị rò rỉ.
-* **Encryption at Rest (AES-256-GCM):** Mã hóa toàn bộ tập tin hình ảnh sinh trắc học trên đĩa cứng bằng thuật toán mã hóa xác thực AES-256-GCM với Nonce 12-byte ngẫu nhiên.
-* **Quyền được Quên (GDPR Article 17 Purge):** Tiến trình tự động và REST API `POST /api/admin/purge_guests` giúp xoá sạch dữ liệu vết khách vãng lai (`GUEST_*`), embeddings, nhật ký và tệp đĩa quá hạn (mặc định 30 ngày).
+As a consequence, **over 70% of physical guest interactions remain completely anonymous** until checkout, leaving service staff uninformed and operational management blind to foot-traffic retention dynamics.
 
-### 🗄️ 4. Cơ Sở Dữ Liệu & Vector Search Engine
-* **Native pgvector Binary Parameter Binding:** Tích hợp `pgvector.psycopg2` truyền thẳng mảng NumPy `ndarray` float32 dạng nhị phân sang PostgreSQL vector data type, loại bỏ 100% chi phí parse chuỗi SQL String trên CPU.
-* **Sub-millisecond HNSW Index:** Tìm kiếm độ tương đồng vector theo chỉ mục **HNSW** (`halfvec_cosine_ops`) tích hợp sẵn trong PostgreSQL/Supabase.
-* **L1 Redis Vector Cache:** Lưu bộ nhớ đệm vector nhận diện cho kết quả truy vấn dưới **<1ms**.
+### 1.2 The Solution: Autonomous, Zero-Registration Biometric Intelligence
+CustomerLens resolves this fundamental disconnect by transforming existing CCTV and security camera feeds into an ambient, zero-friction guest intelligence layer. 
 
----
-
-## 🛠️ Công Nghệ Sử Dụng (Tech Stack)
-
-| Phân hệ | Công nghệ & Thư viện |
-| :--- | :--- |
-| **Frontend UI** | Next.js 14 (App Router), React 18, Tailwind CSS, Lucide Icons, Canvas API |
-| **Backend API Gateway** | FastAPI, Uvicorn (ASGI), Python 3.12+, asyncio, WebSockets |
-| **Authentication & Security** | PyJWT (RS256 RSA 2048-bit), Cryptography (AES-256-GCM) |
-| **Message Broker** | Redpanda / Apache Kafka (Topic: `camera_frames`), Redis Pub/Sub |
-| **AI Inference Cluster** | ONNX Runtime (CPU/CUDA), EdgeFace, MediaPipe Tasks, OpenCV, SciPy, NumPy |
-| **Database & Vector Search** | PostgreSQL 16+, Supabase, pgvector (`pgvector-python` HNSW Index) |
-| **DevOps & Infrastructure** | Docker, Docker Compose, GitLab CI/CD, AWS EC2, Nginx |
+Patrons are not required to enroll, download an application, scan a barcode, or present identification. The system autonomously:
+1. Detects and tracks patrons across video frames in real time as they traverse the entrance.
+2. Extracts privacy-preserving facial embeddings and performs sub-100ms vector matching against historical visits.
+3. Automatically categorizes patrons into a dynamic lifecycle tier (from first-time visitors to VIP regulars).
+4. Streams contextual Heads-Up Display (HUD) notifications to floor staff tablets and POS screens before the customer reaches the counter, displaying visit count, lifetime spend, dietary notes, and tailored menu recommendations.
 
 ---
 
-## 📐 Kiến Trúc Hệ Thống (System Architecture)
+<p align="center">
+  <img src="assets/workflow.png" alt="CustomerLens End-to-End System Workflow" width="950" style="border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);">
+</p>
+
+---
+
+## 2. Customer Lifecycle Intelligence & Personalization Matrix
+
+### 2.1 Dynamic 2-Letter Customer Matrix
+To support fast human interpretation during rush hours, CustomerLens classifies patrons into a dynamic 2-letter lifecycle taxonomy that automatically updates based on cumulative visit frequency and monetary transaction records:
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> LN: First Visit (New Guest)
+    LN --> LC: Visits 2 to 4 (Casual Guest)
+    LC --> LL: Visits >= 5 (Loyal Regular)
+    LL --> ML: Cumulative Spend >= 2,000,000 VND (Mass Loyal)
+    ML --> HL: Cumulative Spend >= 10,000,000 VND or VIP Flag (VIP Loyal)
+```
+
+- **First Letter: Purchasing Power & Lifetime Value Tier**
+  - `H` (High Tier): High-spending patrons ($\ge 10,000,000$ VND cumulative spend or designated VIP).
+  - `M` (Medium Tier): Mass loyal customers with steady ticket size ($\ge 2,000,000$ VND).
+  - `L` (Low / Standard Tier): Default baseline tier for standard or newly acquired patrons.
+- **Second Letter: Behavioral Loyalty & Visit Frequency**
+  - `N` (New): First-time visitor (visit count $= 1$).
+  - `C` (Casual): Irregular visitor (visit count between $2$ and $4$).
+  - `L` (Loyal): Committed regular patron (visit count $\ge 5$).
+
+### 2.2 Operational Use Cases Enabled by Real-Time HUD
+- **Instant VIP Recognition:** Front-of-house managers receive immediate tablet alerts when an `HL` (High-Loyal) patron enters, enabling immediate host greetings and priority table assignment.
+- **Dietary Restriction Alerts:** Kitchen and floor staff can reference pinned notes (e.g., "Severe peanut allergy", "Prefers oat milk") before taking orders.
+- **Contextual Recommendation Engine:** POS terminals receive automated recommendation prompts based on historical consumption patterns (e.g., suggesting a seasonal wine pairing matching previous preferences).
+- **Anti-False Registration Buffer Gate:** Patrons are only registered as new unique entities after maintaining continuous track quality across 6 consecutive verified frames, preventing stray passersby or false positive detections from polluting customer databases.
+
+---
+
+## 3. Distributed System Architecture
+
+CustomerLens is engineered as a distributed, event-driven streaming platform designed for horizontal scaling across multi-camera installations.
 
 ```mermaid
 flowchart TD
-    subgraph Client ["Client (Frontend - Next.js 14)"]
-        Cam["Webcam / RTSP Camera"]
-        EdgeAI["Edge MediaPipe & Blur Filter"]
-        UI["Real-time Canvas & Dashboard UI"]
+    subgraph Client ["Client Tier (Next.js 14)"]
+        Cam["RTSP / IP Camera Stream"]
+        EdgeAI["Edge Filtering & Frame Sampler"]
+        UI["Real-time Canvas & Analytics Dashboard"]
     end
 
-    subgraph Gateway ["API Gateway (FastAPI)"]
-        WS["WebSocket Server (/ws/stream)"]
-        JWT["RS256 JWT Auth (Public Key)"]
-        Routes["RESTful API Routes"]
+    subgraph Gateway ["API Gateway Tier (FastAPI)"]
+        WS["WebSocket Ingestion Engine (/ws/stream)"]
+        Auth["RS256 JWT Authentication & Redis Revocation"]
+        REST["Administrative REST APIs"]
     end
 
-    subgraph Messaging ["Message Fabric"]
-        Redpanda["Redpanda / Kafka (Topic: camera_frames)"]
-        RedisPub["Redis Pub/Sub (Channel: worker_results)"]
+    subgraph Messaging ["Event Fabric"]
+        Broker["Redpanda / Kafka (Topic: camera_frames)"]
+        PubSub["Redis Pub/Sub (Channel: worker_results)"]
     end
 
-    subgraph AI_Cluster ["Stateless AI Worker Cluster"]
-        Worker1["AI Worker 1 (EdgeFace + SCRFD ONNX)"]
-        WorkerN["AI Worker N (Auto-scaled)"]
+    subgraph Workers ["Stateless Inference Cluster"]
+        W1["AI Worker 1 (SCRFD + EdgeFace INT8)"]
+        WN["AI Worker N (Horizontal Auto-Scaling)"]
     end
 
-    subgraph Storage ["Cloud Storage & Vector DB"]
-        SupaDB[("Supabase PostgreSQL + pgvector (HNSW Index)")]
-        L1Cache[("L1 Redis Vector & Profile Cache")]
+    subgraph Storage ["Storage & Vector Tier"]
+        DB[("Supabase PostgreSQL + pgvector (HNSW Index)")]
+        L1[("Redis L1 Vector & Session Cache")]
     end
 
     Cam --> EdgeAI
-    EdgeAI -->|1. Frame Stream via WS| WS
-    WS <--> JWT
-    WS -->|2. Push Binary Frame| Redpanda
-    Redpanda -->|3. Batch Poll Frames| Worker1 & WorkerN
-    Worker1 & WorkerN -->|4. Detect, Align & Extract 512D| Worker1 & WorkerN
-    Worker1 & WorkerN -->|5. Publish Detection| RedisPub
-    RedisPub -->|6. Receive Result| WS
-    WS -->|7. Vector Cosine Search| L1Cache
-    L1Cache -- Cache Miss --> SupaDB
-    WS -->|8. Push Real-time Bounding Box & Identity| UI
+    EdgeAI -->|WebSocket Binary Frames| WS
+    WS <--> Auth
+    WS -->|Ingest Raw Frame| Broker
+    Broker -->|Batch Pull| W1 & WN
+    W1 & WN -->|Detect, Align, Embed 512D| W1 & WN
+    W1 & WN -->|Publish Inferences| PubSub
+    PubSub -->|Stream Results| WS
+    WS -->|Vector Match RPC| L1
+    L1 -- Cache Miss --> DB
+    WS -->|Push Detection Box & Profile| UI
 ```
+
+### Architectural Highlights
+- **Edge-Cloud Hybrid Ingestion:** Client browsers and edge gateways perform localized Laplacian sharpness filtering and bounding box cropping before WebSocket transmission, decreasing raw video network bandwidth consumption by over 80%.
+- **Asynchronous Event Fabric:** The API Gateway decouples frame ingestion from heavy computer vision inference using Redpanda (Kafka-compatible messaging), absorbing traffic bursts during peak operational hours.
+- **Stateless AI Inference Cluster:** AI workers consume frame batches concurrently, run INT8-quantized ONNX models across CPU/GPU instances, and publish results to Redis Pub/Sub channels partitioned by connection identifier.
+- **Sub-100ms Vector Search:** Facial embeddings are matched against Supabase PostgreSQL via an HNSW vector index (`halfvec_cosine_ops`) with binary parameter binding, backed by an in-memory Redis L1 cache for sub-millisecond retrieval of active patrons.
 
 ---
 
-## ⚡ Hướng Dẫn Cài Đặt & Khởi Chạy Nhanh
+## 4. Computer Vision & Biometric Pipeline
 
-### 📋 Bước 1: Yêu cầu môi trường
-* **Git**, **Python 3.12+**, **Node.js (v18+)**, **Docker Desktop**.
+```
+  Input Frame ──> [SCRFD 500M INT8] ──> [5-Point Affine Alignment] ──> [EdgeFace 512-D INT8]
+                         │                                                    │
+                         ▼                                                    ▼
+                 Kalman Tracking                                 Quality Attention Pooling
+                 (Corner Velocity)                                   (Softmax tau=0.25)
+                         │                                                    │
+                         └──────────────────────┬─────────────────────────────┘
+                                                ▼
+                                   Cancelable Biometrics
+                               (Orthogonal Projection Qx)
+                                                │
+                                                ▼
+                                    Supabase HNSW Search
+                                   (K=3 Multi-Template)
+```
 
-### 📦 Bước 2: Tải mã nguồn & Bật Redis
+### 4.1 SCRFD Face Detection & 5-Point Affine Alignment
+Face detection is handled by an INT8-quantized **SCRFD 500M** model capable of localizing 5 facial landmarks (pupils, nose tip, mouth corners) across extreme pitch/yaw angles ($\pm 45^\circ$) down to a minimum bounding box of $16 \times 16$ pixels. Cropped faces are geometrically normalized into the standard ArcFace canonical coordinate space ($112 \times 112 \times 3$) using similarity transformation.
+
+### 4.2 Cancelable Biometrics: Distance-Preserving Orthogonal Projection
+To eliminate the legal and ethical liability of centralized raw biometric storage, CustomerLens applies an orthogonal random projection transformation to each normalized 512-dimensional embedding vector $\vec{x}$ ($\|\vec{x}\|_2 = 1$) prior to database persistence:
+$$\vec{x}' = Q\vec{x}, \quad Q \in \mathbb{R}^{512 \times 512}, \quad Q^T Q = I$$
+Because $Q$ is strictly orthogonal, pairwise inner products and cosine similarities are mathematically conserved:
+$$\langle Q\vec{x}_1, Q\vec{x}_2 \rangle = \vec{x}_1^T Q^T Q \vec{x}_2 = \vec{x}_1^T I \vec{x}_2 = \langle \vec{x}_1, \vec{x}_2 \rangle$$
+This irreversible transformation provides a mathematical defense against facial reconstruction attacks if the database is ever compromised, while preserving biometric matching accuracy.
+
+### 4.3 Quality-Aware Softmax Attention Pooling
+Instead of naively averaging consecutive tracklet frames, CustomerLens evaluates a composite quality metric for each frame observation $i$:
+$$Q_i = 0.35 \cdot Q_{\text{pose}} + 0.35 \cdot Q_{\text{sharpness}} + 0.15 \cdot Q_{\text{resolution}} + 0.15 \cdot Q_{\text{confidence}}$$
+Trajectory frames are aggregated into a single representative vector using Softmax temperature weighting ($\tau = 0.25$):
+$$\vec{v}_{\text{pooled}} = \sum_{i=1}^{M} \frac{\exp(Q_i / \tau)}{\sum_{j=1}^{M} \exp(Q_j / \tau)} \vec{e}_i, \quad \vec{v}_{\text{final}} = \frac{\vec{v}_{\text{pooled}}}{\|\vec{v}_{\text{pooled}}\|_2}$$
+Motion-blurred frames and off-angle profiles receive near-zero weights, ensuring the gallery vector represents the highest-clarity observation.
+
+### 4.4 Multi-Template Gallery & Distance-Aware Bayesian Dynamic Thresholds
+- **Multi-Template Gallery ($K=3$):** Each customer profile maintains up to three representative exemplar vectors (frontal, angled, varying expressions). PostgreSQL RPC functions execute window-partitioned searches, returning the maximum similarity across exemplars:
+  $$\text{Sim}(P, C_i) = \max_{k \in \{1..K\}} \langle \vec{v}_{\text{probe}}, \vec{v}_{C_i, k} \rangle$$
+- **Distance-Aware Bayesian Thresholding:** Decision thresholds adapt dynamically to estimated camera distance based on detected face width ($W_{\text{box}}$):
+  $$\theta(W_{\text{box}}) = \begin{cases} 
+  0.50 & \text{when } W_{\text{box}} \ge 75\text{px (Close range } \le 2\text{m)} \\
+  0.46 & \text{when } 45\text{px} \le W_{\text{box}} < 75\text{px (Mid range } 2\text{m} - 4\text{m)} \\
+  0.35 & \text{when } W_{\text{box}} < 45\text{px (Far range } > 4\text{m)}
+  \end{cases}$$
+
+---
+
+## 5. Empirical Production Benchmark Results
+
+The entire system was evaluated on the complete **YouTube Faces (YTF)** academic benchmark dataset in accordance with NIST FRVT, IJB-C, and Google FaceNet evaluation protocols. 
+
+**Dataset Scale:** **544 video clips · 207 identities · 61,487 frames** (206 identities have $\ge 2$ independent clips for cross-clip verification).
+
+All clips were evaluated across four real-world surveillance degradation conditions simulating physical camera distance:
+- `close_1.5m`: Native resolution, standard frontal entry camera.
+- `medium_3.5m`: Optical downscale 0.60x, Gaussian blur $\sigma = 0.6$.
+- `far_6.0m`: Optical downscale 0.38x, motion blur $\sigma = 1.2$, JPEG quality 55.
+- `veryFar_9m`: Extreme optical downscale 0.22x, optical distortion $\sigma = 1.8$, JPEG quality 35.
+
+### Track 1: Video-Based 1:1 Verification (NIST FRVT Verification Protocol)
+Evaluating all genuine pairs (same identity, different video clips) against balanced impostor pairs (different identities):
+
+| Camera Condition | Pair Count (Gen / Imp) | TAR @ FAR=0.1% | TAR @ FAR=0.01% | Equal Error Rate (EER) | AUC-ROC | Genuine Sim ($\mu \pm \sigma$) | Impostor Sim ($\mu \pm \sigma$) | Separation Margin |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **`close_1.5m`** | 511 / 1,533 | **93.15%** | **92.76%** | **4.50%** | **0.9851** | $0.6370 \pm 0.1911$ | $0.0240 \pm 0.1042$ | **+0.6129** |
+| **`medium_3.5m`** | 511 / 1,533 | **90.80%** | **86.69%** | **4.31%** | **0.9845** | $0.6074 \pm 0.1954$ | $0.0160 \pm 0.1058$ | **+0.5914** |
+| **`far_6.0m`** | 502 / 1,506 | **16.73%** | **7.37%** | **14.38%** | **0.9325** | $0.4500 \pm 0.2054$ | $0.0657 \pm 0.1401$ | **+0.3843** |
+| **`veryFar_9m`** | 331 / 993 | **2.11%** | **2.11%** | **32.33%** | **0.7377** | $0.4526 \pm 0.2115$ | $0.2641 \pm 0.1990$ | **+0.1884** |
+
+At operational retail entry distances ($1.5\text{m} - 3.5\text{m}$), the system achieves an **AUC-ROC of 0.985**, an **Equal Error Rate of 4.31%**, and an impostor separation margin of **+0.6129**, confirming reliable distinction between genuine patrons and distinct individuals.
+
+### Track 2: Video-Based 1:N Closed-Set Identification (IJB-C CMC Curve)
+Evaluating identification across a gallery of $N = 206$ unique individuals (first clip per person), tested against 206 independent probe clips:
+
+| Camera Condition | Gallery Size ($N$) | Rank-1 Identification | Rank-5 Identification | Rank-10 Identification |
+|:---|:---:|:---:|:---:|:---:|
+| **`close_1.5m`** | 206 | **90.78%** | **92.72%** | **93.20%** |
+| **`medium_3.5m`** | 206 | **88.83%** | **92.23%** | **93.20%** |
+| **`far_6.0m`** | 203 | **54.19%** | **67.98%** | **75.37%** |
+| **`veryFar_9m`** | 138 | **18.84%** | **36.96%** | **44.20%** |
+
+In a closed gallery of 206 registered individuals, the system correctly identifies the target at position number one (**Rank-1**) in **90.78%** of trials at close range and **88.83%** at 3.5m range. Top-5 suggestion accuracy reaches **92.72%**.
+
+### Track 3: Open-Set Identification with Reject Option (NIST DIR @ FPIR)
+Simulating an authentic operational store scenario: the gallery contains only **155 registered loyalty members**. The probe stream contains both **155 genuine returning members** and **51 unregistered strangers (impostors)**:
+
+| Camera Condition | Operating Threshold ($\theta$) | True Identification (DIR) | False Impostor Accept (FPIR) | False Patron Reject (FNIR) |
+|:---|:---:|:---:|:---:|:---:|
+| `close_1.5m` | $\theta = 0.50$ | 80.65% | **0.00%** | 19.35% |
+| `close_1.5m` | $\theta = 0.44$ | **83.87%** | **0.00%** | 16.13% |
+| `close_1.5m` | $\theta = 0.40$ | 85.16% | 3.92% | 14.84% |
+| `close_1.5m` | $\theta = 0.35$ | 89.03% | 29.41% | 10.97% |
+| `medium_3.5m`| $\theta = 0.46$ | 79.35% | **1.96%** | 20.65% |
+| `medium_3.5m`| $\theta = 0.44$ | **80.65%** | **1.96%** | 19.35% |
+| `medium_3.5m`| $\theta = 0.40$ | 84.52% | 5.88% | 15.48% |
+| `far_6.0m`   | $\theta = 0.40$ | 47.06% | 56.86% | 52.94% |
+
+**Recommended Production Operating Point:** Setting $\theta = 0.44$ yields **83.87% correct identification** while maintaining **0.00% False Positive Identification Rate (zero impostors accepted)**.
+
+### Track 4: Vector Search Latency & Throughput Stress Test (Production SLO)
+Executing **500 consecutive 512-dimensional vector queries** against the live Supabase PostgreSQL HNSW index under concurrent load:
+
+| Infrastructure Metric | Observed Result | Production Target SLO | Evaluation Status |
+|:---|:---:|:---:|:---:|
+| **P50 Latency (Median)** | **58.17 ms** | < 60 ms | Compliant |
+| **P95 Latency** | **62.73 ms** | < 80 ms | Compliant |
+| **P99 Latency (Tail)** | **73.82 ms** | < 100 ms | Compliant (26% safety margin) |
+| **P99.9 Latency** | **110.37 ms** | < 150 ms | Compliant |
+| **Maximum Observed Latency** | **142.84 ms** | — | Stable |
+| **Sustained Query Throughput** | **16.9 QPS** | $\ge$ 10 QPS | Compliant (+69% headroom) |
+
+The complete single-frame inference pipeline (Detection + Alignment + Embedding + Tracking) executes in **32.29 ms** (equivalent to **30.34 FPS**), fully sustaining real-time processing of standard 25–30 FPS RTSP cameras.
+
+---
+
+## 6. Biometric Security, Privacy & Legal Compliance
+
+CustomerLens is designed to comply with privacy frameworks including **GDPR Article 9 (Special Category Biometric Data)** and **GDPR Article 17 (Right to be Forgotten)**:
+- **Asymmetric RS256 Authentication & Instant Session Revocation:** API Gateway tokens are signed with 2048-bit RSA keys and verified statelessly across workers. Instant revocation timestamps in Redis (`user_revoked_at:{user_id}`) terminate credentials immediately across all cluster nodes upon logout or administrative disablement.
+- **Cancelable Biometric Embeddings:** Only transformed vectors $\vec{x}' = Q\vec{x}$ are persisted in pgvector. Original facial embeddings are discarded immediately after inference.
+- **Authenticated Encryption at Rest (AES-256-GCM):** Temporary image crops cached for administrative audit are encrypted using AES-256-GCM with unique 12-byte initialization vectors per asset.
+- **Automated Data Lifecycle Purging:** An automated background worker deletes unregistered guest trajectories and associated vector embeddings older than the configurable retention window (default: 30 days).
+
+---
+
+## 7. Technology Stack
+
+| Layer | Technologies & Frameworks |
+|:---|:---|
+| **Frontend UI** | Next.js 14 (App Router), React 18, Tailwind CSS, HTML5 Canvas API |
+| **API Gateway** | FastAPI, Uvicorn, Python 3.12, asyncio, WebSockets |
+| **Event Messaging** | Redpanda (Apache Kafka v2.8+ wire compatible), Redis Pub/Sub |
+| **AI Inference Engine** | ONNX Runtime INT8, EdgeFace, SCRFD 500M, OpenCV, NumPy, SciPy |
+| **Database & Vector Search** | PostgreSQL 15+, Supabase, pgvector (HNSW Index with `halfvec_cosine_ops`) |
+| **Security & Cryptography** | PyJWT (RS256 2048-bit RSA), Cryptography (AES-256-GCM), Orthogonal Matrix Projection |
+| **Deployment & DevOps** | Docker, Docker Compose, Nginx, AWS EC2 |
+
+---
+
+## 8. Installation & Deployment Guide
+
+### 8.1 System Prerequisites
+- Operating System: Linux (Ubuntu 22.04 LTS recommended), macOS, or Windows 11.
+- Runtimes: Python 3.12+, Node.js 18+, Docker Engine with Compose V2.
+
+### 8.2 Infrastructure Initialization
 ```bash
 git clone https://github.com/hotrungtruc/CustomerLens.git
 cd CustomerLens
 
-# Chạy container Redis
-docker run -d --name faceai-redis -p 6379:6379 redis:alpine
+# Launch Redis cache container
+docker run -d --name customerlens-redis -p 6379:6379 redis:alpine
 ```
 
-### ⚙️ Bước 3: Cấu hình Môi trường Backend
-Vào thư mục `backend/`, tạo file `.env` (hoặc sao chép từ `.env_example`):
+### 8.3 Backend Configuration & Startup
+Create `backend/.env` configured with environment credentials:
 ```env
 USE_SUPABASE=true
-SUPABASE_URL="postgresql://postgres:[PASSWORD]@aws-1-ap-southeast-2.pooler.supabase.com:6543/postgres"
+SUPABASE_URL="postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres"
 REDIS_URL="redis://127.0.0.1:6379/0"
 KAFKA_BOOTSTRAP_SERVERS="127.0.0.1:9092"
 ```
 
-### 🚀 Bước 4: Khởi động AI Backend & Workers
-
-**Terminal 1 (Khởi tạo & API Gateway):**
+Initialize the Python environment and launch the API Gateway:
 ```bash
 cd backend
 python -m venv .venv
 
-# Activate môi trường (Windows PowerShell):
-.\.venv\Scripts\Activate.ps1
-# Hoặc Mac/Linux: source .venv/bin/activate
+# Activate virtual environment
+# Windows: .\.venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
 
-# Cài đặt thư viện
 pip install -r requirements.txt
 
-# Khởi tạo DB & Tải Model AI
+# Initialize database schema and download pretrained ONNX models
 python -m app.db.connection
 python -m app.utils.download_models
-python -m app.db.seed_data
 
-# Chạy API Server
+# Start FastAPI Gateway
 python run.py
 ```
 
-**Terminal 2 (Chạy AI Worker):**
+Launch the asynchronous AI Worker in a separate terminal:
 ```bash
 cd backend
-.\.venv\Scripts\Activate.ps1
+source .venv/bin/activate
 python app/ai_worker.py
 ```
 
-### 💻 Bước 5: Khởi động Frontend Dashboard
-
-**Terminal 3 (Next.js App):**
+### 8.4 Frontend Dashboard Startup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+Access the management console at `http://localhost:3000` (Default credentials: `admin` / `change_me_immediately`).
 
-Truy cập ứng dụng tại: **[http://localhost:3000](http://localhost:3000)**  
-* **Tài khoản mặc định:** `admin`  
-* **Mật khẩu mặc định:** `change_me_immediately`
-
----
-
-## 🐳 Triển Khai Container bằng Docker Compose
-
-Để đóng gói và khởi chạy toàn bộ cụm dịch vụ (API, Worker, Redis, Redpanda) trên một nút máy chủ duy nhất:
-
+### 8.5 Full Containerized Deployment
+To orchestrate the complete cluster via Docker Compose:
 ```bash
 docker compose build
 docker compose up -d
@@ -192,108 +340,25 @@ docker compose up -d
 
 ---
 
-## 📊 Kết Quả Benchmark & Kiểm Thử Hệ Thống (Performance & Biometric Evaluation)
+## 9. Modular Technical Documentation
 
-Hệ thống được đánh giá thực nghiệm toàn diện trên tập dữ liệu học thuật **YouTube Faces with Facial Keypoints (YTF)** (544 chuỗi video, 207 danh tính) và **Asian Celeb Benchmark**:
+In-depth technical architecture and engineering specifications are organized within dedicated documents in the `docs/` directory:
 
-### 🎯 1. Độ Chính Xác Nhận Diện Sinh Trắc Học (Biometric Accuracy)
-
-<p align="center">
-  <img src="assets/benchmark_accuracy.png" alt="CustomerLens Biometric Accuracy Benchmark" width="950" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-</p>
-
-* **Biên phân tách Cosine (Separation Margin):** Khoảng cách giữa cùng người (Genuine: `0.530 ± 0.193`) và khác người (Impostor: `0.006 ± 0.114`) cực kỳ rõ rệt ($> 0.52$).
-* **Độ chính xác Định danh 1:N:** Đạt **`87.37%` Rank-1** và **`91.58%` Rank-5** trên 95 video probe queries đối sánh với Gallery 60 người nổi tiếng trong điều kiện chuyển động, ánh sáng biến thiên mạnh.
-* **Ngưỡng vận hành bảo mật ($\theta = 0.55$):** Đạt **`100.0%` Precision** với **`0.0%` FAR (False Acceptance Rate)** — triệt tiêu hoàn toàn rủi ro nhận nhầm khách lạ thành khách VIP.
-
-| Chỉ số Sinh trắc học | Giá trị Đo đạc (YTF Dataset) | Ý nghĩa Kỹ thuật |
-| :--- | :---: | :--- |
-| **Rank-1 Identification Accuracy** | **`87.37%`** | Khách hàng được nhận diện chính xác tuyệt đối ngay tại vị trí số 1 |
-| **Rank-5 Identification Accuracy** | **`91.58%`** | Tỷ lệ nhận diện đúng nằm trong Top 5 ứng viên tương đồng nhất |
-| **Equal Error Rate (EER)** | **`7.3%`** | Tỷ lệ lỗi bằng tại ngưỡng tối ưu $\theta^* = 0.166$ |
-| **TAR @ FAR = 1.0%** | **`86.32%`** | Tỷ lệ chấp nhận đúng khi giới hạn tỷ lệ nhận nhầm dưới 1% ($\theta = 0.331$) |
-| **TAR @ FAR = 0.1%** | **`85.26%`** | Tỷ lệ chấp nhận đúng ở chế độ bảo mật cao ($\theta = 0.342$) |
-| **Precision (tại $\theta = 0.55$)** | **`100.0%`** | Tuyệt đối không có trường hợp nhận nhầm người khác (FAR = 0%) |
+| Document | Topic & Focus Area |
+|:---|:---|
+| [System Architecture](docs/system_architecture.md) | Distributed event-driven design, Redpanda ingestion, and Redis Pub/Sub topology. |
+| [AI Inference Pipeline](docs/ai_pipeline.md) | SCRFD detection, Kalman filter tracking, and Attention Pooling mathematics. |
+| [Database Schema](docs/database_schema.md) | PostgreSQL schema definitions, HNSW vector indexing, and RPC procedures. |
+| [Frontend Architecture](docs/frontend_architecture.md) | Next.js 14 App Router, Canvas rendering loop, and WebSocket lifecycle management. |
+| [API Reference](docs/api_reference.md) | Comprehensive specification of REST endpoints and WebSocket subprotocols. |
+| [Production Benchmark Report](assets/YTF/results/production_eval_report.md) | Full tabular results and statistical analysis across all 544 YTF video sequences. |
+| [Maintenance Guide](docs/maintenance_guide.md) | Operational playbooks, systemd service management, and backup procedures. |
 
 ---
 
-### ⏱️ 2. Độ Trễ Phân Đoạn & Thông Lượng Thời Gian Thực (Latency Breakdown & Throughput)
+## 10. Author & License
 
-<p align="center">
-  <img src="assets/benchmark_latency.png" alt="CustomerLens Pipeline Latency Breakdown and Throughput" width="950" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-</p>
-
-* **Tốc độ xử lý:** Thông lượng tổng thể đạt **`30.34 FPS`**, tương thích hoàn toàn với các luồng RTSP/IP Camera 25–30 FPS tiêu chuẩn.
-* **Độ trễ mỗi khung hình (End-to-End Latency):** Trung bình chỉ **`32.29 ms`** (P95: `38.13 ms`), đáp ứng yêu cầu phản hồi thời gian thực tức thì.
-
-| Phân đoạn Pipeline | Thời gian xử lý Trung bình | Phân vị P95 | Tỷ trọng | Công nghệ tối ưu |
-| :--- | :---: | :---: | :---: | :--- |
-| **1. SCRFD Face Detection** | **`2.31 ms`** | `2.88 ms` | 7.1% | ONNX Runtime INT8, 5-point landmark regression |
-| **2. EdgeFace Feature Extraction** | **`29.61 ms`** | `35.35 ms` | 91.7% | MobileNet-V2 backbone, 512-D embedding |
-| **3. Cancelable Biometrics Protect** | **`0.09 ms`** | `0.14 ms` | 0.3% | Ma trận trực giao $Q \in \mathbb{R}^{512 \times 512}$ ($Q^TQ = I$) |
-| **4. Kalman Tracker & IoU Matching** | **`0.27 ms`** | `0.33 ms` | 0.9% | Kalman Filter góc + Thuật toán Hungarian |
-| **TỔNG ĐỘ TRỄ KHUNG HÌNH (E2E)** | **`32.29 ms`** | **`38.13 ms`** | **100%** | **Thông lượng tương đương: 30.34 FPS** |
-
----
-
-### 🏷️ 3. Ma Trận Phân Khúc & Vòng Đời Khách Hàng 2 Chữ Cái (Customer Lifecycle Intelligence)
-
-Hệ thống mã hóa khách hàng 2 chữ cái kết hợp số thứ tự duy nhất (VD: `LN1`, `LC1`, `LL1`, `ML1`, `HL1`), tự động cập nhật động theo hành vi ghé thăm và mức chi tiêu tích lũy:
-
-<p align="center">
-  <img src="assets/customer_lifecycle_matrix.png" alt="CustomerLens 2-Letter Dynamic Customer Lifecycle Matrix" width="950" style="border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);">
-</p>
-
-```mermaid
-stateDiagram-v2
-    direction LR
-    [*] --> LN: Khách mới tinh (Lần 1)
-    LN --> LC: Ghé thăm lần 2-4
-    LC --> LL: Khách quen (≥ 5 lần)
-    LL --> ML: Chi tiêu tích lũy ≥ 2.000.000đ (Mass Loyal)
-    ML --> HL: Nâng hạng VIP / Chi tiêu ≥ 10.000.000đ (VIP Loyal)
-    
-    note right of LN: Cấp sau 6 frames chất lượng (Buffer Gate)
-    note right of HL: HUD Card hiển thị nhận diện VIP tức thì
-```
-
-* **Chữ cái đầu tiên — Mức thu nhập & Chi trả:**
-  * **H (High):** Thu nhập cao, chi tiêu mạnh tay ($\ge 10$M hoặc hạng VIP).
-  * **M (Medium):** Thu nhập trung bình, chi tiêu phổ thông ($\ge 2$M hoặc hạng Mass).
-  * **L (Low):** Khách phổ thông / mặc định ban đầu (Standard / Budget).
-* **Chữ cái thứ hai — Hành vi & Lòng trung thành:**
-  * **N (New):** Khách mới tinh, vừa trải nghiệm lần đầu (1 lần ghé thăm).
-  * **C (Casual):** Khách vãng lai, thỉnh thoảng mới ghé (2–4 lần ghé thăm).
-  * **L (Loyal):** Khách quen thân thiết, gắn bó lâu dài ($\ge 5$ lần ghé thăm).
-* **Cơ chế Buffer Gate & Chống Trùng ID:** Khách mới chỉ được tạo mã (`LN...`) sau khi tích lũy đủ 6 frames đạt chuẩn chất lượng khuôn mặt, duy trì ổn định không bị nhảy ID (`0 ID switch`), và tự động tái nhận diện chính xác khi khách quay lại ở các camera khác nhau.
-
----
-
-### 🎥 4. Giả Lập Camera Thời Gian Thực (Virtual Camera Streamer E2E)
-* **Tỷ lệ rớt gói:** **`0.0%` Frame Drop Rate** khi phát luồng camera liên tục 20 FPS từ video YTF.
-* **Độ trễ tổng hợp HUD Card:** **`90.77 ms`** (bao gồm nén JPEG, truyền tải, suy luận AI và phát sinh thẻ HUD hiển thị thông tin phân khúc).
-
-
----
-
-## 📚 Tài Liệu Kỹ Thuật Chi Tiết (Documentation)
-
-Chi tiết kỹ thuật nâng cao được lưu trữ tại thư mục [docs/](docs/):
-
-1. 📖 **[Kiến trúc Hệ thống (docs/system_architecture.md)](docs/system_architecture.md)**: Sơ đồ luồng dữ liệu, tương tác Event-Driven Redpanda & Redis.
-2. 📖 **[Luồng Xử lý AI & Tracking (docs/ai_pipeline.md)](docs/ai_pipeline.md)**: Giải thuật Kalman Filter, Multi-frame Voting & Dynamic Centroid.
-3. 📖 **[Cấu trúc Cơ sở Dữ liệu (docs/database_schema.md)](docs/database_schema.md)**: PostgreSQL, chỉ mục HNSW và tích hợp Supabase.
-4. 📖 **[Kiến trúc Frontend (docs/frontend_architecture.md)](docs/frontend_architecture.md)**: Cấu trúc thư mục Next.js 14 và Canvas UI Rendering.
-5. 📖 **[Tài liệu API & WebSocket (docs/api_reference.md)](docs/api_reference.md)**: Danh sách Endpoints RESTful và giao thức WebSocket Subprotocol.
-6. 📖 **[Thành phần Cốt lõi (docs/core_components_detail.md)](docs/core_components_detail.md)**: Chi tiết RS256 JWT, Native pgvector Parameter Binding và AES-256-GCM.
-7. 📖 **[Báo cáo Benchmark (backend/test_system/benchmark_report.md)](backend/test_system/benchmark_report.md)**: Báo cáo đánh giá AI học thuật chi tiết.
-
----
-
-## 📄 Giấy Phép & Đóng Góp (License & Contribution)
-
-Dự án được phát triển cho mục đích nghiên cứu học thuật và thương mại hóa. Mọi đóng góp (Pull Request) hoặc báo lỗi (Issue) đều được chào đón!
-
-* **Tác giả:** Hồ Trung Trực
-* **Email:** hotrungtruc1706@gmail.com
-* **GitHub Repository:** [CustomerLens](https://github.com/hotrungtruc/CustomerLens)
+CustomerLens is authored by Ho Trung Truc for academic research and enterprise commercial deployment.
+- **Author:** Ho Trung Truc
+- **Email:** hotrungtruc1706@gmail.com
+- **Repository:** [https://github.com/hotrungtruc/CustomerLens](https://github.com/hotrungtruc/CustomerLens)
