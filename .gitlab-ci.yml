@@ -42,6 +42,7 @@ deploy_production:
 
         # Rebuild and restart Master backend services
         sudo docker compose down --timeout 30 || true
+        sudo docker system prune -af
         sudo docker compose up --build -d backend redis redpanda ai_worker
         sudo docker image prune -f
 
