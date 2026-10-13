@@ -90,9 +90,9 @@ graph TD
 Hệ thống hiện tại được triển khai trên nền tảng AWS EC2 với mô hình cluster Master-Worker:
 
 - **Master Node (Gateway, API, Database, Message Broker):**
-  - **IP:** `15.134.121.250`
-  - **SSH Key:** `master.pem` (đường dẫn cục bộ: `C:\Users\hotru\Downloads\master.pem`)
+  - **Public IP:** `15.134.121.250` | **Private IP:** `172.31.9.172`
+  - **SSH Key:** `MASTER.pem` (đường dẫn cục bộ: `C:\Users\hotru\Downloads\MASTER.pem`)
 - **Worker Nodes (AI Processing - 2 instances):**
-  - **Worker 1 IP:** `3.26.147.158`
-  - **Worker 2 IP:** `3.107.239.168`
-  - **SSH Key:** `workers_2.pem` (đường dẫn cục bộ: `C:\Users\hotru\Downloads\workers_2.pem`)
+  - **Worker 1 IP:** `54.253.192.210` | **Private IP:** `172.31.2.93`
+  - **Worker 2 IP:** `54.252.191.145` | **Private IP:** `172.31.4.195`
+  - **SSH Key:** `WORKERS.pem` (đường dẫn cục bộ: `C:\Users\hotru\Downloads\WORKERS.pem`)

@@ -18,7 +18,7 @@ jobs:
 
     env:
       MASTER_IP: "15.134.121.250"
-      WORKER_IPS: "3.26.147.158 3.27.136.134"
+      WORKER_IPS: "54.253.192.210 54.252.191.145"
       EC2_USER: "ubuntu"
       VERCEL_HOOK_URL: "https://api.vercel.com/v1/integrations/deploy/prj_Vmv6iLCAw6ZytseXSJWfnc9lQuUh/gb78OB9lIG"
 

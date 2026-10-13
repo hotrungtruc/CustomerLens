@@ -3,7 +3,7 @@ stages:
 
 variables:
   MASTER_IP: "15.134.121.250"
-  WORKER_IPS: "3.26.147.158 3.27.136.134"
+  WORKER_IPS: "54.253.192.210 54.252.191.145"
   EC2_USER: "ubuntu"
 
 deploy_production:
