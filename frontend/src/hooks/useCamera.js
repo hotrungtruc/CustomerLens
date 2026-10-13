@@ -10,17 +10,27 @@ const RECONNECT_DELAY_MS = 2000;
 
 function getWsUrl(cameraId, takeover = false) {
   // Derive WS URL from the API base URL so it works in any environment
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  let host = `${window.location.hostname}:8000`;
-  const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_HOST;
+  const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+  const baseUrl =
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_HOST ||
+    (typeof window !== "undefined" && (window.location.hostname === "checkinface.me" || window.location.hostname.endsWith(".checkinface.me"))
+      ? "https://api.checkinface.me"
+      : null);
+  let host;
   if (baseUrl) {
     try {
       // Handle both full URLs (http://host:port) and bare host:port
       const url = baseUrl.includes("://") ? new URL(baseUrl) : new URL(`http://${baseUrl}`);
       host = url.host; // includes port if present
     } catch (_) {
-      host = baseUrl.replace(/^https?:\/\//, "");
+      host = baseUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
     }
+  } else {
+    host = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
+      ? window.location.host
+      : "localhost:8000";
   }
   const query = takeover ? "?takeover=1" : "";
   return `${protocol}//${host}/ws/${encodeURIComponent(cameraId)}${query}`;

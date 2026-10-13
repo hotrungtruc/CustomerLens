@@ -3,10 +3,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: customerlens-backend:latest
-    container_name: customerlens_backend
+    image: face-recognition-system-backend:latest
+    container_name: faceai_backend
     restart: unless-stopped
     ports:
+      # Bind only to localhost so Nginx is the only entry point
       - "0.0.0.0:8000:8000"
     volumes:
       # Persistent data outside the container - survives rebuilds
@@ -44,7 +45,7 @@ services:
 
   redis:
     image: redis:alpine
-    container_name: customerlens_redis
+    container_name: faceai_redis
     restart: unless-stopped
     ports:
       - "0.0.0.0:6379:6379"
@@ -53,8 +54,8 @@ services:
     mem_limit: 100m
 
   ai_worker:
-    image: customerlens-backend:latest
-    container_name: customerlens_worker
+    image: face-recognition-system-backend:latest
+    container_name: faceai_worker
     restart: unless-stopped
     command: python app/ai_worker.py
     volumes:
@@ -78,7 +79,7 @@ services:
 
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:latest
-    container_name: customerlens_redpanda
+    container_name: faceai_redpanda
     restart: unless-stopped
     command:
       - redpanda
@@ -89,10 +90,10 @@ services:
       - --overprovisioned
       - --node-id 0
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr internal://redpanda:9092,external://${MASTER_ADVERTISE_IP:-172.31.9.172}:9092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
     ports:
-      - "0.0.0.0:9092:9092"
-      - "0.0.0.0:19092:19092"
+      - "9092:9092"
+      - "19092:19092"
     volumes:
       - redpanda_data:/var/lib/redpanda/data
 

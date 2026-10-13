@@ -1,5 +1,6 @@
 import { initFaceDetector, getDetector } from "./faceDetector.js";
 import { cropFaceToBlob } from "./faceCrop.js";
+import { API_BASE_URL } from "../services/api.js";
 
 const SEND_INTERVAL_MS = 800; // Debounce: send at most once per 800ms
 const MIN_FACE_SIZE = 80; // Bounding box smaller than 80px = too far
@@ -136,7 +137,7 @@ async function sendToBackend(faceBlob) {
   const formData = new FormData();
   formData.append("face", faceBlob, "face.jpg");
 
-  const res = await fetch("/api/recognize", {
+  const res = await fetch(`${API_BASE_URL}/api/recognize`, {
     method: "POST",
     body: formData,
   });

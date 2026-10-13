@@ -5,19 +5,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const OBSERVER_WS_SUBPROTOCOL = "camera-observer";
 
 function getObserveWsUrl(cameraId) {
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  let host = `${window.location.hostname}:8000`;
+  const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
   const baseUrl =
-    process.env.NEXT_PUBLIC_API_BASE_URL || process.env.NEXT_PUBLIC_API_HOST;
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_HOST ||
+    (typeof window !== "undefined" && (window.location.hostname === "checkinface.me" || window.location.hostname.endsWith(".checkinface.me"))
+      ? "https://api.checkinface.me"
+      : null);
+  let host;
   if (baseUrl) {
     try {
-      const url = baseUrl.includes("://")
-        ? new URL(baseUrl)
-        : new URL(`http://${baseUrl}`);
+      const url = baseUrl.includes("://") ? new URL(baseUrl) : new URL(`http://${baseUrl}`);
       host = url.host;
     } catch (_) {
-      host = baseUrl.replace(/^https?:\/\//, "");
+      host = baseUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "");
     }
+  } else {
+    host = typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1"
+      ? window.location.host
+      : "localhost:8000";
   }
   return `${protocol}//${host}/ws/observe/${encodeURIComponent(cameraId)}`;
 }

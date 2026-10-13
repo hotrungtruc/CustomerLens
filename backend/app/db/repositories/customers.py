@@ -159,7 +159,9 @@ def upsert_customer(
     last_visit = legacy_kwargs.get("last_attendance_time", last_visit)
 
     if isinstance(registered_at, int):
-        registered_at = str(registered_at)
+        registered_at = f"{registered_at:04d}-01-01 00:00:00"
+    elif isinstance(registered_at, str) and len(registered_at) == 4 and registered_at.isdigit():
+        registered_at = f"{registered_at}-01-01 00:00:00"
 
     conn.execute(
         """

@@ -15,4 +15,3 @@ kafka-python
 PyJWT
 cryptography
 pgvector>=0.2.5
-
