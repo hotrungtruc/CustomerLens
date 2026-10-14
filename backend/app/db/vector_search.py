@@ -81,20 +81,25 @@ def search_similar_faces(
     except Exception:
         pass
 
+    vec_str = _embedding_to_pgvector_literal(protected_embedding)
     try:
         cursor.execute(
             """
             SELECT customer_id,
-                   1 - (embedding::halfvec(512) <=> %s::halfvec(512)) AS similarity
+                   1 - (embedding <=> %s::vector) AS similarity
             FROM customer_embeddings
             WHERE embedding IS NOT NULL
-            ORDER BY embedding::halfvec(512) <=> %s::halfvec(512)
+            ORDER BY embedding <=> %s::vector
             LIMIT %s
             """,
-            (protected_embedding, protected_embedding, top_k),
+            (vec_str, vec_str, top_k),
         )
     except Exception:
-        vec_str = _embedding_to_pgvector_literal(protected_embedding)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        cursor = conn.cursor()
         cursor.execute(
             """
             SELECT customer_id,
@@ -127,7 +132,7 @@ def insert_embedding_with_vector(
     face_embedding_blob: bytes,
     embedding_np: np.ndarray,
     dim: int = 512,
-    model_name: str = "edgeface_s_gamma_05",
+    model_name: str = "edgeface_int8",
 ):
     """Insert a new embedding row with both BYTEA and pgvector representations."""
     protected_embedding = biometric_protector.protect_embedding(embedding_np)
@@ -135,26 +140,58 @@ def insert_embedding_with_vector(
 
     if DB_TYPE == "postgresql":
         try:
+            import psycopg2
+            raw_blob = psycopg2.Binary(protected_blob)
+        except Exception:
+            raw_blob = protected_blob
+
+        vec_str = _embedding_to_pgvector_literal(protected_embedding)
+        try:
             conn.execute(
-                """
-                INSERT INTO customer_embeddings (
-                    customer_id, embedding, updated_at
-                ) VALUES (%s, %s::vector, CURRENT_TIMESTAMP)
-                """,
-                (customer_id, protected_embedding),
+                "DELETE FROM customer_embeddings WHERE customer_id = %s;",
+                (customer_id,),
             )
         except Exception:
-            vec_str = _embedding_to_pgvector_literal(protected_embedding)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+        try:
             conn.execute(
                 """
                 INSERT INTO customer_embeddings (
-                    customer_id, embedding, updated_at
-                ) VALUES (%s, %s::vector, CURRENT_TIMESTAMP)
+                    customer_id, face_embedding, embedding_dim, model_name,
+                    created_at, updated_at, embedding
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    CURRENT_TIMESTAMP::text, CURRENT_TIMESTAMP::text, %s::vector
+                )
                 """,
-                (customer_id, vec_str),
+                (
+                    customer_id,
+                    raw_blob,
+                    dim,
+                    model_name or "edgeface_int8",
+                    vec_str,
+                ),
             )
+            conn.commit()
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise e
     else:
         vec_str = _embedding_to_pgvector_literal(protected_embedding)
+        try:
+            conn.execute(
+                "DELETE FROM customer_embeddings WHERE customer_id = ?",
+                (customer_id,),
+            )
+        except Exception:
+            pass
         conn.execute(
             """
             INSERT INTO customer_embeddings (
@@ -162,14 +199,14 @@ def insert_embedding_with_vector(
                 embedding, updated_at
             ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
-            (customer_id, protected_blob, dim, model_name, vec_str),
+            (customer_id, protected_blob, dim, model_name or "edgeface_int8", vec_str),
         )
+        try:
+            conn.commit()
+        except Exception:
+            pass
 
     # Auto-populate into L1 Redis Vector Cache for <1ms sub-millisecond future lookups
-    try:
-        conn.commit()
-    except Exception:
-        pass
     try:
         vector_cache_manager.add_to_cache(customer_id, protected_embedding)
     except Exception:
