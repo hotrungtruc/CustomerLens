@@ -101,35 +101,38 @@ def _calculate_file_sha256(path: Path) -> str:
 # ---------------------------------------------------------------------------
 # 1. Ingestion Endpoint: Receive Face Crop / Embedding from Edge Device
 # ---------------------------------------------------------------------------
-@router.post("/events")
-async def receive_edge_face_event(event: EdgeFaceEvent):
-    """
-    Ingest a face event sent by an Edge device.
-    1. If crop_image_base64 is sent without embedding, extracts 5 landmarks via SCRFD 500M
-       and generates 512-D embedding via EdgeFace (int8).
-    2. Runs vector search against Identity DB (pgvector / L1 cache).
-    3. If recognized, updates attendance and recognize logs.
-    4. Broadcasts recognition update to Dashboard observer via Redis PubSub.
-    """
+class EdgeEnrollRequest(BaseModel):
+    customer_id: Optional[str] = None
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    loyalty_tier: Optional[str] = "VIP"
+    service_category: Optional[str] = "VIP"
+    crop_image_base64: Optional[str] = None
+    embedding: Optional[List[float]] = None
+
+
+def _enroll_face_sync(req_dict: dict):
     from app.core.insight_embedding import get_embedder
+    from app.db.repositories.customers import upsert_customer, _generate_next_customer_id
+    from app.db.vector_search import insert_embedding_with_vector
+    from app.core.vector_cache import vector_cache_manager
 
     emb_arr = None
-    if event.embedding and len(event.embedding) == 512:
-        emb_arr = np.asarray(event.embedding, dtype=np.float32)
-    elif event.crop_image_base64:
+    if req_dict.get("embedding") and len(req_dict["embedding"]) == 512:
+        emb_arr = np.asarray(req_dict["embedding"], dtype=np.float32)
+    elif req_dict.get("crop_image_base64"):
         try:
-            crop_bytes = base64.b64decode(event.crop_image_base64)
+            crop_bytes = base64.b64decode(req_dict["crop_image_base64"])
             crop_arr = np.frombuffer(crop_bytes, dtype=np.uint8)
             crop_bgr = cv2.imdecode(crop_arr, cv2.IMREAD_COLOR)
             if crop_bgr is not None and crop_bgr.size > 0:
                 embedder = get_embedder()
-                # Run SCRFD 500M on the padded crop to detect facial landmarks
                 detections = embedder.detect(crop_bgr)
                 landmark = None
                 if len(detections[0]) > 0 and len(detections[1]) > 0:
                     landmark = detections[1][0]
                 else:
-                    # Fallback landmark approximation based on crop geometry
                     ch, cw = crop_bgr.shape[:2]
                     landmark = np.array([
                         [cw * 0.35, ch * 0.38],
@@ -138,47 +141,109 @@ async def receive_edge_face_event(event: EdgeFaceEvent):
                         [cw * 0.38, ch * 0.75],
                         [cw * 0.62, ch * 0.75],
                     ], dtype=np.float32)
-
                 emb = embedder.get_embedding(crop_bgr, landmark)
                 if emb is not None:
                     emb_arr = np.asarray(emb, dtype=np.float32)
         except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Failed to process crop image on server: {e}",
-            )
+            return None, f"Failed to extract face embedding: {e}"
 
     if emb_arr is None or len(emb_arr) != 512:
-        raise HTTPException(
-            status_code=422,
-            detail="Either valid 512D embedding or crop_image_base64 must be provided",
-        )
+        return None, "Invalid 512D embedding or crop image provided"
 
     norm = np.linalg.norm(emb_arr)
     if norm > 0:
         emb_arr = emb_arr / norm
 
-
-    threshold = float(system_settings.get("similarity_threshold", SIMILARITY_THRESHOLD))
+    cid = (req_dict.get("customer_id") or "").strip()
     conn = get_db_connection()
+    try:
+        final_id = cid or _generate_next_customer_id(conn)
+        upsert_customer(
+            conn,
+            customer_id=final_id,
+            name=req_dict["name"].strip(),
+            phone=req_dict.get("phone"),
+            email=req_dict.get("email"),
+            customer_type="registered",
+            loyalty_tier=req_dict.get("loyalty_tier") or "VIP",
+            service_category=req_dict.get("service_category") or "VIP",
+        )
+        insert_embedding_with_vector(
+            conn,
+            customer_id=final_id,
+            face_embedding_blob=emb_arr.tobytes(),
+            embedding_np=emb_arr,
+            model_name="edgeface_s_gamma_05",
+        )
+        conn.commit()
+        vector_cache_manager.add_to_cache(final_id, emb_arr)
+        return {
+            "success": True,
+            "customer_id": final_id,
+            "name": req_dict["name"],
+            "loyalty_tier": req_dict.get("loyalty_tier") or "VIP",
+        }, None
+    except Exception as e:
+        return None, str(e)
+    finally:
+        conn.close()
 
+
+def _process_face_match_sync(event_dict: dict, threshold: float):
+    from app.core.insight_embedding import get_embedder
+
+    emb_arr = None
+    if event_dict.get("embedding") and len(event_dict["embedding"]) == 512:
+        emb_arr = np.asarray(event_dict["embedding"], dtype=np.float32)
+    elif event_dict.get("crop_image_base64"):
+        try:
+            crop_bytes = base64.b64decode(event_dict["crop_image_base64"])
+            crop_arr = np.frombuffer(crop_bytes, dtype=np.uint8)
+            crop_bgr = cv2.imdecode(crop_arr, cv2.IMREAD_COLOR)
+            if crop_bgr is not None and crop_bgr.size > 0:
+                embedder = get_embedder()
+                detections = embedder.detect(crop_bgr)
+                landmark = None
+                if len(detections[0]) > 0 and len(detections[1]) > 0:
+                    landmark = detections[1][0]
+                else:
+                    ch, cw = crop_bgr.shape[:2]
+                    landmark = np.array([
+                        [cw * 0.35, ch * 0.38],
+                        [cw * 0.65, ch * 0.38],
+                        [cw * 0.50, ch * 0.55],
+                        [cw * 0.38, ch * 0.75],
+                        [cw * 0.62, ch * 0.75],
+                    ], dtype=np.float32)
+                emb = embedder.get_embedding(crop_bgr, landmark)
+                if emb is not None:
+                    emb_arr = np.asarray(emb, dtype=np.float32)
+        except Exception as e:
+            return None, f"Failed to process crop image on server: {e}"
+
+    if emb_arr is None or len(emb_arr) != 512:
+        return None, "Either valid 512D embedding or crop_image_base64 must be provided"
+
+    norm = np.linalg.norm(emb_arr)
+    if norm > 0:
+        emb_arr = emb_arr / norm
+
+    conn = get_db_connection()
     match_result = {
         "matched": False,
         "customer_id": None,
         "name": "Khách chưa đăng ký",
         "similarity": 0.0,
         "customer_type": "guest",
-        "event_type": event.event_type,
-        "track_id": event.track_id,
-        "camera_id": event.camera_id,
+        "event_type": event_dict.get("event_type", "first_shot"),
+        "track_id": event_dict.get("track_id", 0),
+        "camera_id": event_dict.get("camera_id", "default"),
         "greeting": None,
     }
 
     try:
-        # Search against pgvector with cancelable biometric protection
         results = search_similar_faces(conn, emb_arr, top_k=3, threshold=threshold)
         now_ts = time.time()
-
         if results:
             best_id, best_sim = results[0]
             customer_info = get_customer_info(conn, best_id)
@@ -193,7 +258,6 @@ async def receive_edge_face_event(event: EdgeFaceEvent):
                     "greeting": f"Xin chào {customer_name}!",
                 })
 
-                # Checkin attendance debounce (only increment once per cooldown)
                 last_checkin = ATTENDANCE_DEBOUNCE.get(best_id, 0.0)
                 if now_ts - last_checkin > DEBOUNCE_SECONDS:
                     ATTENDANCE_DEBOUNCE[best_id] = now_ts
@@ -202,18 +266,17 @@ async def receive_edge_face_event(event: EdgeFaceEvent):
                     except Exception as e:
                         print(f"[Edge Ingestion] Attendance update error: {e}", flush=True)
 
-                # Insert into recognize_logs
                 try:
                     bulk_insert_recognize_logs(
                         conn,
                         [
                             {
                                 "opeid": "EDGE_SYSTEM",
-                                "camera_id": event.camera_id,
-                                "connection_id": f"edge_{event.device_id}",
+                                "camera_id": event_dict.get("camera_id", "default"),
+                                "connection_id": f"edge_{event_dict.get('device_id', 'edge')}",
                                 "customer_id": best_id,
-                                "track_id": event.track_id,
-                                "bbox": event.bbox,
+                                "track_id": event_dict.get("track_id", 0),
+                                "bbox": event_dict.get("bbox", [0, 0, 0, 0]),
                                 "timestamp": datetime.now(timezone.utc),
                             }
                         ],
@@ -221,8 +284,23 @@ async def receive_edge_face_event(event: EdgeFaceEvent):
                 except Exception as e:
                     print(f"[Edge Ingestion] Log insert error: {e}", flush=True)
 
+        return match_result, None
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# 1. Ingestion Endpoint: Receive Face Crop / Embedding from Edge Device
+# ---------------------------------------------------------------------------
+@router.post("/events")
+async def receive_edge_face_event(event: EdgeFaceEvent):
+    """
+    Ingest a face event sent by an Edge device in a non-blocking threadpool.
+    """
+    threshold = float(system_settings.get("similarity_threshold", SIMILARITY_THRESHOLD))
+    match_result, err = await asyncio.to_thread(_process_face_match_sync, event.model_dump(), threshold)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
 
     # Broadcast to Redis for live dashboard observer (/ws/observe/{camera_id})
     redis_client = await _get_redis_client()
@@ -259,6 +337,20 @@ async def receive_edge_face_event(event: EdgeFaceEvent):
             print(f"[Edge Ingestion] Redis broadcast error: {e}", flush=True)
 
     return JSONResponse(content={"success": True, "result": match_result})
+
+
+# ---------------------------------------------------------------------------
+# 1b. Direct Face Enrollment Endpoint: Register Customer with Face Image / Embedding
+# ---------------------------------------------------------------------------
+@router.post("/enroll")
+async def enroll_customer_edge(req: EdgeEnrollRequest):
+    """
+    Directly register a new customer with biometrics into pgvector Identity DB.
+    """
+    res, err = await asyncio.to_thread(_enroll_face_sync, req.model_dump())
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return JSONResponse(content=res)
 
 
 @router.post("/batch-events")
