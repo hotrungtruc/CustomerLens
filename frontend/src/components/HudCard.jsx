@@ -7,7 +7,10 @@ import {
   formatCustomerDisplayId,
   getCustomerDisplayName,
   getCustomerSegment,
+  getLocalizedSegment,
 } from "../lib/customerCode";
+
+import { useApp } from "../context/AppContext";
 
 /**
  * HudCard — Real-time Biometric Customer Intelligence Display.
@@ -24,6 +27,7 @@ export default function HudCard({
   onMouseLeave,
 }) {
   const router = useRouter();
+  const { t, lang } = useApp();
   const [intelNotice, setIntelNotice] = useState(false);
 
   const isIdentified = Boolean(
@@ -33,34 +37,36 @@ export default function HudCard({
       customer.name &&
       customer.name.trim() !== "" &&
       customer.name !== "Guest" &&
-      customer.name !== "Khách mới"
+      customer.name !== "Khách mới" &&
+      customer.name !== "New Guest"
   );
 
-  const segment = getCustomerSegment(customer);
+  const segment = getLocalizedSegment(getCustomerSegment(customer), lang);
   const displayId = formatCustomerDisplayId(customer, face);
   const isResolved = Boolean(displayId && segment);
   const displayName = isResolved
-    ? getCustomerDisplayName(customer, face).toUpperCase()
-    : "ĐANG TRÍCH XUẤT EMBEDDING...";
+    ? getCustomerDisplayName(customer, face, lang).toUpperCase()
+    : t("identifying");
 
-  const phone = customer?.phone || "N/A";
-  const email = customer?.email || "N/A";
+  const phone = customer?.phone || t("not_provided");
+  const email = customer?.email || t("not_provided");
   const visits = customer?.total_visits ?? (isIdentified ? 1 : 0);
   const spending = customer?.total_spending
-    ? new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND" }).format(
-        customer.total_spending
-      )
+    ? new Intl.NumberFormat(lang === "vi" ? "vi-VN" : "en-US", {
+        style: "currency",
+        currency: lang === "vi" ? "VND" : "USD",
+      }).format(customer.total_spending)
     : isIdentified
-    ? "0 ₫"
+    ? lang === "vi" ? "0 ₫" : "$0"
     : "N/A";
 
   const note =
     customer?.note ||
     (!isResolved
-      ? "Đang thu thập khung hình chất lượng cao để trích xuất & lưu vector sinh trắc học vào CSDL..."
+      ? t("collecting_frames_note")
       : isIdentified
-      ? "Hồ sơ khách hàng sinh trắc học đã xác minh trên CSDL hệ thống."
-      : `Khách nhận diện sinh trắc học (Mã ${displayId}). Tự động đồng bộ phân khúc theo lịch sử ghé thăm.`);
+      ? t("verified_profile_note")
+      : t("identified_guest_note").replace("%s", displayId));
 
   const handleEditClick = (e) => {
     e.stopPropagation();
@@ -135,14 +141,14 @@ export default function HudCard({
         {/* 1. SCAN RESULTS (Name in Neon Amber + Clean Short ID) */}
         <div className="mb-3">
           <div className="text-[10px] text-cyan-400/70 font-semibold tracking-wider uppercase mb-0.5 flex items-center justify-between">
-            <span>SCAN RESULTS</span>
+            <span>{t("scan_results")}</span>
             {isResolved ? (
               <span className="text-[11px] font-bold px-1.5 py-0.5 rounded border border-cyan-400/60 bg-cyan-950/80 text-cyan-300 tracking-wider">
                 ID: #{displayId}
               </span>
             ) : (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-amber-400/60 bg-amber-950/80 text-amber-300 tracking-wider animate-pulse">
-                [ĐANG QUÉT]
+                {t("scanning")}
               </span>
             )}
           </div>
@@ -156,7 +162,7 @@ export default function HudCard({
           {isResolved ? (
             <>
               <div className="text-[10px] text-cyan-400/80 font-semibold tracking-wider uppercase mb-1 flex items-center justify-between">
-                <span>PHÂN KHÚC KHÁCH HÀNG</span>
+                <span>{t("customer_segmentation")}</span>
                 <span className={`text-[10px] px-1.5 py-0.2 rounded font-extrabold border ${segment.badgeColor}`}>
                   [{segment.code}]
                 </span>
@@ -171,16 +177,16 @@ export default function HudCard({
           ) : (
             <>
               <div className="text-[10px] text-amber-400/80 font-semibold tracking-wider uppercase mb-1 flex items-center justify-between">
-                <span>PHÂN KHÚC KHÁCH HÀNG</span>
+                <span>{t("customer_segmentation")}</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded font-extrabold border border-amber-400/70 text-amber-300 bg-amber-950/40 animate-pulse">
-                  [CHỜ LƯU VECTOR]
+                  {t("waiting_vector")}
                 </span>
               </div>
               <div className="text-amber-200 font-bold text-[12px] tracking-wide">
-                Đang trích xuất đặc trưng...
+                {t("extracting_features")}
               </div>
               <div className="text-[10px] text-amber-400/60 mt-0.5 leading-snug">
-                Sẽ gán mã phân khúc (MN, LL, LC, LN...) ngay khi lưu embedding xong.
+                {t("assign_segment_hint")}
               </div>
             </>
           )}
@@ -196,7 +202,7 @@ export default function HudCard({
         <div className="space-y-2 text-[11px] leading-snug">
           {/* Contact Details */}
           <div>
-            <div className="text-[9px] text-cyan-400/60 uppercase font-semibold">CONTACT</div>
+            <div className="text-[9px] text-cyan-400/60 uppercase font-semibold">{t("contact")}</div>
             <div className="text-emerald-300/90 font-medium">
               {phone} <span className="text-cyan-600">|</span> {email}
             </div>
@@ -205,17 +211,17 @@ export default function HudCard({
           {/* Visits & Spending Stats */}
           <div>
             <div className="text-[9px] text-cyan-400/60 uppercase font-semibold">
-              VISITS & SPENDING
+              {t("visits_spending")}
             </div>
             <div className="text-emerald-300/90 font-medium">
-              {visits} visits <span className="text-cyan-600">|</span> {spending}
+              {visits} {t("visits")} <span className="text-cyan-600">|</span> {spending}
             </div>
           </div>
 
           {/* Background / Personal Notes */}
           <div>
             <div className="text-[9px] text-cyan-400/60 uppercase font-semibold">
-              BACKGROUND / NOTES
+              {t("background_notes")}
             </div>
             <div className="text-emerald-300/90 font-medium line-clamp-3">{note}</div>
           </div>
@@ -225,7 +231,7 @@ export default function HudCard({
         {intelNotice && (
           <div className="mt-2.5 px-2.5 py-1.5 rounded bg-amber-500/20 border border-amber-400/60 text-[10px] font-mono text-amber-300 flex items-center gap-1.5 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-            <span>[AI SEARCH]: Feature in development...</span>
+            <span>{t("ai_search_dev")}</span>
           </div>
         )}
 
@@ -236,10 +242,10 @@ export default function HudCard({
             type="button"
             onClick={handleEditClick}
             className="flex-1 group relative flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-cyan-950/70 border border-cyan-400/60 text-cyan-200 hover:text-white hover:bg-cyan-500/25 hover:border-cyan-300 hover:shadow-[0_0_12px_rgba(34,211,238,0.4)] transition-all duration-150 text-[10px] font-bold tracking-wider uppercase active:scale-95 cursor-pointer"
-            title="Edit Customer Profile"
+            title={t("edit_profile")}
           >
             <Edit3 className="w-3 h-3 text-cyan-400 group-hover:text-cyan-200 transition-colors" />
-            <span>Edit</span>
+            <span>{t("edit_profile")}</span>
           </button>
 
           {/* Button 2: AI Search */}
@@ -247,10 +253,10 @@ export default function HudCard({
             type="button"
             onClick={handleSearchClick}
             className="flex-1 group relative flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-slate-900/80 border border-sky-600/50 hover:border-amber-400/70 text-sky-200 hover:text-amber-300 hover:bg-amber-500/20 hover:shadow-[0_0_12px_rgba(245,158,11,0.35)] transition-all duration-150 text-[10px] font-bold tracking-wider uppercase active:scale-95 cursor-pointer"
-            title="Search Customer Intel with AI"
+            title={t("ai_search")}
           >
             <Search className="w-3 h-3 text-sky-400 group-hover:text-amber-400 transition-colors" />
-            <span>AI Search</span>
+            <span>{t("ai_search")}</span>
           </button>
         </div>
       </div>

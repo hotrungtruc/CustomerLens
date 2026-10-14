@@ -9,7 +9,6 @@ import {
   Users,
   History,
   Shield,
-  BarChart2,
   Settings,
   LogIn,
   LogOut,
@@ -55,14 +54,6 @@ const ALL_NAV_ITEMS = [
     label: "Authorization",
     href: "/authorization",
     Icon: Shield,
-    roles: ["admin"],
-  },
-  {
-    key: "reports",
-    transKey: "nav_reports",
-    label: "Reports",
-    href: "/reports",
-    Icon: BarChart2,
     roles: ["admin"],
   },
   {

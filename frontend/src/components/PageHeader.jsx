@@ -8,18 +8,21 @@ const TITLE_MAP = {
   "CustomerLens": { en: "CustomerLens", vi: "CustomerLens" },
   "Quản lý Camera": { en: "Camera Management", vi: "Quản lý Camera" },
   "Camera Management": { en: "Camera Management", vi: "Quản lý Camera" },
-  "Quản lý Khách hàng": { en: "Customer Directory", vi: "Quản lý Khách hàng" },
-  "Customer Directory": { en: "Customer Directory", vi: "Quản lý Khách hàng" },
+  "Quản lý Khách hàng": { en: "Customer Directory", vi: "Danh sách khách hàng" },
+  "Danh sách khách hàng": { en: "Customer Directory", vi: "Danh sách khách hàng" },
+  "Customer Directory": { en: "Customer Directory", vi: "Danh sách khách hàng" },
   "Hồ sơ Khách hàng": { en: "Customer Profile", vi: "Hồ sơ Khách hàng" },
   "Customer Profile": { en: "Customer Profile", vi: "Hồ sơ Khách hàng" },
   "Lịch sử Nhận diện Real-Time": { en: "Real-Time Recognition History", vi: "Lịch sử Nhận diện Real-Time" },
   "Real-Time Recognition History": { en: "Real-Time Recognition History", vi: "Lịch sử Nhận diện Real-Time" },
   "Báo cáo & Thống kê F&B": { en: "F&B Business Reports & Analytics", vi: "Báo cáo & Thống kê F&B" },
   "F&B Business Reports & Analytics": { en: "F&B Business Reports & Analytics", vi: "Báo cáo & Thống kê F&B" },
-  "Phân quyền": { en: "Device & Role Authorization", vi: "Phân quyền" },
-  "Device & Role Authorization": { en: "Device & Role Authorization", vi: "Phân quyền" },
-  "Cài đặt hệ thống": { en: "System Settings", vi: "Cài đặt hệ thống" },
-  "System Settings": { en: "System Settings", vi: "Cài đặt hệ thống" },
+  "Phân quyền": { en: "Device & Role Authorization", vi: "Phân quyền & Thiết bị" },
+  "Phân quyền & Thiết bị": { en: "Device & Role Authorization", vi: "Phân quyền & Thiết bị" },
+  "Device & Role Authorization": { en: "Device & Role Authorization", vi: "Phân quyền & Thiết bị" },
+  "Cài đặt hệ thống": { en: "System Settings", vi: "Cài đặt Hệ thống" },
+  "Cài đặt Hệ thống": { en: "System Settings", vi: "Cài đặt Hệ thống" },
+  "System Settings": { en: "System Settings", vi: "Cài đặt Hệ thống" },
 };
 
 const SUBTITLE_MAP = {
@@ -27,7 +30,19 @@ const SUBTITLE_MAP = {
     en: "Monitor all connected devices across camera networks.",
     vi: "Theo dõi tất cả thiết bị đang kết nối vào hệ thống.",
   },
+  "Monitor all connected devices across camera networks.": {
+    en: "Monitor all connected devices across camera networks.",
+    vi: "Theo dõi tất cả thiết bị đang kết nối vào hệ thống.",
+  },
+  "Monitor and configure connected edge camera nodes.": {
+    en: "Monitor and configure connected edge camera nodes.",
+    vi: "Theo dõi và quản lý các thiết bị camera cạnh.",
+  },
   "Danh sách toàn bộ khách hàng được nhận diện bởi hệ thống.": {
+    en: "Directory of all customers identified across camera streams.",
+    vi: "Danh sách toàn bộ khách hàng được nhận diện bởi hệ thống.",
+  },
+  "Directory of all customers identified across camera streams.": {
     en: "Directory of all customers identified across camera streams.",
     vi: "Danh sách toàn bộ khách hàng được nhận diện bởi hệ thống.",
   },
@@ -35,7 +50,15 @@ const SUBTITLE_MAP = {
     en: "Detailed profile, biometric embeddings and visit records.",
     vi: "Thông tin chi tiết và lịch sử của khách hàng.",
   },
+  "Detailed profile, biometric embeddings and visit records.": {
+    en: "Detailed profile, biometric embeddings and visit records.",
+    vi: "Thông tin chi tiết và lịch sử của khách hàng.",
+  },
   "Quản lý và tra cứu nhật ký nhận diện khuôn mặt từ hệ thống camera.": {
+    en: "Search and inspect real-time facial recognition verification logs.",
+    vi: "Quản lý và tra cứu nhật ký nhận diện khuôn mặt từ hệ thống camera.",
+  },
+  "Search and inspect real-time facial recognition verification logs.": {
     en: "Search and inspect real-time facial recognition verification logs.",
     vi: "Quản lý và tra cứu nhật ký nhận diện khuôn mặt từ hệ thống camera.",
   },
@@ -43,13 +66,29 @@ const SUBTITLE_MAP = {
     en: "Analyze customer foot-traffic, peak hours and loyalty retention rates.",
     vi: "Phân tích lưu lượng khách hàng, giờ cao điểm và tỷ lệ khách thân thiết thực tế từ cơ sở dữ liệu.",
   },
+  "Analyze customer foot-traffic, peak hours and loyalty retention rates.": {
+    en: "Analyze customer foot-traffic, peak hours and loyalty retention rates.",
+    vi: "Phân tích lưu lượng khách hàng, giờ cao điểm và tỷ lệ khách thân thiết thực tế từ cơ sở dữ liệu.",
+  },
   "Quản lý moderator và camera được phép theo dõi.": {
+    en: "Manage moderator accounts and authorized camera streaming nodes.",
+    vi: "Quản lý moderator và camera được phép theo dõi.",
+  },
+  "Manage moderator accounts and authorized camera streaming nodes.": {
     en: "Manage moderator accounts and authorized camera streaming nodes.",
     vi: "Quản lý moderator và camera được phép theo dõi.",
   },
   "Cấu hình hệ thống nhận diện.": {
     en: "Configure edge AI thresholds and facial recognition pipeline.",
     vi: "Cấu hình hệ thống nhận diện.",
+  },
+  "Cấu hình hệ thống nhận diện và ngưỡng AI.": {
+    en: "Configure edge AI thresholds and facial recognition pipeline.",
+    vi: "Cấu hình hệ thống nhận diện và ngưỡng AI.",
+  },
+  "Configure edge AI thresholds and facial recognition pipeline.": {
+    en: "Configure edge AI thresholds and facial recognition pipeline.",
+    vi: "Cấu hình hệ thống nhận diện và ngưỡng AI.",
   },
 };
 

@@ -5,8 +5,10 @@ import Sidebar from "../../components/Sidebar";
 import PageHeader from "../../components/PageHeader";
 import MessageBanner from "../../components/MessageBanner";
 import { getRecognizeLogs, exportRecognizeLogsCsv, fetchCameras } from "../../services/api";
+import { useApp } from "../../context/AppContext";
 
 export default function HistoryPage() {
+  const { t, lang } = useApp();
   const [logs, setLogs] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -54,14 +56,14 @@ export default function HistoryPage() {
         setTotalCount(data.total_count || 0);
         setTotalPages(data.total_pages || 1);
       } else {
-        setBanner({ type: "error", text: data.message || "Không thể nạp nhật ký" });
+        setBanner({ type: "error", text: data.message || t("cannot_load_logs") });
       }
     } catch (err) {
-      setBanner({ type: "error", text: err.message || "Lỗi khi kết nối hệ thống" });
+      setBanner({ type: "error", text: err.message || t("system_connection_error") });
     } finally {
       setLoading(false);
     }
-  }, [search, startDate, endDate, cameraId, customerType, page, limit]);
+  }, [search, startDate, endDate, cameraId, customerType, page, limit, t]);
 
   // Debounced Reload on Filters Change
   useEffect(() => {
@@ -97,9 +99,9 @@ export default function HistoryPage() {
         cameraId,
         customerType,
       });
-      setBanner({ type: "success", text: "Đã xuất file CSV lịch sử thành công!" });
+      setBanner({ type: "success", text: t("csv_export_success") });
     } catch (err) {
-      setBanner({ type: "error", text: err.message || "Xuất CSV thất bại" });
+      setBanner({ type: "error", text: err.message || t("csv_export_failed") });
     } finally {
       setExporting(false);
     }
@@ -116,8 +118,8 @@ export default function HistoryPage() {
 
         <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-200">
           <PageHeader
-            title="Lịch sử Nhận diện Real-Time"
-            subtitle="Quản lý và tra cứu nhật ký nhận diện khuôn mặt từ hệ thống camera."
+            title={t("history_page_title")}
+            subtitle={t("history_page_subtitle")}
           />
 
           <div className="flex flex-1 min-h-0 flex-col overflow-y-auto p-4 md:p-6 space-y-4">
@@ -134,7 +136,7 @@ export default function HistoryPage() {
                   📊
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Tổng Sự Kiện</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{t("total_events")}</p>
                   <p className="text-xl font-bold text-slate-900">{totalCount.toLocaleString()}</p>
                 </div>
               </div>
@@ -144,7 +146,7 @@ export default function HistoryPage() {
                   👑
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Khách Đăng Ký / VIP</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{t("registered_vip_metric")}</p>
                   <p className="text-xl font-bold text-emerald-600">{vipCount}</p>
                 </div>
               </div>
@@ -154,7 +156,7 @@ export default function HistoryPage() {
                   👤
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Khách Mới (Guest)</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{t("guest_metric")}</p>
                   <p className="text-xl font-bold text-amber-600">{guestCount}</p>
                 </div>
               </div>
@@ -164,9 +166,9 @@ export default function HistoryPage() {
                   📹
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Camera Đã Chọn</p>
+                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">{t("selected_cameras_metric")}</p>
                   <p className="text-xl font-bold text-indigo-600">
-                    {cameraId === "all" ? cameras.length || "Tất cả" : 1}
+                    {cameraId === "all" ? cameras.length || t("all_filter") : 1}
                   </p>
                 </div>
               </div>
@@ -185,7 +187,7 @@ export default function HistoryPage() {
                       setSearch(e.target.value);
                       setPage(1);
                     }}
-                    placeholder="Tìm tên khách, số điện thoại, mã ID..."
+                    placeholder={t("search_history_placeholder")}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-800 outline-none focus:border-blue-500 focus:bg-white transition-all"
                   />
                 </div>
@@ -193,7 +195,7 @@ export default function HistoryPage() {
                 {/* Date Pickers */}
                 <div className="flex items-center space-x-2">
                   <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-600">
-                    <span>Từ:</span>
+                    <span>{t("from_date")}</span>
                     <input
                       type="date"
                       value={startDate}
@@ -205,7 +207,7 @@ export default function HistoryPage() {
                     />
                   </div>
                   <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-600">
-                    <span>Đến:</span>
+                    <span>{t("to_date")}</span>
                     <input
                       type="date"
                       value={endDate}
@@ -230,7 +232,7 @@ export default function HistoryPage() {
                     }}
                     className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 outline-none focus:border-blue-500 font-medium"
                   >
-                    <option value="all">📷 Tất cả Camera</option>
+                    <option value="all">📷 {t("all_cameras")}</option>
                     {cameras.map((c) => (
                       <option key={c.camera_id} value={c.camera_id}>
                         {c.display_name || c.camera_id}
@@ -246,9 +248,9 @@ export default function HistoryPage() {
                     }}
                     className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 outline-none focus:border-blue-500 font-medium"
                   >
-                    <option value="all">👥 Tất cả loại khách</option>
-                    <option value="customer">👑 Khách Đăng Ký / VIP</option>
-                    <option value="guest">👤 Khách Mới (Guest)</option>
+                    <option value="all">👥 {t("all_guest_types")}</option>
+                    <option value="customer">👑 {t("registered_vip_metric")}</option>
+                    <option value="guest">👤 {t("guest_metric")}</option>
                   </select>
 
                   {/* Reset Filter Button */}
@@ -264,7 +266,7 @@ export default function HistoryPage() {
                       }}
                       className="text-slate-500 hover:text-red-600 underline font-medium px-2"
                     >
-                      Xóa bộ lọc
+                      {t("clear_filters")}
                     </button>
                   )}
                 </div>
@@ -280,7 +282,7 @@ export default function HistoryPage() {
                     />
                     <span className="flex items-center gap-1">
                       <span className={`h-2 w-2 rounded-full ${autoRefresh ? "bg-emerald-500 animate-ping" : "bg-slate-300"}`} />
-                      Auto Refresh (5s)
+                      {t("auto_refresh")} (5s)
                     </span>
                   </label>
 
@@ -289,7 +291,7 @@ export default function HistoryPage() {
                     disabled={exporting}
                     className="flex items-center space-x-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition-all shadow-sm"
                   >
-                    <span>{exporting ? "⏳ Đang xuất..." : "📥 Xuất file CSV"}</span>
+                    <span>{exporting ? `⏳ ${t("exporting_csv")}` : `📥 ${t("export_csv_btn")}`}</span>
                   </button>
                 </div>
               </div>
@@ -301,12 +303,12 @@ export default function HistoryPage() {
                 <table className="w-full text-left text-sm text-slate-700">
                   <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-500 sticky top-0">
                     <tr>
-                      <th className="px-5 py-3.5">Thời Gian</th>
-                      <th className="px-5 py-3.5">Khách Hàng</th>
-                      <th className="px-5 py-3.5">Loại Khách</th>
-                      <th className="px-5 py-3.5">Camera / Nguồn</th>
-                      <th className="px-5 py-3.5">Track ID</th>
-                      <th className="px-5 py-3.5 text-right">Thao Tác</th>
+                      <th className="px-5 py-3.5">{t("col_timestamp")}</th>
+                      <th className="px-5 py-3.5">{t("col_customer")}</th>
+                      <th className="px-5 py-3.5">{t("col_type")}</th>
+                      <th className="px-5 py-3.5">{t("col_source")}</th>
+                      <th className="px-5 py-3.5">{t("col_track_id")}</th>
+                      <th className="px-5 py-3.5 text-right">{t("col_actions")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -325,22 +327,23 @@ export default function HistoryPage() {
                       <tr>
                         <td colSpan={6} className="py-12 text-center text-slate-400">
                           <p className="text-3xl mb-2">🔍</p>
-                          <p className="font-semibold text-slate-600">Không tìm thấy nhật ký nhận diện nào</p>
-                          <p className="text-xs text-slate-400 mt-1">Thử điều chỉnh lại từ khóa hoặc khoảng thời gian lọc</p>
+                          <p className="font-semibold text-slate-600">{t("no_logs_found")}</p>
+                          <p className="text-xs text-slate-400 mt-1">{t("adjust_filters_hint")}</p>
                         </td>
                       </tr>
                     ) : (
                       logs.map((log) => {
                         const isGuest = log.customer_type === "guest" || log.customer_type === "temporary" || !log.customer_type;
+                        const dateLocale = lang === "vi" ? "vi-VN" : "en-US";
                         return (
                           <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
                             {/* Timestamp */}
                             <td className="px-5 py-3.5 whitespace-nowrap">
                               <span className="font-medium text-slate-900">
-                                {new Date(log.timestamp).toLocaleTimeString("vi-VN")}
+                                {new Date(log.timestamp).toLocaleTimeString(dateLocale)}
                               </span>
                               <span className="block text-xs text-slate-400">
-                                {new Date(log.timestamp).toLocaleDateString("vi-VN")}
+                                {new Date(log.timestamp).toLocaleDateString(dateLocale)}
                               </span>
                             </td>
 
@@ -359,7 +362,7 @@ export default function HistoryPage() {
                                     {log.customer_name}
                                   </p>
                                   <p className="text-xs text-slate-400">
-                                    {log.customer_phone || log.customer_id || "Chưa cập nhật"}
+                                    {log.customer_phone || log.customer_id || t("unspecified")}
                                   </p>
                                 </div>
                               </div>
@@ -369,11 +372,11 @@ export default function HistoryPage() {
                             <td className="px-5 py-3.5 whitespace-nowrap">
                               {isGuest ? (
                                 <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 border border-amber-200/60">
-                                  👤 Khách mới (Guest)
+                                  👤 {t("guest_metric")}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200/60">
-                                  👑 {log.loyalty_tier || "Khách VIP"}
+                                  👑 {log.loyalty_tier || t("vip")}
                                 </span>
                               )}
                             </td>
@@ -397,7 +400,7 @@ export default function HistoryPage() {
                                 onClick={() => setSelectedLog(log)}
                                 className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 hover:border-slate-300 transition-all shadow-2xs"
                               >
-                                Chi tiết
+                                {t("details_btn")}
                               </button>
                             </td>
                           </tr>
@@ -411,7 +414,7 @@ export default function HistoryPage() {
               {/* --- 4. PAGINATION FOOTER --- */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-5 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-600">
                 <div className="flex items-center space-x-2">
-                  <span>Hiển thị</span>
+                  <span>{t("showing")}</span>
                   <select
                     value={limit}
                     onChange={(e) => {
@@ -425,7 +428,7 @@ export default function HistoryPage() {
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                   </select>
-                  <span>dòng / trang. Tổng số: <strong>{totalCount.toLocaleString()}</strong> bản ghi.</span>
+                  <span>{t("rows_per_page")} <strong>{totalCount.toLocaleString()}</strong> {t("records")}</span>
                 </div>
 
                 <div className="flex items-center space-x-2">
@@ -434,17 +437,17 @@ export default function HistoryPage() {
                     disabled={page <= 1 || loading}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 transition-all"
                   >
-                    ← Trang trước
+                    {t("prev_page")}
                   </button>
                   <span className="font-semibold px-1">
-                    Trang {page} / {totalPages}
+                    {t("page")} {page} / {totalPages}
                   </span>
                   <button
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages || loading}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 transition-all"
                   >
-                    Trang sau →
+                    {t("next_page")}
                   </button>
                 </div>
               </div>
@@ -459,11 +462,12 @@ export default function HistoryPage() {
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl space-y-4 border border-slate-100">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <span>📋</span> Chi Tiết Sự Kiện Nhận Diện
+                <span>📋</span> {t("log_detail_title")}
               </h3>
               <button
                 onClick={() => setSelectedLog(null)}
                 className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                title={t("close")}
               >
                 ✕
               </button>
@@ -471,34 +475,34 @@ export default function HistoryPage() {
 
             <div className="space-y-3 text-xs text-slate-700">
               <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-400">Mã Log (ID):</span>
+                <span className="text-slate-400">{t("log_id")}</span>
                 <span className="font-mono font-medium">{selectedLog.id}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-400">Thời gian nhận diện:</span>
+                <span className="text-slate-400">{t("recognition_time")}</span>
                 <span className="font-semibold text-slate-900">
-                  {new Date(selectedLog.timestamp).toLocaleString("vi-VN")}
+                  {new Date(selectedLog.timestamp).toLocaleString(lang === "vi" ? "vi-VN" : "en-US")}
                 </span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-400">Mã Khách hàng (Customer ID):</span>
+                <span className="text-slate-400">{t("customer_id_label")}</span>
                 <span className="font-mono font-semibold text-blue-600">{selectedLog.customer_id}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-400">Tên Khách hàng:</span>
+                <span className="text-slate-400">{t("customer_name_label")}</span>
                 <span className="font-bold text-slate-900">{selectedLog.customer_name}</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-400">Camera / Nguồn:</span>
+                <span className="text-slate-400">{t("camera_source_label")}</span>
                 <span>{selectedLog.camera_name} ({selectedLog.camera_id})</span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-50">
-                <span className="text-slate-400">Track ID (Theo vết):</span>
+                <span className="text-slate-400">{t("track_id_label")}</span>
                 <span className="font-mono">#{selectedLog.track_id ?? "N/A"}</span>
               </div>
               {selectedLog.bbox && (
                 <div className="py-1.5 border-b border-slate-50">
-                  <span className="text-slate-400 block mb-1">Toạ độ Bounding Box (Khuôn mặt):</span>
+                  <span className="text-slate-400 block mb-1">{t("bbox_coords_label")}</span>
                   <code className="block rounded bg-slate-100 p-2 font-mono text-[11px] text-slate-800">
                     {typeof selectedLog.bbox === "string" ? selectedLog.bbox : JSON.stringify(selectedLog.bbox)}
                   </code>
@@ -512,14 +516,14 @@ export default function HistoryPage() {
                   href={`/customers/${selectedLog.customer_id}`}
                   className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors shadow-sm"
                 >
-                  Xem Hồ Sơ Khách Hàng →
+                  {t("view_customer_profile_btn")}
                 </a>
               )}
               <button
                 onClick={() => setSelectedLog(null)}
                 className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
               >
-                Đóng
+                {t("close")}
               </button>
             </div>
           </div>

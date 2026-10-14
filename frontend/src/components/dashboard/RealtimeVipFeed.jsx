@@ -127,7 +127,7 @@ export default function RealtimeVipFeed({ liveVipList = [], onSelectCustomer = n
                   <Clock className="h-3 w-3" />
                   <span className="font-mono text-[11px]">{guest.time}</span>
                   <span className="text-[10px] text-slate-300 dark:text-slate-600">•</span>
-                  <span className="text-[11px]">{guest.visits} visits</span>
+                  <span className="text-[11px]">{guest.visits} {t("visits")}</span>
                 </div>
               </div>
             </div>

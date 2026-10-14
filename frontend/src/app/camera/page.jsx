@@ -13,9 +13,11 @@ import {
   deleteCamera,
   disconnectCamera,
 } from "../../services/api";
+import { useApp } from "../../context/AppContext";
 
 /* ── Session badge (top-left overlay) ───────────────────────────────────── */
 function CameraBadge({ camera }) {
+  const { t } = useApp();
   const isActive = camera.active;
   return (
     <div className="min-w-0 text-white">
@@ -27,12 +29,12 @@ function CameraBadge({ camera }) {
       {isActive ? (
         <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-300">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          LIVE
+          {t("live").toUpperCase()}
         </span>
       ) : (
         <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-semibold text-slate-300">
           <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-          Idle
+          {t("idle")}
         </span>
       )}
     </div>
@@ -41,6 +43,7 @@ function CameraBadge({ camera }) {
 
 /* ── Camera tile ────────────────────────────────────────────────────────── */
 function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect, canManage }) {
+  const { t } = useApp();
   const [showSettings, setShowSettings] = useState(false);
   const settingsRef = useRef(null);
 
@@ -63,7 +66,8 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect
           type="button"
           onClick={onExpand}
           className="pointer-events-auto rounded-md border border-white/20 bg-white/15 p-1 text-white/80 backdrop-blur hover:bg-white/25 hover:text-white"
-          aria-label={`Phóng to ${camera.camera_id}`}
+          aria-label={`${t("maximize")} ${camera.camera_id}`}
+          title={`${t("maximize")} ${camera.camera_id}`}
         >
           <Maximize2 className="h-3.5 w-3.5" />
         </button>
@@ -72,7 +76,7 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect
       {/* Face count badge */}
       {camera.face_count > 0 && (
         <div className="absolute bottom-2 right-2 z-10 flex items-center gap-1 rounded-full bg-blue-600/90 px-2 py-0.5 text-[10px] font-semibold text-white shadow backdrop-blur">
-          {camera.face_count} khuôn mặt
+          {camera.face_count} {t("faces")}
         </div>
       )}
 
@@ -83,7 +87,7 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-900/60">
             <WifiOff className="h-5 w-5 text-white/40" />
             <span className="text-xs font-medium text-white/50">
-              Không có tín hiệu
+              {t("no_signal")}
             </span>
           </div>
         </div>
@@ -94,7 +98,8 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect
             type="button"
             onClick={() => setShowSettings((prev) => !prev)}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-white/20 bg-slate-950/60 text-white/80 backdrop-blur hover:bg-slate-950/80 hover:text-white"
-            aria-label="Cài đặt camera"
+            aria-label={t("camera_settings")}
+            title={t("camera_settings")}
           >
             <Settings className="h-3.5 w-3.5" />
           </button>
@@ -108,7 +113,7 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect
                   className="px-3 py-2 text-left text-[11px] font-medium text-amber-300 hover:bg-slate-700 hover:text-amber-200 flex items-center gap-1.5"
                 >
                   <Unplug className="h-3.5 w-3.5" />
-                  Ngắt phiên phát
+                  {t("disconnect_stream")}
                 </button>
               )}
               <button
@@ -116,21 +121,21 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect
                 onClick={() => { setShowSettings(false); onRename(); }}
                 className="px-3 py-2 text-left text-[11px] font-medium text-white hover:bg-slate-700 border-t border-slate-700/50"
               >
-                Đổi tên
+                {t("rename")}
               </button>
               <button
                 type="button"
                 onClick={() => { setShowSettings(false); onPair(); }}
                 className="px-3 py-2 text-left text-[11px] font-medium text-white hover:bg-slate-700 border-t border-slate-700/50"
               >
-                Mã ghép nối
+                {t("pairing_code")}
               </button>
               <button
                 type="button"
                 onClick={() => { setShowSettings(false); onDelete(); }}
                 className="px-3 py-2 text-left text-[11px] font-medium text-red-400 hover:bg-slate-700 hover:text-red-300 border-t border-slate-700/50"
               >
-                Xóa camera
+                {t("delete_camera")}
               </button>
             </div>
           )}
@@ -142,6 +147,7 @@ function CameraTile({ camera, onExpand, onPair, onRename, onDelete, onDisconnect
 
 /* ── Expanded modal ─────────────────────────────────────────────────────── */
 function ExpandedModal({ camera, onClose, onDisconnect, canManage }) {
+  const { t } = useApp();
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === "Escape") onClose();
@@ -170,11 +176,11 @@ function ExpandedModal({ camera, onClose, onDisconnect, canManage }) {
                   : "bg-slate-100 text-slate-500"
               }`}
             >
-              {camera.active ? "Live" : "Idle"}
+              {camera.active ? t("live") : t("idle")}
             </span>
             {camera.face_count > 0 && (
               <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-600">
-                {camera.face_count} khuôn mặt
+                {camera.face_count} {t("faces")}
               </span>
             )}
           </div>
@@ -186,14 +192,15 @@ function ExpandedModal({ camera, onClose, onDisconnect, canManage }) {
                 className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition"
               >
                 <Unplug className="h-3.5 w-3.5" />
-                Ngắt phiên phát
+                {t("disconnect_stream")}
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
               className="shrink-0 rounded-md border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-              aria-label="Đóng phóng to"
+              aria-label={t("close")}
+              title={t("close")}
             >
               <X className="h-4 w-4" />
             </button>
@@ -206,7 +213,7 @@ function ExpandedModal({ camera, onClose, onDisconnect, canManage }) {
           ) : (
             <div className="flex h-full items-center justify-center">
               <span className="text-base font-medium text-white/60">
-                Không có tín hiệu
+                {t("no_signal")}
               </span>
             </div>
           )}
@@ -218,6 +225,7 @@ function ExpandedModal({ camera, onClose, onDisconnect, canManage }) {
 
 /* ── Fullscreen Live Modal ──────────────────────────────────────────────── */
 function FullscreenLiveModal({ cameras, onClose }) {
+  const { t } = useApp();
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === "Escape") onClose();
@@ -243,14 +251,15 @@ function FullscreenLiveModal({ cameras, onClose }) {
         <div className="flex items-center gap-2">
           <div className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
           <span className="text-sm font-semibold text-white shadow-black drop-shadow-md">
-            Live View ({activeCameras.length})
+            {t("live_view")} ({activeCameras.length})
           </span>
         </div>
         <button
           type="button"
           onClick={onClose}
           className="pointer-events-auto rounded-full bg-black/50 p-2 text-white/80 hover:bg-white/20 hover:text-white backdrop-blur transition"
-          aria-label="Thoát toàn màn hình"
+          aria-label={t("exit_fullscreen")}
+          title={t("exit_fullscreen")}
         >
           <X className="h-5 w-5" />
         </button>
@@ -259,7 +268,7 @@ function FullscreenLiveModal({ cameras, onClose }) {
       <div className={`flex-1 grid gap-1 p-1 ${gridCols}`}>
         {activeCameras.length === 0 ? (
           <div className="col-span-full flex h-full items-center justify-center text-white/50 font-medium">
-            Không có camera nào đang Live
+            {t("no_cameras_live")}
           </div>
         ) : (
           activeCameras.map((camera) => (
@@ -280,6 +289,7 @@ function FullscreenLiveModal({ cameras, onClose }) {
 
 /* ── Empty state ────────────────────────────────────────────────────────── */
 function EmptyState() {
+  const { t } = useApp();
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8">
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
@@ -287,11 +297,10 @@ function EmptyState() {
       </div>
       <div className="text-center">
         <p className="text-sm font-semibold text-slate-700">
-          Chưa có thiết bị nào kết nối
+          {t("no_devices_connected")}
         </p>
         <p className="mt-1 text-xs text-slate-400">
-          Khi khách truy cập trang chủ và bật camera, thiết bị sẽ tự động xuất
-          hiện ở đây.
+          {t("devices_appear_desc")}
         </p>
       </div>
     </div>
@@ -301,6 +310,7 @@ function EmptyState() {
 /* ── Main page ──────────────────────────────────────────────────────────── */
 export default function CameraPage() {
   const router = useRouter();
+  const { t } = useApp();
   const [filter, setFilter] = useState("all");
   const [role, setRole] = useState(null);
   const [cameras, setCameras] = useState([]);
@@ -348,18 +358,18 @@ export default function CameraPage() {
 
   const filters = useMemo(
     () => [
-      { key: "all", label: "Tất cả", count: counts.all },
-      { key: "active", label: "Đang live", count: counts.active },
-      { key: "idle", label: "Idle", count: counts.idle },
+      { key: "all", label: t("all_filter"), count: counts.all },
+      { key: "active", label: t("live"), count: counts.active },
+      { key: "idle", label: t("idle"), count: counts.idle },
     ],
-    [counts],
+    [counts, t],
   );
 
   // Loading state
   if (role === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <p className="font-medium text-slate-500">Đang tải...</p>
+        <p className="font-medium text-slate-500">{t("loading_devices")}</p>
       </div>
     );
   }
@@ -379,16 +389,16 @@ export default function CameraPage() {
     try {
       const result = await createDeviceEnrollment(camera.camera_id);
       alert(
-        `Mã ghép nối cho ${camera.display_name || camera.camera_id}: ${result.code}\nMã hết hạn sau ${Math.round(result.expires_in / 60)} phút.`,
+        `${t("pairing_code_alert")} ${camera.display_name || camera.camera_id}: ${result.code}\n${t("expires_in")} ${Math.round(result.expires_in / 60)} ${t("minutes")}.`,
       );
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Không thể tạo mã ghép nối");
+      alert(error instanceof Error ? error.message : t("cannot_create_pairing"));
     }
   };
 
   const handleRenameCamera = async (camera) => {
     const displayName = window.prompt(
-      "Nhập tên hiển thị mới cho camera:",
+      t("prompt_new_cam_name"),
       camera.display_name || "",
     );
     if (displayName === null || !displayName.trim()) return;
@@ -397,12 +407,12 @@ export default function CameraPage() {
       await renameCamera(camera.camera_id, displayName.trim());
       await loadCameras();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Không thể đổi tên camera");
+      alert(error instanceof Error ? error.message : t("cannot_rename_camera"));
     }
   };
 
   const handleDeleteCamera = async (camera) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa camera ${camera.computedName}? Thao tác này không thể hoàn tác.`)) {
+    if (!window.confirm(`${t("confirm_delete_camera")} ${camera.computedName}? ${t("action_cannot_undo")}`)) {
       return;
     }
 
@@ -410,14 +420,14 @@ export default function CameraPage() {
       await deleteCamera(camera.camera_id);
       await loadCameras();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Không thể xóa camera");
+      alert(error instanceof Error ? error.message : t("cannot_delete_camera"));
     }
   };
 
   const handleDisconnectCamera = async (camera) => {
     if (
       !window.confirm(
-        `Bạn có chắc chắn muốn ngắt phiên kết nối trực tiếp của ${camera.computedName}? Thiết bị đang phát sẽ bị ngắt kết nối ngay lập tức.`
+        `${t("confirm_disconnect_camera")} ${camera.computedName}? ${t("disconnect_stream_desc")}`
       )
     ) {
       return;
@@ -425,10 +435,10 @@ export default function CameraPage() {
 
     try {
       const result = await disconnectCamera(camera.camera_id);
-      alert(result.message || "Đã ngắt phiên phát thành công");
+      alert(result.message || t("disconnect_success"));
       await loadCameras();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Không thể ngắt phiên phát");
+      alert(error instanceof Error ? error.message : t("cannot_disconnect_stream"));
     }
   };
 
@@ -449,8 +459,8 @@ export default function CameraPage() {
 
         <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 bg-slate-50">
           <PageHeader
-            title="Quản lý Camera"
-            subtitle="Theo dõi tất cả thiết bị đang kết nối vào hệ thống."
+            title={t("camera_title")}
+            subtitle={t("camera_subtitle")}
           />
 
           {/* Filter bar */}
@@ -475,14 +485,14 @@ export default function CameraPage() {
               <button
                 onClick={() => setIsFullscreenAll(true)}
                 className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
-                title="Xem tất cả Camera Live"
+                title={t("view_all_live")}
               >
                 <MonitorPlay className="h-4 w-4" />
               </button>
               <button
                 onClick={loadCameras}
                 className="rounded-md border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50"
-                title="Làm mới"
+                title={t("refresh")}
               >
                 <RefreshCw className="h-4 w-4" />
               </button>
@@ -493,7 +503,7 @@ export default function CameraPage() {
           {isLoading ? (
             <div className="flex flex-1 items-center justify-center">
               <p className="text-sm text-slate-400">
-                Đang tải danh sách thiết bị…
+                {t("loading_devices")}
               </p>
             </div>
           ) : shown.length === 0 ? (

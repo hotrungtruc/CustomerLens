@@ -8,7 +8,6 @@ import {
   Users,
   History,
   Shield,
-  BarChart2,
   Settings,
   X,
   Menu,
@@ -21,7 +20,6 @@ const ITEMS = [
   { href: "/customers", transKey: "nav_customers", defaultLabel: "Customers", Icon: Users },
   { href: "/history", transKey: "nav_history", defaultLabel: "History", Icon: History },
   { href: "/authorization", transKey: "nav_authorization", defaultLabel: "Authorization", Icon: Shield },
-  { href: "/reports", transKey: "nav_reports", defaultLabel: "Reports", Icon: BarChart2 },
   { href: "/settings", transKey: "nav_settings", defaultLabel: "Settings", Icon: Settings },
 ];
 

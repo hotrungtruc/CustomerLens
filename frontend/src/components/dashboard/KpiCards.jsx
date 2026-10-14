@@ -5,7 +5,7 @@ import { Users, Crown, ShieldAlert, TrendingUp, AlertTriangle } from "lucide-rea
 import { useApp } from "../../context/AppContext";
 
 export default function KpiCards({ reportsData = null, vipCount = 12, footTraffic = 1245, staffVerified = 18, staffTotal = 20 }) {
-  const { t } = useApp();
+  const { t, lang } = useApp();
 
   const traffic = reportsData?.total_visits || footTraffic;
   const vips = reportsData?.vip_visits || vipCount;
@@ -57,12 +57,12 @@ export default function KpiCards({ reportsData = null, vipCount = 12, footTraffi
                 {t("vip_checked_in")}
               </p>
               <h3 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white font-display">
-                {vips} {t("guest")}s
+                {vips} {lang === "vi" ? "khách" : "guests"}
               </h3>
             </div>
           </div>
           <span className="flex h-6 items-center rounded-full bg-blue-50 px-2.5 text-[10px] font-semibold text-blue-600 dark:bg-blue-950/60 dark:text-blue-300">
-            VIP Tier
+            {t("vip")}
           </span>
         </div>
 
@@ -72,7 +72,7 @@ export default function KpiCards({ reportsData = null, vipCount = 12, footTraffi
             <span>4 {t("active_now")}</span>
           </span>
           <span className="text-[11px] text-slate-400 dark:text-slate-500">
-            Front-door HUD
+            {t("front_door_hud")}
           </span>
         </div>
       </div>
@@ -94,7 +94,7 @@ export default function KpiCards({ reportsData = null, vipCount = 12, footTraffi
             </div>
           </div>
           <span className="flex h-6 items-center rounded-full bg-amber-50 px-2.5 text-[10px] font-semibold text-amber-600 dark:bg-amber-950/60 dark:text-amber-300">
-            Shift Active
+            {t("shift_active")}
           </span>
         </div>
 
@@ -104,7 +104,7 @@ export default function KpiCards({ reportsData = null, vipCount = 12, footTraffi
             <span>2 {t("absent_late")}</span>
           </span>
           <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-            90% Shift Presence
+            90% {t("shift_presence")}
           </span>
         </div>
       </div>

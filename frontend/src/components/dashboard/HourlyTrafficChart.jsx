@@ -26,14 +26,12 @@ export default function HourlyTrafficChart({ hourlyData = null }) {
   const { t } = useApp();
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
-  const data = (hourlyData && hourlyData.length >= 8)
-    ? hourlyData.map((d, idx) => ({
-        hour: d.hour,
-        count: d.count,
-        isPeak: idx === 4 || idx === 11,
-        peakLabel: idx === 4 ? "Lunch 12 PM" : idx === 11 ? "Dinner 7 PM" : "",
-      }))
-    : DEFAULT_HOURLY;
+  const data = (hourlyData && hourlyData.length >= 8 ? hourlyData : DEFAULT_HOURLY).map((d, idx) => ({
+    hour: d.hour,
+    count: d.count,
+    isPeak: d.isPeak ?? (idx === 4 || idx === 11),
+    peakLabel: idx === 4 ? `${t("lunch")}\n12 PM` : idx === 11 ? `${t("dinner")}\n7 PM` : (d.peakLabel || ""),
+  }));
 
   // SVG Chart Geometry
   const W = 700;
@@ -79,7 +77,7 @@ export default function HourlyTrafficChart({ hourlyData = null }) {
 
         <div className="flex items-center gap-2">
           <span className="hidden sm:inline-flex items-center rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300">
-            Today • Real-time
+            {t("today_realtime")}
           </span>
           <button
             type="button"

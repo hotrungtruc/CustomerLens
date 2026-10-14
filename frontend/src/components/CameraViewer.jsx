@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCameraObserver } from "../hooks/useCameraObserver";
 import { useVideoBbox } from "../hooks/useVideoBbox";
 import { getTrackBadge, TRACK_BADGE_THEMES } from "../lib/trackBadge";
+import { useApp } from "../context/AppContext";
 
 /**
  * CameraViewer — read-only viewer for a remote camera session.
@@ -14,6 +15,7 @@ import { getTrackBadge, TRACK_BADGE_THEMES } from "../lib/trackBadge";
  */
 export default function CameraViewer({ cameraId, compact = false }) {
   const { customers, frameSize, status, videoStream } = useCameraObserver(cameraId);
+  const { t } = useApp();
   const videoRef = useRef(null);
 
   // Poll for snapshot frames - REMOVED! We now use WebRTC videoStream.
@@ -73,7 +75,7 @@ export default function CameraViewer({ cameraId, compact = false }) {
         <div className="flex h-full w-full items-center justify-center">
           <div className="flex flex-col items-center gap-2">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white/80" />
-            <span className="text-[11px] text-white/50">Đang kết nối…</span>
+            <span className="text-[11px] text-white/50">{t("connecting")}</span>
           </div>
         </div>
       )}
@@ -103,7 +105,7 @@ export default function CameraViewer({ cameraId, compact = false }) {
       {status !== "live" && videoStream && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/50 backdrop-blur-sm">
           <span className="text-xs font-medium text-white/80">
-            {status === "connecting" ? "Đang kết nối…" : "Mất kết nối"}
+            {status === "connecting" ? t("connecting") : t("connection_lost")}
           </span>
         </div>
       )}

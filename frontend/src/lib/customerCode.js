@@ -17,68 +17,79 @@
 export const SEGMENT_DEFINITIONS = {
   HL: {
     code: "HL",
-    title: "VIP • Loyal Member",
-    incomeTier: "H (High Income / VIP)",
-    loyaltyTier: "L (Loyal / Khách quen)",
+    title: { en: "VIP • Loyal Member", vi: "VIP • Khách Quen Thân Thiết" },
+    incomeTier: { en: "H (High Income / VIP)", vi: "H (Thu nhập cao / VIP)" },
+    loyaltyTier: { en: "L (Loyal Member)", vi: "L (Khách quen thân thiết)" },
     badgeColor: "border-amber-400 text-amber-300 bg-amber-950/40",
   },
   HC: {
     code: "HC",
-    title: "VIP • Casual Visitor",
-    incomeTier: "H (High Income / VIP)",
-    loyaltyTier: "C (Casual / Vãng lai)",
+    title: { en: "VIP • Casual Visitor", vi: "VIP • Khách Vãng Lai" },
+    incomeTier: { en: "H (High Income / VIP)", vi: "H (Thu nhập cao / VIP)" },
+    loyaltyTier: { en: "C (Casual Visitor)", vi: "C (Khách vãng lai)" },
     badgeColor: "border-purple-400 text-purple-300 bg-purple-950/40",
   },
   HN: {
     code: "HN",
-    title: "VIP • New Customer",
-    incomeTier: "H (High Income / VIP)",
-    loyaltyTier: "N (New / Khách mới)",
+    title: { en: "VIP • New Customer", vi: "VIP • Khách Mới" },
+    incomeTier: { en: "H (High Income / VIP)", vi: "H (Thu nhập cao / VIP)" },
+    loyaltyTier: { en: "N (New Customer)", vi: "N (Khách hàng mới)" },
     badgeColor: "border-rose-400 text-rose-300 bg-rose-950/40",
   },
   ML: {
     code: "ML",
-    title: "Mass • Loyal Member",
-    incomeTier: "M (Medium / Tiêu chuẩn)",
-    loyaltyTier: "L (Loyal / Khách quen)",
+    title: { en: "Mass • Loyal Member", vi: "Tiêu Chuẩn • Khách Quen" },
+    incomeTier: { en: "M (Medium / Mass)", vi: "M (Thu nhập trung bình / Tiêu chuẩn)" },
+    loyaltyTier: { en: "L (Loyal Member)", vi: "L (Khách quen thân thiết)" },
     badgeColor: "border-emerald-400 text-emerald-300 bg-emerald-950/40",
   },
   MC: {
     code: "MC",
-    title: "Mass • Casual Visitor",
-    incomeTier: "M (Medium / Tiêu chuẩn)",
-    loyaltyTier: "C (Casual / Vãng lai)",
+    title: { en: "Mass • Casual Visitor", vi: "Tiêu Chuẩn • Vãng Lai" },
+    incomeTier: { en: "M (Medium / Mass)", vi: "M (Thu nhập trung bình / Tiêu chuẩn)" },
+    loyaltyTier: { en: "C (Casual Visitor)", vi: "C (Khách vãng lai)" },
     badgeColor: "border-cyan-400 text-cyan-300 bg-cyan-950/40",
   },
   MN: {
     code: "MN",
-    title: "Mass • New Customer",
-    incomeTier: "M (Medium / Tiêu chuẩn)",
-    loyaltyTier: "N (New / Khách mới)",
+    title: { en: "Mass • New Customer", vi: "Tiêu Chuẩn • Khách Mới" },
+    incomeTier: { en: "M (Medium / Mass)", vi: "M (Thu nhập trung bình / Tiêu chuẩn)" },
+    loyaltyTier: { en: "N (New Customer)", vi: "N (Khách mới)" },
     badgeColor: "border-sky-400 text-sky-300 bg-sky-950/40",
   },
   LL: {
     code: "LL",
-    title: "Budget • Loyal",
-    incomeTier: "L (Low / Tiết kiệm)",
-    loyaltyTier: "L (Loyal / Khách quen)",
+    title: { en: "Budget • Loyal", vi: "Tiết Kiệm • Khách Quen" },
+    incomeTier: { en: "L (Budget Tier)", vi: "L (Tiết kiệm)" },
+    loyaltyTier: { en: "L (Loyal Member)", vi: "L (Khách quen thân thiết)" },
     badgeColor: "border-blue-400 text-blue-300 bg-blue-950/40",
   },
   LC: {
     code: "LC",
-    title: "Budget • Casual",
-    incomeTier: "L (Low / Tiết kiệm)",
-    loyaltyTier: "C (Casual / Vãng lai)",
+    title: { en: "Budget • Casual", vi: "Tiết Kiệm • Vãng Lai" },
+    incomeTier: { en: "L (Budget Tier)", vi: "L (Tiết kiệm)" },
+    loyaltyTier: { en: "C (Casual Visitor)", vi: "C (Khách vãng lai)" },
     badgeColor: "border-slate-400 text-slate-300 bg-slate-900/60",
   },
   LN: {
     code: "LN",
-    title: "Budget • New Guest",
-    incomeTier: "L (Low / Tiết kiệm)",
-    loyaltyTier: "N (New / Khách mới tinh)",
+    title: { en: "Budget • New Guest", vi: "Tiết Kiệm • Khách Mới" },
+    incomeTier: { en: "L (Budget Tier)", vi: "L (Tiết kiệm)" },
+    loyaltyTier: { en: "N (New Guest)", vi: "N (Khách mới tinh)" },
     badgeColor: "border-cyan-400/80 text-cyan-200 bg-cyan-950/40",
   },
 };
+
+export function getLocalizedSegment(segment, lang = "en") {
+  if (!segment) return null;
+  const isVi = lang === "vi";
+  return {
+    ...segment,
+    title: typeof segment.title === "object" ? (isVi ? segment.title.vi : segment.title.en) : segment.title,
+    incomeTier: typeof segment.incomeTier === "object" ? (isVi ? segment.incomeTier.vi : segment.incomeTier.en) : segment.incomeTier,
+    loyaltyTier: typeof segment.loyaltyTier === "object" ? (isVi ? segment.loyaltyTier.vi : segment.loyaltyTier.en) : segment.loyaltyTier,
+  };
+}
 
 /**
  * Derives the 2-letter classification code from customer profile.

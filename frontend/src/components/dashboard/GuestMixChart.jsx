@@ -5,7 +5,7 @@ import { PieChart, MoreHorizontal } from "lucide-react";
 import { useApp } from "../../context/AppContext";
 
 export default function GuestMixChart({ returningRate = 74.2, newRate = 25.8 }) {
-  const { t } = useApp();
+  const { t, lang } = useApp();
 
   const radius = 62;
   const strokeWidth = 24;
@@ -88,7 +88,7 @@ export default function GuestMixChart({ returningRate = 74.2, newRate = 25.8 }) 
               {returningPct}%
             </span>
             <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Returning
+              {t("returning")}
             </span>
           </div>
         </div>
@@ -120,7 +120,10 @@ export default function GuestMixChart({ returningRate = 74.2, newRate = 25.8 }) 
           </div>
 
           <div className="mt-1 border-t border-slate-100 dark:border-slate-800/80 pt-2 text-[11px] text-slate-400 dark:text-slate-500">
-            LTV Retention: <span className="font-semibold text-emerald-500">High (Tier A)</span>
+            {lang === "vi" ? "Tỷ lệ duy trì LTV:" : "LTV Retention:"}{" "}
+            <span className="font-semibold text-emerald-500">
+              {lang === "vi" ? "Cao (Hạng A)" : "High (Tier A)"}
+            </span>
           </div>
         </div>
       </div>

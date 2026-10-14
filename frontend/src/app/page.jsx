@@ -417,10 +417,10 @@ export default function DashboardPage() {
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-slate-800 dark:text-white">
-                        Edge AI Front-Door Camera Stream
+                        {t("edge_front_door_stream")}
                       </p>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {cameraIdentity ? `Active Node: ${cameraIdentity.camera_id}` : "Connected & Monitoring"} • MediaPipe FaceLandmarker 60 FPS
+                        {cameraIdentity ? `${t("active_node")}: ${cameraIdentity.camera_id}` : t("connected_monitoring")} • MediaPipe FaceLandmarker 60 FPS
                       </p>
                     </div>
                   </div>

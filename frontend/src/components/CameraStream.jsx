@@ -166,9 +166,9 @@ export default function CameraStream({
             <select
               value={selectedDeviceId}
               onChange={(e) => setSelectedDeviceId(e.target.value)}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none transition focus:border-indigo-300 sm:w-auto sm:min-w-[180px] lg:min-w-[220px]"
+              className="w-full rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 outline-none transition focus:border-indigo-300 sm:w-auto sm:min-w-[180px] lg:min-w-[220px]"
             >
-              <option value="">Integrated Camera</option>
+              <option value="">{t("integrated_camera") || "Integrated Camera"}</option>
               {devices.map((device, i) => (
                 <option key={device.deviceId} value={device.deviceId}>
                   {device.label || `Camera ${i + 1}`}
@@ -177,8 +177,8 @@ export default function CameraStream({
             </select>
           </div>
 
-          <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-600">
-            Live feed
+          <span className="inline-flex items-center rounded-full bg-emerald-50 dark:bg-emerald-950/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-600 dark:text-emerald-400">
+            {t("live_feed")}
           </span>
         </div>
       ) : null}
