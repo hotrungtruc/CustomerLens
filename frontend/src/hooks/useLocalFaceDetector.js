@@ -40,12 +40,15 @@ export function useLocalFaceDetector(videoRef) {
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm",
         );
 
+        const REMOTE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+        const LOCAL_MODEL_URL = "/models/face_landmarker.task";
+
         let faceLandmarker = null;
         try {
-          // Priority 1: Load local face_landmarker.task from /models/
+          // Priority 1: Load local face_landmarker.task with GPU
           faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
             baseOptions: {
-              modelAssetPath: "/models/face_landmarker.task",
+              modelAssetPath: LOCAL_MODEL_URL,
               delegate: "GPU",
             },
             runningMode: "VIDEO",
@@ -53,18 +56,34 @@ export function useLocalFaceDetector(videoRef) {
             minFaceDetectionConfidence: 0.35,
             minFacePresenceConfidence: 0.35,
           });
-        } catch (gpuErr) {
-          console.warn("GPU init failed, trying CPU fallback for FaceLandmarker:", gpuErr);
-          faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-              delegate: "CPU",
-            },
-            runningMode: "VIDEO",
-            numFaces: 5,
-            minFaceDetectionConfidence: 0.35,
-            minFacePresenceConfidence: 0.35,
-          });
+        } catch (localGpuErr) {
+          console.warn("Local GPU init failed, trying Remote CDN with GPU:", localGpuErr);
+          try {
+            // Priority 2: Remote Google Cloud CDN with GPU
+            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: REMOTE_MODEL_URL,
+                delegate: "GPU",
+              },
+              runningMode: "VIDEO",
+              numFaces: 5,
+              minFaceDetectionConfidence: 0.35,
+              minFacePresenceConfidence: 0.35,
+            });
+          } catch (remoteGpuErr) {
+            console.warn("Remote GPU failed, trying CPU fallback:", remoteGpuErr);
+            // Priority 3: CPU fallback
+            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath: REMOTE_MODEL_URL,
+                delegate: "CPU",
+              },
+              runningMode: "VIDEO",
+              numFaces: 5,
+              minFaceDetectionConfidence: 0.35,
+              minFacePresenceConfidence: 0.35,
+            });
+          }
         }
 
         if (isMounted) {

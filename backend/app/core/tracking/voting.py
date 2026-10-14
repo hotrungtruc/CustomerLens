@@ -132,8 +132,10 @@ def vote_pgvector(
             return resolved
     else:
         # Fall back to in-memory guest embeddings (not yet persisted)
+        from app.core.biometric_security import biometric_protector
+        protected_current = biometric_protector.protect_embedding(current_emb)
         voted_id, voted_sim = _best_guest_match(
-            guest_embeddings, guest_ids, current_emb, similarity_threshold
+            guest_embeddings, guest_ids, protected_current, similarity_threshold
         )
         resolved = cast_vote(track, voted_id, voted_sim)
         if resolved:

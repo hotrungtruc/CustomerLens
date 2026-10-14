@@ -121,7 +121,7 @@ def search_similar_faces(
 
     # Populate L1 Cache for hits
     for cid, _ in results:
-        vector_cache_manager.add_to_cache(cid, query_embedding)
+        vector_cache_manager.add_to_cache(cid, protected_embedding)
 
     return results
 

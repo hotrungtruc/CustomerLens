@@ -51,6 +51,7 @@ backend/models/
 edge/models/
 *.onnx
 *.task
+!frontend/public/models/*.task
 backend/data/encodings/EncodeFile.p
 
 # Temporary files
