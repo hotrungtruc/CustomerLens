@@ -62,6 +62,8 @@ stateDiagram-v2
     ML --> HL: Cumulative Spend >= 10,000,000 VND or VIP Flag (VIP Loyal)
 ```
 
+![Customer Lifecycle Personalization Matrix](assets/customer_lifecycle_matrix.png)
+
 - **First Letter: Purchasing Power & Lifetime Value Tier**
   - `H` (High Tier): High-spending patrons ($\ge 10,000,000$ VND cumulative spend or designated VIP).
   - `M` (Medium Tier): Mass loyal customers with steady ticket size ($\ge 2,000,000$ VND).
@@ -78,52 +80,11 @@ stateDiagram-v2
 - **Anti-False Registration Buffer Gate:** Patrons are only registered as new unique entities after maintaining continuous track quality across 6 consecutive verified frames, preventing stray passersby or false positive detections from polluting customer databases.
 
 ---
-
 ## 3. Distributed System Architecture
 
 CustomerLens is engineered as a distributed, event-driven streaming platform designed for horizontal scaling across multi-camera installations.
 
-```mermaid
-flowchart TD
-    subgraph Client ["Client Tier (Next.js 14)"]
-        Cam["RTSP / IP Camera Stream"]
-        EdgeAI["Edge Filtering & Frame Sampler"]
-        UI["Real-time Canvas & Analytics Dashboard"]
-    end
-
-    subgraph Gateway ["API Gateway Tier (FastAPI)"]
-        WS["WebSocket Ingestion Engine (/ws/stream)"]
-        Auth["RS256 JWT Authentication & Redis Revocation"]
-        REST["Administrative REST APIs"]
-    end
-
-    subgraph Messaging ["Event Fabric"]
-        Broker["Redpanda / Kafka (Topic: camera_frames)"]
-        PubSub["Redis Pub/Sub (Channel: worker_results)"]
-    end
-
-    subgraph Workers ["Stateless Inference Cluster"]
-        W1["AI Worker 1 (SCRFD + EdgeFace INT8)"]
-        WN["AI Worker N (Horizontal Auto-Scaling)"]
-    end
-
-    subgraph Storage ["Storage & Vector Tier"]
-        DB[("Supabase PostgreSQL + pgvector (HNSW Index)")]
-        L1[("Redis L1 Vector & Session Cache")]
-    end
-
-    Cam --> EdgeAI
-    EdgeAI -->|WebSocket Binary Frames| WS
-    WS <--> Auth
-    WS -->|Ingest Raw Frame| Broker
-    Broker -->|Batch Pull| W1 & WN
-    W1 & WN -->|Detect, Align, Embed 512D| W1 & WN
-    W1 & WN -->|Publish Inferences| PubSub
-    PubSub -->|Stream Results| WS
-    WS -->|Vector Match RPC| L1
-    L1 -- Cache Miss --> DB
-    WS -->|Push Detection Box & Profile| UI
-```
+![CustomerLens Processing Workflow & Distributed Architecture](assets/workflow.png)
 
 ### Architectural Highlights
 - **Edge-Cloud Hybrid Ingestion:** Client browsers and edge gateways perform localized Laplacian sharpness filtering and bounding box cropping before WebSocket transmission, decreasing raw video network bandwidth consumption by over 80%.
@@ -140,58 +101,54 @@ flowchart TD
                          │                                                    │
                          ▼                                                    ▼
                  Kalman Tracking                                 Quality Attention Pooling
-                 (Corner Velocity)                                   (Softmax tau=0.25)
+                 (Corner Velocity)                               (Sharpness & Pose Weighted)
                          │                                                    │
                          └──────────────────────┬─────────────────────────────┘
                                                 ▼
                                    Cancelable Biometrics
-                               (Orthogonal Projection Qx)
+                              (Irreversible Orthogonal Matrix)
                                                 │
                                                 ▼
-                                    Supabase HNSW Search
-                                   (K=3 Multi-Template)
+                                     Supabase HNSW Search
+                                    (K=3 Multi-Template)
 ```
 
 ### 4.1 SCRFD Face Detection & 5-Point Affine Alignment
-Face detection is handled by an INT8-quantized **SCRFD 500M** model capable of localizing 5 facial landmarks (pupils, nose tip, mouth corners) across extreme pitch/yaw angles ($\pm 45^\circ$) down to a minimum bounding box of $16 \times 16$ pixels. Cropped faces are geometrically normalized into the standard ArcFace canonical coordinate space ($112 \times 112 \times 3$) using similarity transformation.
+Face detection is handled by an INT8-quantized **SCRFD 500M** model capable of localizing 5 facial landmarks (pupils, nose tip, mouth corners) across extreme pitch/yaw angles ($\pm 45^\circ$) down to a minimum bounding box of $16 \times 16$ pixels. Cropped faces are geometrically normalized into canonical ArcFace coordinate space ($112 \times 112 \times 3$) using similarity transformations, ensuring consistent orientation for subsequent feature extraction.
 
-### 4.2 Cancelable Biometrics: Distance-Preserving Orthogonal Projection
-To eliminate the legal and ethical liability of centralized raw biometric storage, CustomerLens applies an orthogonal random projection transformation to each normalized 512-dimensional embedding vector $\vec{x}$ ($\|\vec{x}\|_2 = 1$) prior to database persistence:
-$$\vec{x}' = Q\vec{x}, \quad Q \in \mathbb{R}^{512 \times 512}, \quad Q^T Q = I$$
-Because $Q$ is strictly orthogonal, pairwise inner products and cosine similarities are mathematically conserved:
-$$\langle Q\vec{x}_1, Q\vec{x}_2 \rangle = \vec{x}_1^T Q^T Q \vec{x}_2 = \vec{x}_1^T I \vec{x}_2 = \langle \vec{x}_1, \vec{x}_2 \rangle$$
-This irreversible transformation provides a mathematical defense against facial reconstruction attacks if the database is ever compromised, while preserving biometric matching accuracy.
+### 4.2 EdgeFace Embeddings & Cancelable Biometric Privacy
+Normalized face crops are mapped into 512-dimensional unit feature embeddings using an INT8-quantized **EdgeFace** backbone. 
 
-### 4.3 Quality-Aware Softmax Attention Pooling
-Instead of naively averaging consecutive tracklet frames, CustomerLens evaluates a composite quality metric for each frame observation $i$:
-$$Q_i = 0.35 \cdot Q_{\text{pose}} + 0.35 \cdot Q_{\text{sharpness}} + 0.15 \cdot Q_{\text{resolution}} + 0.15 \cdot Q_{\text{confidence}}$$
-Trajectory frames are aggregated into a single representative vector using Softmax temperature weighting ($\tau = 0.25$):
-$$\vec{v}_{\text{pooled}} = \sum_{i=1}^{M} \frac{\exp(Q_i / \tau)}{\sum_{j=1}^{M} \exp(Q_j / \tau)} \vec{e}_i, \quad \vec{v}_{\text{final}} = \frac{\vec{v}_{\text{pooled}}}{\|\vec{v}_{\text{pooled}}\|_2}$$
-Motion-blurred frames and off-angle profiles receive near-zero weights, ensuring the gallery vector represents the highest-clarity observation.
+To eliminate legal liability and strictly adhere to privacy frameworks (GDPR Article 9 and CCPA), CustomerLens implements distance-preserving **Cancelable Biometrics**:
+- Raw embeddings are irreversibly transformed via an orthogonal projection key matrix before database persistence.
+- Because the transformation is strictly orthogonal, pairwise cosine similarity scores and vector retrieval distances are mathematically identical.
+- In the event of a database breach, original face representations cannot be reconstructed from stored vectors, eliminating identity theft risks while preserving search accuracy.
 
-### 4.4 Multi-Template Gallery & Distance-Aware Bayesian Dynamic Thresholds
-- **Multi-Template Gallery ($K=3$):** Each customer profile maintains up to three representative exemplar vectors (frontal, angled, varying expressions). PostgreSQL RPC functions execute window-partitioned searches, returning the maximum similarity across exemplars:
-  $$\text{Sim}(P, C_i) = \max_{k \in \{1..K\}} \langle \vec{v}_{\text{probe}}, \vec{v}_{C_i, k} \rangle$$
-- **Distance-Aware Bayesian Thresholding:** Decision thresholds adapt dynamically to estimated camera distance based on detected face width ($W_{\text{box}}$):
-  $$\theta(W_{\text{box}}) = \begin{cases} 
-  0.50 & \text{when } W_{\text{box}} \ge 75\text{px (Close range } \le 2\text{m)} \\
-  0.46 & \text{when } 45\text{px} \le W_{\text{box}} < 75\text{px (Mid range } 2\text{m} - 4\text{m)} \\
-  0.35 & \text{when } W_{\text{box}} < 45\text{px (Far range } > 4\text{m)}
-  \end{cases}$$
+### 4.3 Quality-Aware Dynamic Pooling & Multi-Template Matching
+Rather than naively averaging noisy video frames, CustomerLens aggregates multi-frame trajectories using an intelligent composite quality weighting mechanism:
+- **Quality-Aware Attention:** Each frame is scored based on facial pose centrality, image sharpness (Laplacian variance), and resolution. Motion-blurred frames or extreme profile angles are automatically downweighted, ensuring the pooled gallery vector reflects only high-clarity observations.
+- **Multi-Template Gallery ($K=3$):** Each customer profile maintains up to three diverse exemplar templates (frontal, subtle angle, varying expression) captured across distinct visits. Database queries return the maximum similarity across these exemplars, capturing natural variations in facial appearance.
+- **Distance-Adaptive Dynamic Thresholding:** Operating decision thresholds automatically calibrate to the subject's distance from the camera:
+  - **Close Range ($\le 2\text{m}$, Face width $\ge 75\text{px}$):** Strict threshold ($\theta = 0.50$) for maximum security at entry turnstiles.
+  - **Medium Range ($2\text{m} - 4\text{m}$, Face width $45\text{px} - 75\text{px}$):** Calibrated threshold ($\theta = 0.44 - 0.46$) providing over 83% true recognition with 0.00% false accept rate.
+  - **Far Range ($> 4\text{m}$):** Permissive threshold ($\theta = 0.35$) buffering candidates until the patron approaches closer.
 
 ---
 
 ## 5. Empirical Production Benchmark Results
 
-The entire system was evaluated on the complete **YouTube Faces (YTF)** academic benchmark dataset in accordance with NIST FRVT, IJB-C, and Google FaceNet evaluation protocols. 
+The entire system was evaluated on real-world video sequences from the academic **YouTube Faces (YTF)** benchmark, specifically utilizing the curated Kaggle dataset release:
+- **Dataset Source:** [YouTube Faces with Facial Keypoints on Kaggle](https://www.kaggle.com/datasets/selfishgene/youtube-faces-with-facial-keypoints?select=youtube_faces_with_keypoints_full_1) (subset: `youtube_faces_with_keypoints_full_1`).
+- **Scale:** **544 video clips · 207 identities · 61,487 frames** (206 identities have $\ge 2$ independent clips recorded across distinct sessions for cross-clip verification).
+- **Evaluation Methodology:** Conducted strictly in accordance with NIST FRVT, IJB-C, and Google FaceNet evaluation protocols. For complete reproduction steps and script commands, refer to the [Model Evaluation & Benchmark Reproduction Guide](docs/model_evaluation_guide.md).
 
-**Dataset Scale:** **544 video clips · 207 identities · 61,487 frames** (206 identities have $\ge 2$ independent clips for cross-clip verification).
-
-All clips were evaluated across four real-world surveillance degradation conditions simulating physical camera distance:
+All video clips were evaluated across four real-world surveillance degradation conditions simulating physical camera distance:
 - `close_1.5m`: Native resolution, standard frontal entry camera.
 - `medium_3.5m`: Optical downscale 0.60x, Gaussian blur $\sigma = 0.6$.
 - `far_6.0m`: Optical downscale 0.38x, motion blur $\sigma = 1.2$, JPEG quality 55.
 - `veryFar_9m`: Extreme optical downscale 0.22x, optical distortion $\sigma = 1.8$, JPEG quality 35.
+
+![Empirical Benchmark Accuracy Curves across Degradation Conditions](assets/benchmark_accuracy.png)
 
 ### Track 1: Video-Based 1:1 Verification (NIST FRVT Verification Protocol)
 Evaluating all genuine pairs (same identity, different video clips) against balanced impostor pairs (different identities):
@@ -235,6 +192,8 @@ Simulating an authentic operational store scenario: the gallery contains only **
 
 ### Track 4: Vector Search Latency & Throughput Stress Test (Production SLO)
 Executing **500 consecutive 512-dimensional vector queries** against the live Supabase PostgreSQL HNSW index under concurrent load:
+
+![Production Vector Search Latency Distribution](assets/benchmark_latency.png)
 
 | Infrastructure Metric | Observed Result | Production Target SLO | Evaluation Status |
 |:---|:---:|:---:|:---:|
@@ -351,6 +310,7 @@ In-depth technical architecture and engineering specifications are organized wit
 | [Database Schema](docs/database_schema.md) | PostgreSQL schema definitions, HNSW vector indexing, and RPC procedures. |
 | [Frontend Architecture](docs/frontend_architecture.md) | Next.js 14 App Router, Canvas rendering loop, and WebSocket lifecycle management. |
 | [API Reference](docs/api_reference.md) | Comprehensive specification of REST endpoints and WebSocket subprotocols. |
+| [Model Evaluation Guide](docs/model_evaluation_guide.md) | Step-by-step reproduction guide and statistical protocols for NIST FRVT and IJB-C evaluation. |
 | [Production Benchmark Report](assets/YTF/results/production_eval_report.md) | Full tabular results and statistical analysis across all 544 YTF video sequences. |
 | [Maintenance Guide](docs/maintenance_guide.md) | Operational playbooks, systemd service management, and backup procedures. |
 
