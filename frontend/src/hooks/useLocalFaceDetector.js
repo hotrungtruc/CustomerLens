@@ -154,6 +154,7 @@ export function useLocalFaceDetector(videoRef) {
                 if (leftEye && rightEye && nose) {
                   const distRight = Math.sqrt(Math.pow((rightEye.x - nose.x) * sw, 2) + Math.pow((rightEye.y - nose.y) * sh, 2));
                   const distLeft = Math.sqrt(Math.pow((leftEye.x - nose.x) * sw, 2) + Math.pow((leftEye.y - nose.y) * sh, 2));
+                  const eyeDist = Math.sqrt(Math.pow((rightEye.x - leftEye.x) * sw, 2) + Math.pow((rightEye.y - leftEye.y) * sh, 2));
                   const ratio = distRight > 0 ? distLeft / distRight : 999;
 
                   if (ratio > 1.85 || ratio < 0.54) {
