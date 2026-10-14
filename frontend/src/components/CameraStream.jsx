@@ -4,6 +4,7 @@ import { useLocalFaceDetector } from "../hooks/useLocalFaceDetector";
 import { useVideoBbox } from "../hooks/useVideoBbox";
 import HudCard from "./HudCard";
 import { formatCustomerDisplayId, getCustomerDisplayName } from "../lib/customerCode";
+import { useApp } from "../context/AppContext";
 
 
 
@@ -43,6 +44,7 @@ export default function CameraStream({
     faceImagesRef,
   } = useCamera(cameraId);
 
+  const { t, lang } = useApp();
   const mapBbox = useVideoBbox(videoRef, frameSize.width, frameSize.height);
   const localFaces = useLocalFaceDetector(videoRef);
   const [hoveredTrackId, setHoveredTrackId] = useState(null);
@@ -88,7 +90,7 @@ export default function CameraStream({
 
       // Adaptive throttle: Send 4 FPS (250ms) while identifying; relax to 1.5s once recognized
       const backendMatch = customers.find(c => c.local_track_id === face.local_track_id);
-      const isConfirmed = backendMatch && backendMatch.id && backendMatch.customer_status !== "extracting" && backendMatch.name !== "Đang nhận diện...";
+      const isConfirmed = backendMatch && backendMatch.id && backendMatch.customer_status !== "extracting" && backendMatch.name !== "Đang nhận diện..." && backendMatch.name !== "Identifying...";
       const sendInterval = isConfirmed ? (edgeSettings?.edge_send_interval_ms || 1500) : 250;
 
       const lastSend = lastSendTimeRef.current[face.local_track_id] || 0;
@@ -203,7 +205,7 @@ export default function CameraStream({
               (Boolean(hoveredTrackId) && mergedFaces.length === 1);
 
             const displayCustomerId = formatCustomerDisplayId(face.backendMatch, face);
-            const customerName = getCustomerDisplayName(face.backendMatch, face);
+            const customerName = getCustomerDisplayName(face.backendMatch, face, lang);
 
             const isResolved = Boolean(displayCustomerId);
             const isIdentified = Boolean(
@@ -305,7 +307,7 @@ export default function CameraStream({
                     {!isResolved ? (
                       <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm bg-slate-950/90 border border-amber-400/80 text-amber-300 text-[10px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(245,158,11,0.35)] backdrop-blur-sm animate-pulse">
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                        ĐANG NHẬN DIỆN...
+                        {t("identifying")}
                       </div>
                     ) : !isIdentified ? (
                       <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm bg-slate-950/85 border border-sky-400/70 text-sky-300 text-[10px] font-mono font-bold tracking-wider shadow-[0_0_8px_rgba(56,189,248,0.3)] backdrop-blur-sm">

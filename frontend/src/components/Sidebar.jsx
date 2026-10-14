@@ -14,17 +14,20 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react";
+import { useApp } from "../context/AppContext";
 
 const ALL_NAV_ITEMS = [
   {
     key: "overview",
-    label: "Tổng quan",
+    transKey: "nav_overview",
+    label: "Overview",
     href: "/",
     Icon: LayoutDashboard,
     roles: ["guest", "moderator", "admin"],
   },
   {
     key: "camera",
+    transKey: "nav_camera",
     label: "Camera",
     href: "/camera",
     Icon: Camera,
@@ -32,35 +35,40 @@ const ALL_NAV_ITEMS = [
   },
   {
     key: "customers",
-    label: "Khách hàng",
+    transKey: "nav_customers",
+    label: "Customers",
     href: "/customers",
     Icon: Users,
     roles: ["admin"],
   },
   {
     key: "history",
-    label: "Lịch sử",
+    transKey: "nav_history",
+    label: "History",
     href: "/history",
     Icon: History,
     roles: ["admin"],
   },
   {
     key: "notifications",
-    label: "Phân quyền",
+    transKey: "nav_authorization",
+    label: "Authorization",
     href: "/authorization",
     Icon: Shield,
     roles: ["admin"],
   },
   {
     key: "reports",
-    label: "Báo cáo",
+    transKey: "nav_reports",
+    label: "Reports",
     href: "/reports",
     Icon: BarChart2,
     roles: ["admin"],
   },
   {
     key: "settings",
-    label: "Cài đặt",
+    transKey: "nav_settings",
+    label: "Settings",
     href: "/settings",
     Icon: Settings,
     roles: ["admin"],
@@ -69,53 +77,49 @@ const ALL_NAV_ITEMS = [
 
 export default function Sidebar({ active = "overview" }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const { t } = useApp();
   const [role, setRole] = useState("guest");
   const [username, setUsername] = useState("");
 
   useEffect(() => {
     const savedRole = localStorage.getItem("role") || "guest";
-    const savedUser = localStorage.getItem("username") || "Khách";
+    const savedUser = localStorage.getItem("username") || "Guest";
     setRole(savedRole);
     setUsername(savedUser);
   }, []);
 
   const allowedNav = ALL_NAV_ITEMS.filter((item) => item.roles.includes(role));
-  const activeItem =
-    allowedNav.find((item) => item.key === active) || allowedNav[0];
-  const ActiveIcon = activeItem?.Icon || LayoutDashboard;
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("role");
     localStorage.removeItem("username");
     localStorage.removeItem("cameras");
-    setOpen(false);
     router.push("/login");
   };
 
   const getRoleBadge = (value) => {
     if (value === "admin") return "Admin";
     if (value === "moderator") return "Mod";
-    return "Guest";
+    return t("guest") || "Guest";
   };
 
-  const getAvatarLetter = (name) => (name || "K").charAt(0).toUpperCase();
+  const getAvatarLetter = (name) => (name || "G").charAt(0).toUpperCase();
 
   return (
     <div className="relative z-50 hidden h-full w-16 lg:block shrink-0">
-      <aside className="group absolute inset-y-0 left-0 flex w-16 flex-col overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-300 ease-in-out hover:w-64 hover:shadow-2xl">
+      <aside className="group absolute inset-y-0 left-0 flex w-16 flex-col overflow-hidden border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-[width] duration-300 ease-in-out hover:w-64 hover:shadow-2xl">
         {/* Logo Area */}
         <div className="flex h-20 shrink-0 items-center px-3">
           <Link
             href="/"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-transform hover:scale-105"
           >
-            FD
+            CL
           </Link>
           <div className="ml-3 flex flex-col whitespace-nowrap opacity-0 transition-opacity duration-300 group-hover:opacity-100 delay-75">
-            <span className="text-sm font-bold text-slate-900">Front Desk AI</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <span className="text-sm font-bold text-slate-900 dark:text-white">CustomerLens</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
               {getRoleBadge(role)}
             </span>
           </div>
@@ -123,7 +127,7 @@ export default function Sidebar({ active = "overview" }) {
 
         {/* Navigation */}
         <nav className="flex flex-1 flex-col gap-2 overflow-y-auto overflow-x-hidden px-3 py-4">
-          {allowedNav.map(({ key, label, href, Icon }) => {
+          {allowedNav.map(({ key, transKey, label, href, Icon }) => {
             const isActive = key === active;
             return (
               <Link
@@ -131,8 +135,8 @@ export default function Sidebar({ active = "overview" }) {
                 href={href}
                 className={`relative flex h-10 w-full shrink-0 items-center rounded-xl transition-colors ${
                   isActive
-                    ? "bg-blue-50 text-blue-700"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                    ? "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400"
+                    : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white"
                 }`}
               >
                 {isActive && (
@@ -142,7 +146,7 @@ export default function Sidebar({ active = "overview" }) {
                   <Icon className={`h-5 w-5 ${isActive ? "stroke-[2.5px]" : "stroke-2"}`} />
                 </div>
                 <span className="ml-1 whitespace-nowrap text-sm font-medium opacity-0 transition-opacity duration-300 group-hover:opacity-100 delay-75">
-                  {label}
+                  {transKey ? t(transKey) : label}
                 </span>
               </Link>
             );
@@ -151,15 +155,15 @@ export default function Sidebar({ active = "overview" }) {
 
         {/* Footer */}
         <div className="shrink-0 p-3">
-          <div className="flex items-center gap-3 rounded-xl border border-transparent p-1 transition-colors group-hover:border-slate-200 group-hover:bg-slate-50">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-700">
+          <div className="flex items-center gap-3 rounded-xl border border-transparent p-1 transition-colors group-hover:border-slate-200 dark:group-hover:border-slate-800 group-hover:bg-slate-50 dark:group-hover:bg-slate-800/50">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-200 dark:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200">
               {getAvatarLetter(username)}
             </div>
             <div className="flex flex-1 flex-col overflow-hidden whitespace-nowrap opacity-0 transition-opacity duration-300 group-hover:opacity-100 delay-75">
-              <span className="truncate text-sm font-semibold text-slate-900">
+              <span className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                 {username}
               </span>
-              <span className="truncate text-[10px] text-slate-500 uppercase tracking-wide">
+              <span className="truncate text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                 {role === "admin" ? "Administrator" : "Guest Account"}
               </span>
             </div>
@@ -168,16 +172,16 @@ export default function Sidebar({ active = "overview" }) {
               {role !== "guest" ? (
                 <button
                   onClick={handleLogout}
-                  title="Đăng xuất"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-100 hover:text-rose-600 transition-colors"
+                  title={t("logout_btn")}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-100 dark:hover:bg-rose-950/60 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
               ) : (
                 <button
                   onClick={() => router.push("/login")}
-                  title="Đăng nhập"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-blue-100 hover:text-blue-600 transition-colors"
+                  title={t("login_btn")}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-blue-100 dark:hover:bg-blue-950/60 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                 >
                   <LogIn className="h-4 w-4" />
                 </button>

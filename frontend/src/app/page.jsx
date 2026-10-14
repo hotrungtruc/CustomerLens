@@ -14,11 +14,10 @@ import {
   resolveDeviceIdentity,
 } from "../services/api";
 import { useProfilePrefetch } from "../hooks/useProfilePrefetch";
+import { useApp } from "../context/AppContext";
 
-// Phân biệt khách cũ vs khách mới
+// Distinguish registered customers vs unrecognized guests
 function isKnownCustomer(c) {
-  // A customer is "known" if they have a numeric ID (registered) OR
-  // if backend explicitly marked them as registered customer type
   if (c.customer_type === "registered") return true;
   return c.id && /^\d{1,3}$/.test(String(c.id));
 }
@@ -31,9 +30,9 @@ function rankLabel(visitCount) {
 }
 
 const RANK_COLORS = {
-  VIP: "bg-yellow-100 text-yellow-700",
-  Member: "bg-blue-100 text-blue-700",
-  Guest: "bg-slate-100 text-slate-600",
+  VIP: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/60 dark:text-yellow-400",
+  Member: "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400",
+  Guest: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
 };
 
 function Stars({ count }) {
@@ -43,7 +42,7 @@ function Stars({ count }) {
         <svg
           key={i}
           viewBox="0 0 12 12"
-          className={`h-3 w-3 ${i < count ? "fill-amber-400" : "fill-slate-200"}`}
+          className={`h-3 w-3 ${i < count ? "fill-amber-400" : "fill-slate-200 dark:fill-slate-700"}`}
         >
           <path d="M6 1l1.4 2.9 3.2.5-2.3 2.2.5 3.2L6 8.2l-2.8 1.6.5-3.2L1.4 4.4l3.2-.5z" />
         </svg>
@@ -52,8 +51,9 @@ function Stars({ count }) {
   );
 }
 
-// ── Popup thêm khách mới ──────────────────────────────────────────────────────
+// ── Popup Modal: Add New Customer ─────────────────────────────────────────────
 function AddCustomerModal({ customer, onClose, onSaved }) {
+  const { t } = useApp();
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -71,7 +71,7 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 
   const handleSubmit = async () => {
     if (!form.name.trim()) {
-      setError("Vui lòng nhập tên khách hàng.");
+      setError(t("name_required_error"));
       return;
     }
     setSaving(true);
@@ -88,7 +88,7 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
       });
       onSaved(result);
     } catch (err) {
-      setError("Lưu thất bại, vui lòng thử lại.");
+      setError(t("save_failed_error"));
     } finally {
       setSaving(false);
     }
@@ -97,30 +97,30 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
   return (
     // Backdrop
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl transition-colors">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
           <div className="flex items-center gap-3">
             <div
-              className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white ${theme.base}`}
+              className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white dark:ring-slate-800 ${theme.base}`}
             >
               {symbol}
             </div>
             <div>
-              <p className="text-sm font-semibold text-slate-800">
-                Thêm khách hàng mới
+              <p className="text-sm font-semibold text-slate-800 dark:text-white">
+                {t("add_customer_title")}
               </p>
-              <p className="text-xs text-slate-400">{customer.id}</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">{customer.id}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <svg
               viewBox="0 0 16 16"
@@ -134,52 +134,52 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 
         {/* Form */}
         <div className="space-y-4 px-6 py-5">
-          {/* Tên */}
+          {/* Customer Name */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">
-              Tên khách hàng <span className="text-red-500">*</span>
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+              {t("customer_name_label")} <span className="text-red-500">*</span>
             </label>
             <input
               name="name"
               value={form.name}
               onChange={handleChange}
-              placeholder="Nguyễn Văn A"
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
+              placeholder={t("customer_name_placeholder")}
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-400"
             />
           </div>
 
-          {/* SĐT */}
+          {/* Phone */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">
-              Số điện thoại
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+              {t("phone_label")}
             </label>
             <input
               name="phone"
               value={form.phone}
               onChange={handleChange}
-              placeholder="0901 234 567"
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
+              placeholder={t("phone_placeholder")}
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-400"
             />
           </div>
 
           {/* Email */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">
-              Email
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+              {t("email_label")}
             </label>
             <input
               name="email"
               value={form.email}
               onChange={handleChange}
-              placeholder="example@email.com"
-              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:border-blue-400"
+              placeholder={t("email_placeholder")}
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-sm text-slate-800 dark:text-white outline-none placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-400"
             />
           </div>
 
-          {/* Hạng */}
+          {/* Loyalty Tier */}
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-600">
-              Hạng khách hàng
+            <label className="mb-1.5 block text-xs font-medium text-slate-600 dark:text-slate-300">
+              {t("tier_label")}
             </label>
             <div className="flex gap-2">
               {["Guest", "Member", "VIP"].map((r) => (
@@ -189,8 +189,8 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
                   onClick={() => setForm((prev) => ({ ...prev, rank: r }))}
                   className={`flex-1 rounded-xl border py-2 text-sm font-medium transition ${
                     form.rank === r
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      ? "border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-400"
+                      : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60"
                   }`}
                 >
                   {r}
@@ -200,26 +200,26 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
           </div>
 
           {error && (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-xs text-red-600">
+            <p className="rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-200 dark:border-red-900/60 px-3 py-2 text-xs text-red-600 dark:text-red-400">
               {error}
             </p>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+        <div className="flex gap-3 border-t border-slate-100 dark:border-slate-800 px-6 py-4">
           <button
             onClick={onClose}
-            className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
           >
-            Huỷ
+            {t("cancel_btn")}
           </button>
           <button
             onClick={handleSubmit}
             disabled={saving}
-            className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition"
           >
-            {saving ? "Đang lưu..." : "Lưu thông tin"}
+            {saving ? t("saving_btn") : t("save_btn")}
           </button>
         </div>
       </div>
@@ -230,7 +230,9 @@ function AddCustomerModal({ customer, onClose, onSaved }) {
 function formatGuestId(id) {
   if (!id) return "—";
   if (typeof id === "string") {
-    if (id.startsWith("LN")) return id;
+    if (id.startsWith("LN") || id.startsWith("MN") || id.startsWith("HN") || id.startsWith("LL") || id.startsWith("LC")) {
+      return id;
+    }
     if (id.startsWith("GUEST_")) {
       const parts = id.split("_");
       const suffix = parts[parts.length - 1];
@@ -240,14 +242,15 @@ function formatGuestId(id) {
   return id;
 }
 
-// ── Customer card trong right panel ──────────────────────────────────────────
+// ── Customer Card in Right Panel ──────────────────────────────────────────────
 function CustomerCard({ c, onClick }) {
+  const { t, lang } = useApp();
   const known = isKnownCustomer(c);
   const rank = rankLabel(c.visit_count);
   const starCount = rank === "VIP" ? 5 : rank === "Member" ? 4 : 3;
   const { symbol, theme } = getTrackBadge(c.track_id);
   const detectedAt = c.detected_at
-    ? new Date(c.detected_at).toLocaleTimeString("vi-VN", {
+    ? new Date(c.detected_at).toLocaleTimeString(lang === "vi" ? "vi-VN" : "en-US", {
         hour: "2-digit",
         minute: "2-digit",
         hour12: false,
@@ -257,11 +260,11 @@ function CustomerCard({ c, onClick }) {
   return (
     <button
       onClick={() => onClick(c)}
-      className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 transition-colors"
+      className="flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 dark:hover:bg-slate-850/60 transition-colors"
     >
-      {/* Avatar (hiển thị ảnh crop hoặc chữ cái) */}
+      {/* Avatar (Face crop or initial) */}
       <div
-        className={`h-10 w-10 shrink-0 flex items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white overflow-hidden ${theme.base}`}
+        className={`h-10 w-10 shrink-0 flex items-center justify-center rounded-full text-sm font-bold text-white ring-2 ring-white dark:ring-slate-800 overflow-hidden ${theme.base}`}
       >
         {c.faceImage ? (
           /* eslint-disable-next-line @next/next/no-img-element */
@@ -274,8 +277,8 @@ function CustomerCard({ c, onClick }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="truncate text-sm font-medium text-slate-800">
-              {known ? c.name || `Khách #${c.id}` : "Khách Mới"}
+            <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
+              {known ? c.name || `${t("client")} #${c.id}` : t("new_guest")}
             </span>
             <span
               className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${RANK_COLORS[rank]}`}
@@ -284,23 +287,23 @@ function CustomerCard({ c, onClick }) {
             </span>
           </div>
           {detectedAt && (
-            <span className="shrink-0 text-[10px] text-slate-400">
+            <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
               {detectedAt}
             </span>
           )}
         </div>
 
-        <span className="text-xs font-semibold text-slate-500 font-mono">
+        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 font-mono">
           {known ? `CLIENT_${c.id}` : formatGuestId(c.id)}
         </span>
 
         <div className="mt-0.5 flex items-center justify-between">
           <Stars count={starCount} />
-          {/* Gợi ý hành động */}
+          {/* Action callout */}
           <span
-            className={`text-[10px] font-medium ${known ? "text-blue-500" : "text-amber-500"}`}
+            className={`text-[10px] font-medium ${known ? "text-blue-500 dark:text-blue-400" : "text-amber-500 dark:text-amber-400"}`}
           >
-            {known ? "Xem hồ sơ →" : "Thêm thông tin +"}
+            {known ? t("view_profile") : t("add_details")}
           </span>
         </div>
       </div>
@@ -311,6 +314,7 @@ function CustomerCard({ c, onClick }) {
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
+  const { t } = useApp();
   const [cameraIdentity, setCameraIdentity] = useState(null);
   const [identityError, setIdentityError] = useState("");
   const [pairingCode, setPairingCode] = useState("");
@@ -330,7 +334,7 @@ export default function DashboardPage() {
           setIdentityError(
             error instanceof Error
               ? error.message
-              : "Không thể nhận diện thiết bị",
+              : t("device_identifying"),
           );
         }
       }
@@ -340,7 +344,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   const handlePairingClaim = async () => {
     setClaimingPairing(true);
@@ -352,22 +356,18 @@ export default function DashboardPage() {
       setPairingCode("");
     } catch (error) {
       setPairingError(
-        error instanceof Error ? error.message : "Mã ghép nối không hợp lệ",
+        error instanceof Error ? error.message : t("pairing_invalid"),
       );
     } finally {
       setClaimingPairing(false);
     }
   };
 
-  // customers / frameSize are pushed up via the onCustomersChange callback from
-  // CameraStream (which now owns the WebSocket connection internally).
   const [customers, setCustomers] = useState([]);
   const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
   const [highlightedTrackId, setHighlightedTrackId] = useState(null);
   const [modalCustomer, setModalCustomer] = useState(null);
 
-  // Active prefetch: background-fetches full profiles for recognised faces
-  // so that clicking a customer card navigates instantly.
   const { getProfile } = useProfilePrefetch(customers);
 
   const handleCustomersChange = useCallback((newCustomers, newFrameSize) => {
@@ -375,24 +375,19 @@ export default function DashboardPage() {
     setFrameSize(newFrameSize);
   }, []);
 
-  const handleSelectTrack = useCallback((id) => setHighlightedTrackId(id), []);
-
   const validCustomers = customers.filter((c) => c.id != null);
   const recentCustomers = validCustomers.slice(0, 4);
 
-  // Click vào card trong right panel
+  // Click customer card in right panel
   const handleCardClick = useCallback(
     (c) => {
       const role = localStorage.getItem("role") || "guest";
       if (role !== "admin") {
-        alert(
-          "Chỉ tài khoản Quản trị viên (Admin) mới có quyền truy cập thông tin chi tiết hoặc đăng ký khách hàng.",
-        );
+        alert(t("admin_only_alert"));
         return;
       }
       setHighlightedTrackId(c.track_id);
       if (isKnownCustomer(c)) {
-        // Stash prefetched profile so the detail page can render instantly
         const prefetched = getProfile(c.id);
         if (prefetched) {
           try {
@@ -404,32 +399,30 @@ export default function DashboardPage() {
         }
         router.push(`/customers/${c.id}`);
       } else {
-        // Khách mới → mở popup nhập thông tin
+        // New guest -> open registration modal
         setModalCustomer(c);
       }
     },
-    [router, getProfile],
+    [router, getProfile, t],
   );
 
-  // Sau khi lưu thành công, chỉ đóng popup
   const handleSaved = useCallback(
-    (result) => {
+    () => {
       setModalCustomer(null);
-      // Removed redirect to customer profile page to allow immediate view on camera
     },
     [],
   );
 
   return (
-    <main className="h-dvh w-screen overflow-hidden bg-white">
+    <main className="h-dvh w-screen overflow-hidden bg-white dark:bg-slate-950 transition-colors duration-200">
       <div className="grid h-full w-full overflow-hidden lg:grid-cols-[64px_minmax(0,1fr)_320px]">
-        {/* Cột 1: Sidebar */}
+        {/* Column 1: Sidebar */}
         <Sidebar active="overview" />
 
-        {/* Cột 2: Main */}
-        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100">
+        {/* Column 2: Main Area */}
+        <div className="flex min-w-0 min-h-0 flex-col border-x border-slate-100 dark:border-slate-800">
           <PageHeader
-            title="Smart Front-door AI"
+            title="CustomerLens"
           />
 
           <div className="flex-1 min-h-0 overflow-hidden bg-slate-950 relative mb-6">
@@ -437,7 +430,7 @@ export default function DashboardPage() {
               showPairingForm ? (
                 <div className="absolute right-3 bottom-3 z-20 w-64 rounded-xl border border-white/15 bg-slate-950/85 p-3 text-white shadow-xl backdrop-blur">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-semibold">Khôi phục camera cũ</p>
+                    <p className="text-xs font-semibold">{t("recover_old_camera")}</p>
                     <button
                       type="button"
                       onClick={() => setShowPairingForm(false)}
@@ -447,7 +440,7 @@ export default function DashboardPage() {
                     </button>
                   </div>
                   <p className="mt-1 text-[11px] text-slate-300">
-                    Nhập mã 6 số do quản trị viên tạo.
+                    {t("enter_pairing_code_desc")}
                   </p>
                   <div className="mt-2 flex gap-2">
                     <input
@@ -455,7 +448,7 @@ export default function DashboardPage() {
                       onChange={(event) =>
                         setPairingCode(event.target.value.replace(/\D/g, "").slice(0, 6))
                       }
-                      placeholder="000000"
+                      placeholder={t("pairing_code_placeholder")}
                       inputMode="numeric"
                       className="min-w-0 flex-1 rounded-lg border border-white/15 bg-white/10 px-2 py-1.5 text-xs tracking-[0.2em] outline-none focus:border-blue-400"
                     />
@@ -465,7 +458,7 @@ export default function DashboardPage() {
                       disabled={pairingCode.length !== 6 || claimingPairing}
                       className="rounded-lg bg-blue-500 px-2.5 py-1.5 text-xs font-semibold disabled:opacity-40"
                     >
-                      Ghép
+                      {t("pair_btn")}
                     </button>
                   </div>
                   {pairingError ? (
@@ -476,10 +469,10 @@ export default function DashboardPage() {
                 <button
                   onClick={() => setShowPairingForm(true)}
                   className="absolute right-3 bottom-3 z-20 flex items-center gap-1.5 rounded-full bg-slate-900/60 px-3 py-1.5 text-white/80 shadow-sm backdrop-blur hover:bg-slate-900/80 hover:text-white transition-all"
-                  title="Khôi phục camera cũ"
+                  title={t("recover_old_camera")}
                 >
                   <KeyRound className="w-3.5 h-3.5" />
-                  <span className="text-[11px] font-medium">Khôi phục thiết bị</span>
+                  <span className="text-[11px] font-medium">{t("device_recovery")}</span>
                 </button>
               )
             ) : null}
@@ -498,29 +491,29 @@ export default function DashboardPage() {
               />
             ) : (
               <div className="flex h-full items-center justify-center text-sm text-slate-300">
-                Đang nhận diện thiết bị…
+                {t("device_identifying")}
               </div>
             )}
           </div>
         </div>
 
-        {/* Cột 3: Right panel */}
-        <div className="hidden min-h-0 flex-col lg:flex">
-          <div className="border-b border-slate-100 px-4 py-4 xl:px-5 xl:py-5">
+        {/* Column 3: Right Panel */}
+        <div className="hidden min-h-0 flex-col lg:flex border-l border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 transition-colors">
+          <div className="border-b border-slate-100 dark:border-slate-800 px-4 py-4 xl:px-5 xl:py-5">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-800">
-                Khách hàng gần đây
+              <span className="text-sm font-semibold text-slate-800 dark:text-white">
+                {t("recent_customers")}
               </span>
               <Link
                 href="/customers"
-                className="text-xs font-medium text-blue-600 hover:underline"
+                className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
               >
-                Xem tất cả
+                {t("view_all")}
               </Link>
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-col divide-y divide-slate-50 overflow-y-auto">
+          <div className="flex min-h-0 flex-col divide-y divide-slate-50 dark:divide-slate-800 overflow-y-auto">
             {recentCustomers.length > 0 ? (
               recentCustomers.map((c) => (
                 <CustomerCard
@@ -530,21 +523,19 @@ export default function DashboardPage() {
                 />
               ))
             ) : customers.length > 0 ? (
-              <div className="px-5 py-8 text-center text-xs text-slate-400 animate-pulse">
-                Đang phân tích khuôn mặt...
+              <div className="px-5 py-8 text-center text-xs text-slate-400 dark:text-slate-500 animate-pulse">
+                {t("analyzing_faces")}
               </div>
             ) : (
-              <div className="px-5 py-8 text-center text-xs text-slate-400">
-                Chưa có khách nào trong khung hình
+              <div className="px-5 py-8 text-center text-xs text-slate-400 dark:text-slate-500">
+                {t("no_customers_in_frame")}
               </div>
             )}
           </div>
-
-
         </div>
       </div>
 
-      {/* Popup thêm khách mới */}
+      {/* Modal: Add New Customer */}
       {modalCustomer && (
         <AddCustomerModal
           customer={modalCustomer}

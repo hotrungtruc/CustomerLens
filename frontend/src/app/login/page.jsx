@@ -4,9 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { postLogin } from "../../services/api";
 import { Lock, User, Eye, EyeOff, Loader2 } from "lucide-react";
+import { useApp } from "../../context/AppContext";
 
 export default function LoginPage() {
   const router = useRouter();
+  const { lang, t } = useApp();
+  const isEn = lang !== "vi";
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -16,7 +20,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!username.trim() || !password.trim()) {
-      setError("Vui lòng điền đầy đủ tài khoản và mật khẩu.");
+      setError(isEn ? "Please enter both username and password." : "Vui lòng điền đầy đủ tài khoản và mật khẩu.");
       return;
     }
 
@@ -41,10 +45,10 @@ export default function LoginPage() {
           router.push("/");
         }
       } else {
-        setError("Đăng nhập thất bại.");
+        setError(isEn ? "Login failed." : "Đăng nhập thất bại.");
       }
     } catch (err) {
-      setError(err.message || "Tên tài khoản hoặc mật khẩu không chính xác.");
+      setError(err.message || (isEn ? "Invalid username or password." : "Tên tài khoản hoặc mật khẩu không chính xác."));
     } finally {
       setLoading(false);
     }
@@ -60,13 +64,13 @@ export default function LoginPage() {
         {/* Logo Section */}
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-xl font-bold text-white shadow-lg shadow-blue-500/30">
-            FD
+            CL
           </div>
           <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-3xl font-display">
-            Front Desk AI
+            CustomerLens
           </h1>
           <p className="mt-1.5 text-sm text-slate-400">
-            Đăng nhập để quản trị và theo dõi camera.
+            {isEn ? "Login to manage and monitor camera networks." : "Đăng nhập để quản trị và theo dõi camera."}
           </p>
         </div>
 
@@ -76,7 +80,7 @@ export default function LoginPage() {
             {/* Username Input */}
             <div>
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-300">
-                Tài khoản
+                {isEn ? "Username" : "Tài khoản"}
               </label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -86,7 +90,7 @@ export default function LoginPage() {
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Nhập tên tài khoản"
+                  placeholder={isEn ? "Enter username" : "Nhập tên tài khoản"}
                   className="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-10 pr-4 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:bg-white/10 transition-colors"
                 />
               </div>
@@ -95,7 +99,7 @@ export default function LoginPage() {
             {/* Password Input */}
             <div>
               <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-300">
-                Mật khẩu
+                {isEn ? "Password" : "Mật khẩu"}
               </label>
               <div className="relative">
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
@@ -105,7 +109,7 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Nhập mật khẩu"
+                  placeholder={isEn ? "Enter password" : "Nhập mật khẩu"}
                   className="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-10 pr-10 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-500 focus:bg-white/10 transition-colors"
                 />
                 <button
@@ -137,10 +141,10 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Đang xác thực...
+                  {isEn ? "Authenticating..." : "Đang xác thực..."}
                 </>
               ) : (
-                "Đăng nhập"
+                isEn ? "Login" : "Đăng nhập"
               )}
             </button>
           </form>
@@ -158,7 +162,7 @@ export default function LoginPage() {
             }}
             className="text-xs font-semibold text-slate-400 hover:text-white transition-colors"
           >
-            ← Quay lại với tư cách khách (Guest)
+            {isEn ? "← Return as Guest" : "← Quay lại với tư cách khách (Guest)"}
           </button>
         </div>
       </div>

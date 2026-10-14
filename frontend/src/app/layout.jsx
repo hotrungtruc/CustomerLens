@@ -1,7 +1,7 @@
 import "./globals.css";
 import { Inter, DM_Sans } from "next/font/google";
 import MobileNav from "../components/MobileNav";
-
+import { AppProvider } from "../context/AppContext";
 
 const displayFont = DM_Sans({
   subsets: ["latin"],
@@ -15,17 +15,19 @@ const bodyFont = Inter({
 });
 
 export const metadata = {
-  title: "Front Desk AI",
+  title: "CustomerLens",
   description:
-    "Smart front-door AI dashboard for camera monitoring and guest tracking.",
+    "CustomerLens — Production AI Camera Intelligence and Visitor Recognition Dashboard.",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="vi" className={`${displayFont.variable} ${bodyFont.variable}`}>
-      <body className="h-full antialiased">
-        <MobileNav />
-        <div className="h-dvh overflow-hidden pt-12 lg:pt-0">{children}</div>
+    <html lang="en" className={`${displayFont.variable} ${bodyFont.variable}`}>
+      <body className="h-full antialiased bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-200">
+        <AppProvider>
+          <MobileNav />
+          <div className="h-dvh overflow-hidden pt-12 lg:pt-0">{children}</div>
+        </AppProvider>
       </body>
     </html>
   );

@@ -157,9 +157,10 @@ export function formatCustomerDisplayId(customer, face) {
 /**
  * Returns clean customer name for display
  */
-export function getCustomerDisplayName(customer, face) {
+export function getCustomerDisplayName(customer, face, lang = "en") {
+  const isEn = lang !== "vi";
   if (!customer || (!customer.id && !customer.customer_id) || customer.detected === false) {
-    return "Đang nhận diện...";
+    return isEn ? "Identifying..." : "Đang nhận diện...";
   }
 
   const hasRealName =
@@ -167,13 +168,17 @@ export function getCustomerDisplayName(customer, face) {
     customer.name.trim() !== "" &&
     customer.name !== "Guest" &&
     customer.name !== "Khách mới" &&
-    !customer.name.startsWith("Khách LN") &&
-    !customer.name.startsWith("Khách LC");
+    customer.name !== "New Guest" &&
+    !customer.name.startsWith("Khách ") &&
+    !customer.name.startsWith("Guest ");
 
   if (hasRealName) {
     return customer.name;
   }
 
   const shortId = formatCustomerDisplayId(customer, face);
-  return shortId ? `Khách ${shortId}` : "Khách mới";
+  if (shortId) {
+    return isEn ? `Guest ${shortId}` : `Khách ${shortId}`;
+  }
+  return isEn ? "New Guest" : "Khách mới";
 }
