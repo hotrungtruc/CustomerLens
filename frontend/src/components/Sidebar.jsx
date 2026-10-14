@@ -113,9 +113,14 @@ export default function Sidebar({ active = "overview" }) {
         <div className="flex h-20 shrink-0 items-center px-3">
           <Link
             href="/"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-transform hover:scale-105"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl overflow-hidden transition-transform hover:scale-105"
           >
-            CL
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo_small.png"
+              alt="CustomerLens"
+              className="h-10 w-10 object-contain drop-shadow"
+            />
           </Link>
           <div className="ml-3 flex flex-col whitespace-nowrap opacity-0 transition-opacity duration-300 group-hover:opacity-100 delay-75">
             <span className="text-sm font-bold text-slate-900 dark:text-white">CustomerLens</span>

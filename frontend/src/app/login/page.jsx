@@ -63,10 +63,15 @@ export default function LoginPage() {
       <div className="relative w-full max-w-md">
         {/* Logo Section */}
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-xl font-bold text-white shadow-lg shadow-blue-500/30">
-            CL
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl transition-transform hover:scale-105">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo_small.png"
+              alt="CustomerLens Logo"
+              className="h-16 w-16 object-contain drop-shadow-xl"
+            />
           </div>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight text-white sm:text-3xl font-display">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-white sm:text-3xl font-display">
             CustomerLens
           </h1>
           <p className="mt-1.5 text-sm text-slate-400">

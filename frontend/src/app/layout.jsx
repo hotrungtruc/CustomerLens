@@ -18,6 +18,11 @@ export const metadata = {
   title: "CustomerLens",
   description:
     "CustomerLens — Production AI Camera Intelligence and Visitor Recognition Dashboard.",
+  icons: {
+    icon: "/logo_small.png",
+    shortcut: "/logo_small.png",
+    apple: "/logo_small.png",
+  },
 };
 
 export default function RootLayout({ children }) {

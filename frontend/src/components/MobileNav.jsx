@@ -32,10 +32,15 @@ export default function MobileNav() {
   return (
     <div className="lg:hidden">
       <div className="fixed inset-x-0 top-0 z-50 flex items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-xs font-bold text-white shadow-sm">
-            CL
-          </div>
+        <div className="flex items-center gap-2.5">
+          <Link href="/" className="flex h-8 w-8 items-center justify-center rounded-lg overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo_small.png"
+              alt="CustomerLens"
+              className="h-8 w-8 object-contain"
+            />
+          </Link>
           <span className="text-sm font-semibold text-slate-800 dark:text-white">
             CustomerLens
           </span>

@@ -1,6 +1,10 @@
 # CustomerLens: Real-Time Enterprise Face Recognition & Guest Intelligence System
 
 <p align="center">
+  <img src="assets/logo_small.png" alt="CustomerLens Logo" width="120" style="margin-bottom: 8px;">
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Python-3.12+-3670A0?style=flat-square&logo=python&logoColor=ffdd54" alt="Python">
   <img src="https://img.shields.io/badge/FastAPI-0.110+-005571?style=flat-square&logo=fastapi" alt="FastAPI">
   <img src="https://img.shields.io/badge/Next.js-14.2-000000?style=flat-square&logo=nextdotjs&logoColor=white" alt="Next.js">
@@ -38,14 +42,6 @@ Patrons are not required to enroll, download an application, scan a barcode, or 
 2. Extracts privacy-preserving facial embeddings and performs sub-100ms vector matching against historical visits.
 3. Automatically categorizes patrons into a dynamic lifecycle tier (from first-time visitors to VIP regulars).
 4. Streams contextual Heads-Up Display (HUD) notifications to floor staff tablets and POS screens before the customer reaches the counter, displaying visit count, lifetime spend, dietary notes, and tailored menu recommendations.
-
----
-
-<p align="center">
-  <img src="assets/workflow.png" alt="CustomerLens End-to-End System Workflow" width="950" style="border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);">
-</p>
-
----
 
 ## 2. Customer Lifecycle Intelligence & Personalization Matrix
 

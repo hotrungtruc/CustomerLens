@@ -220,6 +220,11 @@ class CustomerLensE2ESuite:
         if status == 200 and data and data.get("token"):
             self.admin_token = data["token"]
             print(f"    [+] Admin authenticated successfully in {ms:.1f}ms. Token length: {len(self.admin_token)}")
+            st_set, set_data, _, _ = http_get_json(f"{self.server_url}/api/settings", token=self.admin_token)
+            if st_set == 200 and set_data:
+                self.threshold = float(set_data.get("similarity_threshold", SYSTEM_THRESHOLD))
+                self.report_data["threshold"] = self.threshold
+                print(f"    [+] Loaded live system similarity threshold: {self.threshold}")
             return True
         else:
             print(f"    [!] Admin login failed (HTTP {status}): {err or data}")
@@ -482,7 +487,7 @@ class CustomerLensE2ESuite:
                 sim = match_info.get("similarity", 0.0)
 
                 # A false positive occurs if an unseen person is matched with any enrolled customer
-                is_false_positive = matched and sim >= SYSTEM_THRESHOLD
+                is_false_positive = matched and sim >= self.threshold
 
                 guest_results.append({
                     "subject": subj,
