@@ -204,7 +204,7 @@ export default function HourlyTrafficChart({ hourlyData = null }) {
                     textAnchor="middle"
                     className="fill-cyan-400 text-[9px] font-semibold tracking-wide"
                   >
-                    {p.hour === "12 PM" ? "Lunch 12PM" : "Dinner 7PM"}
+                    {p.hour === "12 PM" ? `${t("lunch")} 12PM` : `${t("dinner")} 7PM`}
                   </text>
                 </g>
               </g>
@@ -262,7 +262,7 @@ export default function HourlyTrafficChart({ hourlyData = null }) {
               {points[hoveredIndex].hour}
             </p>
             <p className="text-xs font-bold text-cyan-400">
-              {points[hoveredIndex].count} visits
+              {points[hoveredIndex].count} {t("visits")}
             </p>
           </div>
         )}
