@@ -85,15 +85,20 @@ export default function CameraStream({
       if (face.isGoodQuality === false) {
         return;
       }
-        
+
+      // Adaptive throttle: Send 4 FPS (250ms) while identifying; relax to 1.5s once recognized
+      const backendMatch = customers.find(c => c.local_track_id === face.local_track_id);
+      const isConfirmed = backendMatch && backendMatch.id && backendMatch.customer_status !== "extracting" && backendMatch.name !== "Đang nhận diện...";
+      const sendInterval = isConfirmed ? (edgeSettings?.edge_send_interval_ms || 1500) : 250;
+
       const lastSend = lastSendTimeRef.current[face.local_track_id] || 0;
       // Send crop if not sent in the configured interval
-      if (now - lastSend > (edgeSettings?.edge_send_interval_ms || 1000)) {
+      if (now - lastSend > sendInterval) {
         sendCrop(face);
         lastSendTimeRef.current[face.local_track_id] = now;
       }
     });
-  }, [localFaces, sendCrop, edgeSettings]);
+  }, [localFaces, sendCrop, edgeSettings, customers]);
 
   // 2. Merge local faces with backend profiles
   const mergedFaces = localFaces.map((localFace, i) => {

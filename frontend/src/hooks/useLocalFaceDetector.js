@@ -160,13 +160,13 @@ export function useLocalFaceDetector(videoRef) {
                     isExtremeProfile = true;
                   }
 
-                  const eyeDist = Math.sqrt(Math.pow((rightEye.x - leftEye.x) * sw, 2) + Math.pow((rightEye.y - leftEye.y) * sh, 2));
-                  if (eyeDist < width * 0.22) {
+                  const minEyeRatio = width < 60 ? 0.16 : 0.20;
+                  if (eyeDist < width * minEyeRatio) {
                     isEyesWideEnough = false;
                   }
                 }
 
-                const isGoodQuality = !isAtEdge && !isExtremeProfile && isEyesWideEnough && width >= 45 && height >= 45;
+                const isGoodQuality = !isAtEdge && !isExtremeProfile && isEyesWideEnough && width >= 28 && height >= 28;
 
                 return {
                   left: (originX / sw) * 100,

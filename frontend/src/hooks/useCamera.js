@@ -278,7 +278,8 @@ export function useCamera(cameraId) {
       const mean = sum / validPixels;
       const variance = (sumSq / validPixels) - (mean * mean);
       
-      if (variance < 15) {
+      const minVariance = Math.min(w, h) < 60 ? 6 : 12;
+      if (variance < minVariance) {
         // Blur detected, ignore frame
         console.warn(`[useCamera] Frame too blurry, variance: ${variance.toFixed(1)}`);
         return;

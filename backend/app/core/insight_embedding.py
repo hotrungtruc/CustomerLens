@@ -193,15 +193,18 @@ class InsightEmbedder:
             if crop.size > 0:
                 gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
                 blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
-                if blur_score < 150.0:  # Production Quality Gate: Blur Score > 150
+                # Adaptive blur threshold: small faces naturally have lower high-frequency variance
+                min_blur = 40.0 if width < 60 else 80.0
+                if blur_score < min_blur:
                     return False
 
-        # Pose Gate: Check eye distance and head pose symmetry (yaw < 15°)
+        # Pose Gate: Check eye distance and head pose symmetry (yaw < 25°)
         if landmarks is not None and len(landmarks) >= 2:
             left_eye = landmarks[0]
             right_eye = landmarks[1]
             eye_dist = np.linalg.norm(left_eye - right_eye)
-            if eye_dist / width < 0.28:  # Filter out heavy side-face angles (> 15° yaw)
+            min_eye_ratio = 0.18 if width < 60 else 0.22
+            if eye_dist / width < min_eye_ratio:
                 return False
 
         return True
@@ -226,7 +229,8 @@ class InsightEmbedder:
             left_eye = landmarks[0]
             right_eye = landmarks[1]
             eye_dist = np.linalg.norm(left_eye - right_eye)
-            if eye_dist / width < 0.25:
+            min_eye_ratio = 0.18 if width < 60 else 0.22
+            if eye_dist / width < min_eye_ratio:
                 return False
 
         return True

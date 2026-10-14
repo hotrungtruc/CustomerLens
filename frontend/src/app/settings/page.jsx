@@ -38,19 +38,19 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState({
     process_every_n_frames: 1,
     similarity_threshold: 0.50,
-    min_face_bbox_size: 50,
-    min_detection_score: 0.30,
-    track_buffer_size: 2,
+    min_face_bbox_size: 28,
+    min_detection_score: 0.55,
+    track_buffer_size: 3,
     track_iou_threshold: 0.3,
-    guest_creation_buffer_size: 10,
-    guest_min_detection_score: 0.85,
-    guest_min_face_bbox_size: 100,
+    guest_creation_buffer_size: 4,
+    guest_min_detection_score: 0.60,
+    guest_min_face_bbox_size: 28,
     new_guest_debounce_seconds: 4,
     new_guest_debounce_similarity: 0.38,
     checkin_cooldown_seconds: 30,
     customer_profile_hold_seconds: 2.5,
     edge_crop_padding: 0.25,
-    edge_send_interval_ms: 1000,
+    edge_send_interval_ms: 250,
   });
   
   const [loading, setLoading] = useState(true);

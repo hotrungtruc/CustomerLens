@@ -92,11 +92,11 @@ class GuestTrackManager:
     def __init__(
         self,
         buffer_size: int = 3,
-        guest_creation_buffer_size: int = 8,
+        guest_creation_buffer_size: int = 4,
         similarity_threshold: float = 0.55,
         iou_threshold: float = 0.36,
-        min_bbox_size: int = 100,
-        min_detection_score: float = 0.85,
+        min_bbox_size: int = 28,
+        min_detection_score: float = 0.55,
         guest_prefix: str = "LN",
     ):
         self.buffer_size = buffer_size

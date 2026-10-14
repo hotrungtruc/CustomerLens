@@ -77,12 +77,12 @@ FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
 MEDIAPIPE_FACE_MESH_MODEL_SELECTION = 0 # "0" for detection less than 2 meter; "1" for detection less than 5 meter
 
 SIMILARITY_THRESHOLD = 0.322
-MIN_FACE_BBOX_SIZE = 64
-MIN_DETECTION_SCORE = 0.65
-MIN_BLUR_SCORE = 150.0
-MAX_POSE_YAW_ANGLE = 15.0
-TRACK_BUFFER_SIZE = 3           # Giảm từ 5 → 3 để bắt đầu voting sớm hơn
-GUEST_CREATION_BUFFER_SIZE = 6  # Giảm từ 10 → 6 để tạo guest mới nhanh hơn
+MIN_FACE_BBOX_SIZE = 28             # Cho phép nhận diện mặt nhỏ từ xa (2m - 4m)
+MIN_DETECTION_SCORE = 0.55          # Ngưỡng phát hiện SCRFD chuẩn xác
+MIN_BLUR_SCORE = 60.0               # Ngưỡng chống mờ thích ứng cho webcam
+MAX_POSE_YAW_ANGLE = 20.0
+TRACK_BUFFER_SIZE = 3               # Voting nhanh sau 3 frames
+GUEST_CREATION_BUFFER_SIZE = 4      # Giảm xuống 4 frames để chốt khách mới chỉ trong ~1s
 TRACK_IOU_THRESHOLD = 0.3
 PROCESS_EVERY_N_FRAMES = 1
 
@@ -95,8 +95,8 @@ CHECKIN_COOLDOWN_SECONDS = 30
 CUSTOMER_PROFILE_HOLD_SECONDS = 2.5
 
 # GUEST CREATION STRICT MODE SETTINGS
-GUEST_MIN_DETECTION_SCORE = 0.70
-GUEST_MIN_FACE_BBOX_SIZE = 40
+GUEST_MIN_DETECTION_SCORE = 0.60
+GUEST_MIN_FACE_BBOX_SIZE = 28       # Cho phép tạo guest từ mặt xa
 NEW_GUEST_DEBOUNCE_SECONDS = 4
 NEW_GUEST_DEBOUNCE_SIMILARITY = 0.40
 DEBUG_SHOW_SIMILARITY = False
