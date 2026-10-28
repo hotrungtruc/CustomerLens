@@ -1,10 +1,19 @@
 stages:
+  - test
   - deploy
 
 variables:
   MASTER_IP: "15.134.121.250"
   WORKER_IPS: "54.253.192.210 54.252.191.145"
   EC2_USER: "ubuntu"
+
+test_backend:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - pip install --upgrade pip
+    - pip install -r backend/requirements.txt
+    - PYTHONPATH=backend python -m unittest backend/tests/test_jwt_auth.py backend/tests/test_biometric_security.py backend/tests/test_audit_fixes.py
 
 deploy_production:
   stage: deploy
@@ -22,9 +31,9 @@ deploy_production:
 
   script:
     - echo "=== 1/3. Deploying to Master Node ($MASTER_IP) ==="
-    - ssh-keyscan -H "$MASTER_IP" >> ~/.ssh/known_hosts 2>/dev/null
+    - ssh-keyscan -T 10 -H "$MASTER_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
     - |
-      ssh -i ~/.ssh/master.pem -o StrictHostKeyChecking=no "$EC2_USER@$MASTER_IP" '
+      ssh -i ~/.ssh/master.pem -o ConnectTimeout=15 -o StrictHostKeyChecking=no "$EC2_USER@$MASTER_IP" '
         set -e
         # Auto-detect repository path
         if [ -d "/home/ubuntu/CustomerLens" ]; then
@@ -40,9 +49,7 @@ deploy_production:
         git fetch origin main
         git reset --hard origin/main
 
-        # Rebuild and restart Master backend services
-        sudo docker compose down --timeout 30 || true
-        sudo docker system prune -af
+        # Rebuild and restart Master backend services with cache
         sudo docker compose up --build -d backend redis redpanda ai_worker
         sudo docker image prune -f
 
@@ -50,14 +57,30 @@ deploy_production:
         if [ -f "/etc/nginx/sites-available/api.checkinface.me" ]; then
           sudo nginx -t && sudo systemctl reload nginx || true
         fi
+
+        # Health check retry loop
+        HEALTHY=0
+        for i in $(seq 1 6); do
+          if curl -sf http://127.0.0.1:8000/api/health >/dev/null || curl -sf http://127.0.0.1:8000/docs >/dev/null; then
+            echo "Master backend healthy!"
+            HEALTHY=1
+            break
+          fi
+          sleep 5
+        done
+        if [ "$HEALTHY" -ne 1 ]; then
+          echo "Health check failed!"
+          sudo docker compose logs --tail 40 backend
+          exit 1
+        fi
       '
 
     - echo "=== 2/3. Deploying to Worker Nodes ($WORKER_IPS) ==="
     - |
       for WORKER_IP in $WORKER_IPS; do
         echo "--- Deploying to Worker: $WORKER_IP ---"
-        ssh-keyscan -H "$WORKER_IP" >> ~/.ssh/known_hosts 2>/dev/null
-        ssh -i ~/.ssh/workers.pem -o StrictHostKeyChecking=no "$EC2_USER@$WORKER_IP" '
+        ssh-keyscan -T 10 -H "$WORKER_IP" >> ~/.ssh/known_hosts 2>/dev/null || true
+        ssh -i ~/.ssh/workers.pem -o ConnectTimeout=15 -o StrictHostKeyChecking=no "$EC2_USER@$WORKER_IP" '
           set -e
           if [ -d "/home/ubuntu/CustomerLens" ]; then
             APP_DIR="/home/ubuntu/CustomerLens"
@@ -81,7 +104,6 @@ deploy_production:
           # Option B: Docker Compose worker
           if [ -f "docker-compose.worker.yml" ]; then
             echo "Restarting Docker Compose ai_worker..."
-            sudo docker compose -f docker-compose.worker.yml down --timeout 15 || true
             sudo docker compose -f docker-compose.worker.yml up -d --build ai_worker || true
             sudo docker image prune -f
           elif [ -f "docker-compose.yml" ]; then
@@ -95,3 +117,9 @@ deploy_production:
     - |
       HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "https://api.vercel.com/v1/integrations/deploy/prj_Vmv6iLCAw6ZytseXSJWfnc9lQuUh/gb78OB9lIG")
       echo "Vercel Deploy Hook HTTP response: $HTTP_CODE"
+      if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+        echo "Vercel deploy triggered successfully."
+      else
+        echo "Vercel deploy hook failed with status $HTTP_CODE"
+        exit 1
+      fi

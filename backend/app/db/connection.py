@@ -59,3 +59,7 @@ from app.db.repositories.logs import (  # noqa: F401
     get_recognize_logs,
     get_reports_data,
 )
+
+# Database config & paths for backward compatibility
+from config import PRODUCTION_DB_PATH
+from db_config import DB_TYPE, USE_SUPABASE, DATABASE_URL

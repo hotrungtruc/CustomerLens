@@ -187,7 +187,7 @@ function CustomerCard({ c, onClick }) {
   const known = isKnownCustomer(c);
   const rank = rankLabel(c.total_visits);
   const starCount = rank === "VIP" ? 5 : rank === "Member" ? 4 : 3;
-  const { symbol, theme } = getTrackBadge(c.track_id);
+  const { symbol, theme } = getTrackBadge(c.track_id || c.local_track_id);
   const detectedAt = c.detected_at
     ? new Date(c.detected_at).toLocaleTimeString(lang === "vi" ? "vi-VN" : "en-US", {
         hour: "2-digit",
@@ -195,6 +195,21 @@ function CustomerCard({ c, onClick }) {
         hour12: false,
       })
     : "";
+
+  // "Extracting" — biometric features still being collected
+  const isExtracting = !known && (
+    c.customer_status === "extracting" ||
+    c.name === "Đang nhận diện..." ||
+    c.name === "Identifying..." ||
+    c.name === "Khách mới" ||
+    (!c.id && !c.name)
+  );
+
+  const displayName = known
+    ? (c.name || `${t("client")} #${c.id}`)
+    : isExtracting
+      ? t("identifying") || "Đang nhận diện..."
+      : (c.name || t("new_guest") || "Khách mới");
 
   return (
     <button
@@ -215,14 +230,20 @@ function CustomerCard({ c, onClick }) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-1">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="truncate text-sm font-medium text-slate-800 dark:text-slate-100">
-              {known ? c.name || `${t("client")} #${c.id}` : t("new_guest")}
+            <span className={`truncate text-sm font-medium ${isExtracting ? "text-amber-600 dark:text-amber-400" : "text-slate-800 dark:text-slate-100"}`}>
+              {displayName}
             </span>
-            <span
-              className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${RANK_COLORS[rank]}`}
-            >
-              {rank}
-            </span>
+            {isExtracting ? (
+              <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400 animate-pulse">
+                scanning
+              </span>
+            ) : (
+              <span
+                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${RANK_COLORS[rank]}`}
+              >
+                {rank}
+              </span>
+            )}
           </div>
           {detectedAt && (
             <span className="shrink-0 text-[10px] text-slate-400 dark:text-slate-500">
@@ -232,21 +253,31 @@ function CustomerCard({ c, onClick }) {
         </div>
 
         <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 font-mono">
-          {known ? `CLIENT_${c.id}` : c.id}
+          {known ? `CLIENT_${c.id}` : (c.id || (c.local_track_id ? c.local_track_id.slice(0, 12) : "—"))}
         </span>
 
         <div className="mt-0.5 flex items-center justify-between">
-          <Stars count={starCount} />
-          <span
-            className={`text-[10px] font-medium ${known ? "text-blue-500 dark:text-blue-400" : "text-amber-500 dark:text-amber-400"}`}
-          >
-            {known ? t("view_profile") : t("add_details")}
-          </span>
+          {isExtracting ? (
+            <div className="flex items-center gap-1">
+              <div className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-ping" />
+              <span className="text-[10px] text-amber-500 dark:text-amber-400">Biometric scan...</span>
+            </div>
+          ) : (
+            <>
+              <Stars count={starCount} />
+              <span
+                className={`text-[10px] font-medium ${known ? "text-blue-500 dark:text-blue-400" : "text-amber-500 dark:text-amber-400"}`}
+              >
+                {known ? t("view_profile") : t("add_details")}
+              </span>
+            </>
+          )}
         </div>
       </div>
     </button>
   );
 }
+
 
 // ── Main Dashboard Page ───────────────────────────────────────────────────────
 export default function DashboardPage() {
@@ -333,12 +364,75 @@ export default function DashboardPage() {
     setFrameSize(newFrameSize);
   }, []);
 
-  const validCustomers = customers.filter((c) => c.id != null);
-  const recentCustomers = validCustomers.slice(0, 4);
+  // All detected faces — include guests still being identified (id may be null or LN*)
+  const validCustomers = customers.filter((c) =>
+    // Has a track ID so it's a real detection
+    (c.local_track_id || c.track_id)
+  );
+  const uniqueMap = new Map();
+  const sortedValid = [...validCustomers].sort((a, b) => (b.last_seen || 0) - (a.last_seen || 0));
+
+  for (const c of sortedValid) {
+    if (c.id) {
+      if (!uniqueMap.has(c.id)) {
+        uniqueMap.set(c.id, c);
+      } else {
+        const existing = uniqueMap.get(c.id);
+        if (c.faceImage && !existing.faceImage) {
+          uniqueMap.set(c.id, { ...existing, ...c, faceImage: c.faceImage });
+        }
+      }
+    } else {
+      // For un-registered/extracting faces without an ID:
+      // Merge if another extracting face is already present in the same spatial position (IoU >= 0.25)
+      let matchedKey = null;
+      for (const [k, existing] of uniqueMap.entries()) {
+        if (!existing.id && existing.bbox && c.bbox) {
+          const xA = Math.max(existing.bbox[0], c.bbox[0]);
+          const yA = Math.max(existing.bbox[1], c.bbox[1]);
+          const xB = Math.min(existing.bbox[2], c.bbox[2]);
+          const yB = Math.min(existing.bbox[3], c.bbox[3]);
+          const inter = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+          if (inter > 0) {
+            const a1 = (existing.bbox[2] - existing.bbox[0]) * (existing.bbox[3] - existing.bbox[1]);
+            const a2 = (c.bbox[2] - c.bbox[0]) * (c.bbox[3] - c.bbox[1]);
+            const iou = inter / (a1 + a2 - inter);
+            if (iou >= 0.25) {
+              matchedKey = k;
+              break;
+            }
+          }
+        }
+      }
+
+      if (matchedKey) {
+        const existing = uniqueMap.get(matchedKey);
+        uniqueMap.set(matchedKey, {
+          ...existing,
+          ...c,
+          faceImage: c.faceImage || existing.faceImage,
+        });
+      } else {
+        const key = c.local_track_id || c.track_id;
+        if (key && !uniqueMap.has(key)) {
+          uniqueMap.set(key, c);
+        }
+      }
+    }
+  }
+  const uniqueCustomers = Array.from(uniqueMap.values());
+  // Show in sidebar: known (registered) customers first, then guests being identified
+  const recentCustomers = [...uniqueCustomers]
+    .sort((a, b) => {
+      const aKnown = isKnownCustomer(a) ? 0 : 1;
+      const bKnown = isKnownCustomer(b) ? 0 : 1;
+      return aKnown - bKnown;
+    })
+    .slice(0, 4);
 
   const handleCardClick = useCallback(
     (c) => {
-      const role = localStorage.getItem("role") || "guest";
+      const role = localStorage.getItem("role") || "admin";
       if (role !== "admin") {
         alert(t("admin_only_alert"));
         return;

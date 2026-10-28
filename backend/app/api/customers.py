@@ -17,6 +17,7 @@ Customer-related routes:
 import csv
 import io
 import json
+import logging
 import math
 import time
 from datetime import datetime
@@ -24,7 +25,7 @@ from datetime import datetime
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import Response
 
-from app.api.auth import get_user_from_token, require_admin
+from app.api.auth import get_sync_redis_client, get_user_from_token, require_admin
 from app.db.connection import (
     create_or_update_customer_profile,
     get_customer_info,
@@ -37,7 +38,93 @@ from app.db.connection import (
 from app.messaging.kafka_client import get_redis
 from config import CHECKIN_COOLDOWN_SECONDS
 
+logger = logging.getLogger("Customers")
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Redis Caching & Lock Helpers
+# ---------------------------------------------------------------------------
+
+def get_cached_customer_info(conn, customer_id: str) -> dict | None:
+    """Fetch customer profile with Redis cache layer (60s TTL)."""
+    if not customer_id:
+        return None
+    cache_key = f"customer_profile:{customer_id}"
+    try:
+        r = get_sync_redis_client()
+        cached = r.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    info = get_customer_info(conn, customer_id)
+    if info:
+        try:
+            r = get_sync_redis_client()
+            r.set(cache_key, json.dumps(info, default=str), ex=60)
+        except Exception:
+            pass
+    return info
+
+
+def invalidate_customer_cache(customer_id: str):
+    """Invalidate customer profile cache on update or promotion."""
+    if not customer_id:
+        return
+    try:
+        r = get_sync_redis_client()
+        r.delete(f"customer_profile:{customer_id}")
+    except Exception:
+        pass
+
+
+def _atomic_check_in(conn, customer_id: str) -> dict:
+    """Atomically perform check-in with distributed Redis cooldown lock."""
+    lock_key = f"checkin_cooldown:{customer_id}"
+    r_client = None
+    try:
+        r_client = get_sync_redis_client()
+        # Atomic lock/cooldown key with SETNX and EX
+        acquired = r_client.set(lock_key, "1", nx=True, ex=int(CHECKIN_COOLDOWN_SECONDS))
+        if not acquired:
+            ttl = r_client.ttl(lock_key)
+            remaining = max(1, ttl) if ttl > 0 else CHECKIN_COOLDOWN_SECONDS
+            return {"success": False, "message": f"Please wait {remaining}s"}
+    except Exception as redis_err:
+        logger.warning("Redis check-in lock failed (%s); falling back to DB timestamp check", redis_err)
+
+    customer_info = get_cached_customer_info(conn, customer_id)
+    if not customer_info:
+        if r_client:
+            try:
+                r_client.delete(lock_key)
+            except Exception:
+                pass
+        return {"success": False, "message": "Customer not found"}
+
+    try:
+        last_time = datetime.strptime(
+            customer_info["last_attendance_time"], "%Y-%m-%d %H:%M:%S"
+        )
+    except (TypeError, ValueError):
+        last_time = datetime.min
+
+    seconds_elapsed = (datetime.now() - last_time).total_seconds()
+    if seconds_elapsed <= CHECKIN_COOLDOWN_SECONDS and not r_client:
+        remaining = int(CHECKIN_COOLDOWN_SECONDS - seconds_elapsed)
+        return {"success": False, "message": f"Please wait {remaining}s"}
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    update_attendance(
+        conn,
+        customer_id,
+        customer_info["total_attendance"] + 1,
+        now_str,
+    )
+    invalidate_customer_cache(customer_id)
+    return {"success": True, "message": "Check-in successful"}
 
 
 # ---------------------------------------------------------------------------
@@ -261,6 +348,22 @@ async def api_customer_profile(
             return {"success": False, "message": str(exc)}
 
         if (source_id.startswith("GUEST_") or source_id.startswith("test_") or source_id.startswith("LN")) and final_id != source_id:
+            # 1. Directly promote in active in-memory track managers in the same backend instance
+            from app.api.devices import CONNECTION_STATES, CONNECTION_STATES_LOCK
+            with CONNECTION_STATES_LOCK:
+                for cstate in CONNECTION_STATES.values():
+                    if cstate.track_manager is not None:
+                        try:
+                            cstate.track_manager.promote_guest(source_id, final_id)
+                            cstate.track_manager.load_known_embeddings()
+                            for track in cstate.track_manager.tracks.values():
+                                if track.resolved_customer_id in (source_id, final_id):
+                                    track.cached_profile = None
+                                    track.resolved_customer_id = final_id
+                        except Exception as e:
+                            print(f"Error in direct track_manager promote_guest: {e}", flush=True)
+
+            # 2. Broadcast via Redis for any multi-worker / cluster instances
             camera_id = "default"
             parts = source_id.split("_")
             if len(parts) >= 3:
@@ -268,22 +371,28 @@ async def api_customer_profile(
                 if prefix.startswith("GUEST_"):
                     camera_id = prefix[len("GUEST_"):]
 
-            r = await get_redis()
-            await r.publish(
-                f"camera_control:{camera_id}",
-                json.dumps({"action": "promote_guest", "guest_id": source_id, "new_id": final_id}),
-            )
-            with CAMERA_STATES_LOCK:
-                for cid in CAMERA_STATES.keys():
-                    if cid != camera_id:
-                        await r.publish(
-                            f"camera_control:{cid}",
-                            json.dumps({"action": "promote_guest", "guest_id": source_id, "new_id": final_id}),
-                        )
+            try:
+                r = await get_redis()
+                with CAMERA_STATES_LOCK:
+                    target_cids = set(CAMERA_STATES.keys())
+                target_cids.add(camera_id)
+                for cid in target_cids:
+                    await r.publish(
+                        f"camera_control:{cid}",
+                        json.dumps({"action": "promote_guest", "guest_id": source_id, "new_id": final_id}),
+                    )
                     await r.publish(
                         f"camera_control:{cid}",
                         json.dumps({"action": "reload_embeddings"}),
                     )
+            except Exception as bcast_err:
+                logger.warning("Could not broadcast guest promotion via Redis: %s", bcast_err)
+
+        try:
+            from app.core.vector_cache import vector_cache_manager
+            vector_cache_manager.sync_from_database(conn, force=True)
+        except Exception:
+            pass
 
         customer_info = get_customer_info(conn, final_id)
         if not customer_info:
@@ -322,16 +431,19 @@ async def api_customer_profile(
             conn.close()
         except Exception:
             pass
-        try:
-            r = await get_redis()
-            with CAMERA_STATES_LOCK:
-                for cid in CAMERA_STATES.keys():
+        if final_id:
+            invalidate_customer_cache(final_id)
+            try:
+                r = await get_redis()
+                with CAMERA_STATES_LOCK:
+                    cids = list(CAMERA_STATES.keys())
+                for cid in cids:
                     await r.publish(
                         f"camera_control:{cid}",
                         json.dumps({"action": "invalidate_cache", "customer_id": final_id}),
                     )
-        except Exception:
-            pass
+            except Exception as inv_err:
+                logger.warning("Could not publish invalidate_cache to Redis: %s", inv_err)
 
 
 @router.post("/api/check_in")
@@ -350,64 +462,28 @@ def api_check_in(camera_id: str | None = None):
 
     conn = get_db_connection()
     try:
-        customer_info = get_customer_info(conn, detected_customer_id)
-        if not customer_info:
-            return {"success": False, "message": "Customer not found"}
-
-        try:
-            last_time = datetime.strptime(
-                customer_info["last_attendance_time"], "%Y-%m-%d %H:%M:%S"
-            )
-        except (TypeError, ValueError):
-            last_time = datetime.min
-
-        seconds_elapsed = (datetime.now() - last_time).total_seconds()
-        if seconds_elapsed > CHECKIN_COOLDOWN_SECONDS:
-            update_attendance(
-                conn,
-                detected_customer_id,
-                customer_info["total_attendance"] + 1,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            )
-            return {"success": True, "message": "Check-in successful"}
-
-        remaining = int(CHECKIN_COOLDOWN_SECONDS - seconds_elapsed)
-        return {"success": False, "message": f"Please wait {remaining}s"}
+        return _atomic_check_in(conn, detected_customer_id)
     except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}"}
+        logger.exception("Error during camera check-in for customer %s", detected_customer_id)
+        return {"success": False, "message": "An error occurred during check-in"}
     finally:
         conn.close()
 
 
 @router.post("/api/check_in/{customer_id}")
-def api_check_in_by_id(customer_id: str):
+def api_check_in_by_id(
+    customer_id: str,
+    authorization: str | None = Header(default=None),
+):
+    # Require authenticated staff/admin session to prevent unauthorized attendance tampering
+    get_user_from_token(authorization)
+
     conn = get_db_connection()
     try:
-        customer_info = get_customer_info(conn, customer_id)
-        if not customer_info:
-            return {"success": False, "message": "Customer not found"}
-
-        try:
-            last_time = datetime.strptime(
-                customer_info["last_attendance_time"], "%Y-%m-%d %H:%M:%S"
-            )
-        except (TypeError, ValueError):
-            last_time = datetime.min
-
-        seconds_elapsed = (datetime.now() - last_time).total_seconds()
-        if seconds_elapsed > CHECKIN_COOLDOWN_SECONDS:
-            update_attendance(
-                conn,
-                customer_id,
-                customer_info["total_attendance"] + 1,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            )
-            return {"success": True, "message": "Check-in successful"}
-
-        remaining = int(CHECKIN_COOLDOWN_SECONDS - seconds_elapsed)
-        return {"success": False, "message": f"Please wait {remaining}s"}
+        return _atomic_check_in(conn, customer_id)
     except Exception as e:
-        return {"success": False, "message": f"Error: {str(e)}"}
+        logger.exception("Error during check-in for customer %s", customer_id)
+        return {"success": False, "message": "An error occurred during check-in"}
     finally:
         conn.close()
 
@@ -485,9 +561,10 @@ def api_get_recognize_logs(
             "total_pages": math.ceil(result["total_count"] / limit) if limit > 0 else 1,
         }
     except Exception as e:
+        logger.exception("Error fetching recognition logs")
         return {
             "success": False,
-            "message": f"Error fetching logs: {str(e)}",
+            "message": "An error occurred while fetching recognition logs",
             "logs": [],
             "total_count": 0,
         }

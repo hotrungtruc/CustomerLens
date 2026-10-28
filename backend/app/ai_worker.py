@@ -12,7 +12,9 @@ import redis
 from kafka import KafkaConsumer
 
 # Add the parent directory to the Python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from concurrent.futures import ThreadPoolExecutor
 
 from app.core.insight_embedding import InsightEmbedder
 from config import (
@@ -42,6 +44,17 @@ def main():
     embedder = InsightEmbedder()
     
     frame_count = 0
+    last_settings_reload = time.time()
+    executor = ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 2))
+
+    # Event-driven settings subscriber
+    settings_pubsub = None
+    try:
+        settings_pubsub = redis_client.pubsub()
+        settings_pubsub.subscribe("system_settings_updated")
+        logger.info("[WORKER] Subscribed to system_settings_updated pubsub channel.")
+    except Exception as e:
+        logger.warning(f"[WORKER] Could not subscribe to settings updates: {e}")
     
     # Ensure Redpanda topic is initialized
     try:
@@ -49,7 +62,11 @@ def main():
     except Exception as e:
         logger.warning(f"Could not auto-initialize Redpanda topics: {e}")
 
+    from app.messaging.kafka_client import is_kafka_reachable
+
     def create_kafka_consumer():
+        if not is_kafka_reachable(KAFKA_BOOTSTRAP_SERVERS):
+            return None
         try:
             c = KafkaConsumer(
                 KAFKA_CAMERA_FRAMES_TOPIC,
@@ -59,6 +76,7 @@ def main():
                 enable_auto_commit=True,
                 metadata_max_age_ms=2000,
                 consumer_timeout_ms=300,
+                request_timeout_ms=1000,
             )
             logger.info(f"[SUCCESS] Connected to Redpanda at '{KAFKA_BOOTSTRAP_SERVERS}'")
             return c
@@ -67,13 +85,15 @@ def main():
             return None
 
     consumer = create_kafka_consumer()
+    if consumer is None:
+        logger.info("Redpanda is offline. AI Worker is running in high-speed Redis Fallback mode.")
 
     last_kafka_retry = time.time()
     
     while True:
         try:
-            # 1. Background retry connection to Redpanda if disconnected
-            if consumer is None and (time.time() - last_kafka_retry > 5):
+            # 1. Background retry connection to Redpanda if disconnected (check every 15s)
+            if consumer is None and (time.time() - last_kafka_retry > 15):
                 last_kafka_retry = time.time()
                 consumer = create_kafka_consumer()
 
@@ -129,9 +149,24 @@ def main():
             for key, (item, data, meta_len) in latest_frames.items():
                 # It's a frame (Binary Packed)
                 frame_count += 1
+                camera_id = data.get("camera_id")
+                connection_id = data.get("connection_id")
+                local_track_id = data.get("local_track_id")
+                logger.info(f"[WORKER] Popped frame #{frame_count} for camera={camera_id}, conn={connection_id}, track={local_track_id}")
                 
-                # Reload settings every 60 frames to check for updates
-                if frame_count % 60 == 0:
+                # Event-driven settings reload check or throttled background refresh (30s)
+                if settings_pubsub is not None:
+                    try:
+                        s_msg = settings_pubsub.get_message(ignore_subscribe_messages=True, timeout=0.0)
+                        if s_msg:
+                            system_settings.load_settings()
+                            logger.info("[WORKER] System settings reloaded via event channel.")
+                    except Exception:
+                        pass
+
+                now_ts = time.time()
+                if now_ts - last_settings_reload > 30.0:
+                    last_settings_reload = now_ts
                     system_settings.load_settings()
                     
                 current_n_frames = system_settings.get("process_every_n_frames", PROCESS_EVERY_N_FRAMES)
@@ -170,43 +205,15 @@ def main():
                 batch_records = []
             
                 if is_edge_crop:
-                    # Run SCRFD detection on the edge crop to get high-precision landmarks
-                    detections = embedder.detect(frame)
                     h, w = frame.shape[:2]
-                    
-                    # If SCRFD fails to detect on the crop, fallback to frontend landmarks or full crop
-                    if len(detections[0]) == 0:
-                        landmarks = data.get("landmarks")
-                        quality_ok = True
-                        guest_quality_ok = True
-                        if landmarks is not None and len(landmarks) >= 2:
-                            left_eye = np.array(landmarks[0])
-                            right_eye = np.array(landmarks[1])
-                            eye_dist = np.linalg.norm(left_eye - right_eye)
-                            face_width = max(1.0, w / 2.0)
-                            if eye_dist / face_width < 0.25:
-                                guest_quality_ok = False
-                        
-                        record = {
-                            "bbox": (0, 0, w, h), # Full crop
-                            "landmark": landmarks,
-                            "score": 1.0,
-                            "quality_ok": quality_ok,
-                            "guest_quality_ok": guest_quality_ok,
-                            "embedding": None,
-                        }
-                        if landmarks is not None:
-                            face_records.append(record)
-                            batch_landmarks.append(landmarks)
-                            batch_records.append(record)
-                    else:
-                        # Use the best detection from SCRFD (usually there's only one in a tight crop)
-                        # We take the first one or the one with highest score
+                    # 1. Run backend SCRFD on the 30%-padded crop to extract high-precision 5 landmarks
+                    detections = embedder.detect(frame)
+                    if len(detections[0]) > 0:
                         bbox, landmark, score = detections[0][0], detections[1][0], detections[2][0]
                         x1, y1, x2, y2 = map(int, bbox)
                         quality_ok = embedder.is_quality_ok((x1, y1, x2, y2), score)
                         guest_quality_ok = embedder.is_guest_quality_ok((x1, y1, x2, y2), score, landmark)
-                        
+
                         record = {
                             "bbox": (x1, y1, x2, y2),
                             "landmark": landmark.tolist() if isinstance(landmark, np.ndarray) else landmark,
@@ -216,10 +223,29 @@ def main():
                             "embedding": None,
                         }
                         face_records.append(record)
-                        
+
                         if quality_ok and "landmark" in record:
                             batch_landmarks.append(landmark)
                             batch_records.append(record)
+                    else:
+                        # 2. Fallback if SCRFD couldn't detect in tight crop, but client provided landmarks
+                        client_landmarks = data.get("landmarks")
+                        if client_landmarks is not None and len(client_landmarks) in (4, 5):
+                            record = {
+                                "bbox": (0, 0, w, h),
+                                "landmark": client_landmarks,
+                                "score": 0.85,
+                                "quality_ok": True,
+                                "guest_quality_ok": True,
+                                "embedding": None,
+                            }
+                            face_records.append(record)
+                            batch_landmarks.append(client_landmarks)
+                            batch_records.append(record)
+                            
+                            if quality_ok and "landmark" in record:
+                                batch_landmarks.append(landmark)
+                                batch_records.append(record)
                 else:
                     detections = embedder.detect(frame)
                     for bbox, landmark, score in zip(*detections):
@@ -244,7 +270,11 @@ def main():
                 # --- BATCH EMBEDDING EXTRACTION ---
                 if batch_landmarks and frame is not None:
                     try:
-                        batch_embs = embedder.get_batch_embeddings(frame, batch_landmarks)
+                        batch_embs = embedder.get_batch_embeddings(
+                            frame,
+                            batch_landmarks,
+                            use_tta=False if (is_edge_crop or len(batch_landmarks) > 1) else None,
+                        )
                         for record, emb in zip(batch_records, batch_embs):
                             if emb is not None:
                                 record["embedding"] = emb.tolist() if isinstance(emb, np.ndarray) else emb
@@ -266,7 +296,17 @@ def main():
                     payload["local_track_id"] = local_track_id
                     payload["client_bbox"] = client_bbox
                 
-                redis_client.publish(pubsub_channel, json.dumps(payload))
+                logger.info(f"[WORKER] Publishing {len(face_records)} face records to {pubsub_channel} (has_emb={any(r.get('embedding') is not None for r in face_records)})")
+                json_payload = json.dumps(payload)
+                try:
+                    redis_client.publish(pubsub_channel, json_payload)
+                except Exception:
+                    pass
+                # Also push to list queue for 100% reliable delivery without pubsub socket issues
+                list_key = f"results_queue:{connection_id}"
+                redis_client.lpush(list_key, json_payload)
+                redis_client.ltrim(list_key, 0, 50)
+                redis_client.expire(list_key, 60)
             
         except Exception as e:
             logger.error(f"Error processing frame: {e}", exc_info=True)

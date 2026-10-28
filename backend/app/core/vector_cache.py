@@ -51,13 +51,20 @@ class VectorCacheManager:
         if self.redis_available:
             try:
                 cached_ids = self.redis_client.smembers(CACHE_META_KEY)
-                for cid_bytes in cached_ids:
-                    cid = cid_bytes.decode('utf-8') if isinstance(cid_bytes, bytes) else str(cid_bytes)
-                    vec_bytes = self.redis_client.get(f"{CACHE_KEY_PREFIX}{cid}")
-                    if vec_bytes:
-                        vec = np.frombuffer(vec_bytes, dtype=np.float32)
-                        customer_ids.append(cid)
-                        vectors.append(vec)
+                if cached_ids:
+                    clean_ids = [
+                        b.decode("utf-8") if isinstance(b, bytes) else str(b)
+                        for b in cached_ids
+                    ]
+                    pipe = self.redis_client.pipeline(transaction=False)
+                    for cid in clean_ids:
+                        pipe.get(f"{CACHE_KEY_PREFIX}{cid}")
+                    raw_values = pipe.execute()
+                    for cid, vec_bytes in zip(clean_ids, raw_values):
+                        if vec_bytes:
+                            vec = np.frombuffer(vec_bytes, dtype=np.float32)
+                            customer_ids.append(cid)
+                            vectors.append(vec)
             except Exception as e:
                 logger.error(f"Redis get_all_vectors failed: {e}")
 
@@ -109,16 +116,26 @@ class VectorCacheManager:
             except Exception as e:
                 logger.error(f"Failed to write vector to Redis cache: {e}")
 
-    def sync_from_database(self, conn):
-        """Pre-populate / refresh L1 Vector Cache from PostgreSQL Database."""
-        if time.time() - self._last_sync_time < 10:  # Rate limit sync to every 10s (giảm từ 30s)
+    def sync_from_database(self, conn=None, force=False):
+        """Pre-populate / refresh L1 Vector Cache from Database."""
+        if not force and (time.time() - self._last_sync_time < 10):  # Rate limit sync to every 10s
             return
+
+        should_close = False
+        if conn is None:
+            try:
+                from app.db.connection import get_db_connection
+                conn = get_db_connection()
+                should_close = True
+            except Exception as e:
+                logger.warning(f"Could not open DB connection for vector cache sync: {e}")
+                return
 
         try:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT customer_id, embedding::text
+                SELECT customer_id, embedding
                 FROM customer_embeddings
                 WHERE embedding IS NOT NULL
                 """
@@ -127,11 +144,17 @@ class VectorCacheManager:
             count = 0
             for row in rows:
                 cid = str(row["customer_id"])
-                vec_str = row["embedding"]
-                if vec_str:
+                vec_data = row["embedding"]
+                if vec_data:
                     try:
-                        clean_str = vec_str.strip("[]")
-                        vec = np.fromstring(clean_str, sep=",", dtype=np.float32)
+                        if isinstance(vec_data, (bytes, bytearray)):
+                            vec = np.frombuffer(vec_data, dtype=np.float32)
+                        elif isinstance(vec_data, str):
+                            clean_str = vec_data.strip("[]")
+                            vec = np.fromstring(clean_str, sep=",", dtype=np.float32)
+                        else:
+                            vec = np.asarray(vec_data, dtype=np.float32)
+
                         if len(vec) == 512:
                             norm = np.linalg.norm(vec)
                             if norm > 0:
@@ -145,6 +168,12 @@ class VectorCacheManager:
             logger.info(f"L1 Vector Cache synced {count} embeddings from Database.")
         except Exception as e:
             logger.error(f"Failed to sync L1 Vector Cache from database: {e}")
+        finally:
+            if should_close and conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 # Global singleton
 vector_cache_manager = VectorCacheManager()

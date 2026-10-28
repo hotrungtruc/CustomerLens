@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock, patch
 import time
 import os
 import sys
@@ -97,26 +98,32 @@ class TestJWTAuthentication(unittest.TestCase):
     def test_revoke_user_sessions(self):
         user_id = 999
         user_data = {"id": user_id, "username": "revoked_user", "role": "user", "cameras": []}
-        
-        # Token generated before revocation
-        old_token = create_access_token(user_data)
-        payload = decode_access_token(old_token)
-        self.assertEqual(payload["username"], "revoked_user")
 
-        # Revoke user sessions
-        revoke_user_sessions(user_id)
+        mock_redis = MagicMock()
+        store = {}
+        mock_redis.set.side_effect = lambda k, v, **kw: store.update({k: str(v)})
+        mock_redis.get.side_effect = lambda k: store.get(k)
 
-        # Old token should now be rejected
-        with self.assertRaises(HTTPException) as ctx:
-            decode_access_token(old_token)
-        self.assertEqual(ctx.exception.status_code, 401)
-        self.assertIn("revoked", ctx.exception.detail.lower())
+        with patch("app.api.auth.get_sync_redis_client", return_value=mock_redis):
+            # Token generated before revocation
+            old_token = create_access_token(user_data)
+            payload = decode_access_token(old_token)
+            self.assertEqual(payload["username"], "revoked_user")
 
-        # Simulate new login after revocation (iat after revocation timestamp)
-        time.sleep(1.1)
-        new_token = create_access_token(user_data)
-        new_payload = decode_access_token(new_token)
-        self.assertEqual(new_payload["username"], "revoked_user")
+            # Revoke user sessions
+            revoke_user_sessions(user_id)
+
+            # Old token should now be rejected
+            with self.assertRaises(HTTPException) as ctx:
+                decode_access_token(old_token)
+            self.assertEqual(ctx.exception.status_code, 401)
+            self.assertIn("revoked", ctx.exception.detail.lower())
+
+            # Simulate new login after revocation (iat after revocation timestamp)
+            time.sleep(1.1)
+            new_token = create_access_token(user_data)
+            new_payload = decode_access_token(new_token)
+            self.assertEqual(new_payload["username"], "revoked_user")
 
 
 if __name__ == "__main__":

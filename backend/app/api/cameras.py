@@ -14,7 +14,7 @@ import hashlib
 
 from fastapi import APIRouter, Header, HTTPException, Request
 
-from app.api.auth import get_user_from_token, require_admin, revoke_user_sessions
+from app.api.auth import get_user_from_token, hash_password, require_admin, revoke_user_sessions
 from app.api.devices import (
     CAMERA_STATES,
     CAMERA_STATES_LOCK,
@@ -49,13 +49,25 @@ async def _list_camera_presence(user):
     if not cameras:
         return []
 
-    r = await get_redis()
+    owners = [None] * len(cameras)
     try:
-        owners = await r.mget(
-            [_camera_presence_key(camera["camera_id"]) for camera in cameras]
-        )
-    finally:
-        await r.aclose()
+        r = await get_redis()
+        try:
+            owners = await r.mget(
+                [_camera_presence_key(camera["camera_id"]) for camera in cameras]
+            )
+        finally:
+            await r.aclose()
+    except Exception as e:
+        import time
+        from app.api.devices import IN_MEMORY_CAMERA_LEASES
+        now = time.time()
+        owners = [
+            IN_MEMORY_CAMERA_LEASES.get(camera["camera_id"], {}).get("connection_id")
+            if IN_MEMORY_CAMERA_LEASES.get(camera["camera_id"], {}).get("expires_at", 0) > now
+            else None
+            for camera in cameras
+        ]
 
     with CAMERA_STATES_LOCK:
         result = []
@@ -215,7 +227,7 @@ async def create_user(
             INSERT INTO users (username, password_hash, role, status)
             VALUES (?, ?, 'moderator', 'active')
             """,
-            (username, hashlib.sha256(password.encode("utf-8")).hexdigest()),
+            (username, hash_password(password)),
         )
         conn.commit()
         user = conn.execute(
@@ -263,7 +275,7 @@ async def update_user(
         if password:
             conn.execute(
                 "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (hashlib.sha256(password.encode("utf-8")).hexdigest(), user["id"]),
+                (hash_password(password), user["id"]),
             )
         if status is not None:
             conn.execute(

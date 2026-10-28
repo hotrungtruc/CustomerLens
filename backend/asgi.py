@@ -1,3 +1,10 @@
+import sys
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 import os
 
 from contextlib import asynccontextmanager
@@ -5,7 +12,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 from app.api import router, init_kafka_producer, close_kafka_producer
+from app.api.auth import limiter
 from app.api.edge_routes import router as edge_router
 from app.db.connection import get_db_connection, ensure_schema
 from config import ALLOWED_ORIGINS
@@ -26,6 +37,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

@@ -604,6 +604,23 @@ def _ensure_schema_sqlite(conn):
         )""")
     _add_missing_columns(conn, "recognize_logs", {"connection_id": "TEXT DEFAULT NULL"})
 
+    # High performance indexes for recognition logs and analytics queries
+    try:
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_recognize_logs_ts_cam
+            ON recognize_logs(timestamp, camera_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_recognize_logs_customer
+            ON recognize_logs(customer_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_customers_type_status
+            ON customers(customer_type, status)
+        """)
+    except Exception as idx_err:
+        pass
+
     _migrate_legacy_customer_data(conn)
     _migrate_embeddings(conn)
     _add_all_audit_columns(conn)

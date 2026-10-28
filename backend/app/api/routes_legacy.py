@@ -24,10 +24,13 @@ _reconnect_task: asyncio.Task = None
 
 async def _kafka_reconnect_loop():
     global kafka_producer
+    from app.messaging.kafka_client import is_kafka_reachable
     while True:
-        await asyncio.sleep(5)
+        await asyncio.sleep(15)
         if kafka_producer is not None:
             break
+        if not is_kafka_reachable(KAFKA_BOOTSTRAP_SERVERS):
+            continue
         try:
             print(f"[RETRY] Attempting to reconnect to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}...", flush=True)
             producer = AIOKafkaProducer(bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS)
@@ -1309,12 +1312,8 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         async def _warmup_cache():
             try:
                 from app.core.vector_cache import vector_cache_manager
-                warmup_conn = get_db_connection()
-                try:
-                    await asyncio.to_thread(vector_cache_manager.sync_from_database, warmup_conn)
-                    print(f"[CACHE WARMUP] L1 Vector Cache pre-populated for camera {camera_id}", flush=True)
-                finally:
-                    warmup_conn.close()
+                await asyncio.to_thread(vector_cache_manager.sync_from_database)
+                print(f"[CACHE WARMUP] L1 Vector Cache pre-populated for camera {camera_id}", flush=True)
             except Exception as _e:
                 print(f"[CACHE WARMUP] Warning: cache warmup failed: {_e}", flush=True)
 

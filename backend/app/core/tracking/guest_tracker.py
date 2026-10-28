@@ -230,39 +230,57 @@ class GuestTrackManager:
     def promote_guest(self, guest_id: str, new_id: str) -> bool:
         with self.lock:
             try:
-                if self.use_pgvector:
-                    try:
-                        conn = self._get_cached_conn()
-                        conn.execute(
-                            "UPDATE customer_embeddings SET customer_id = ? WHERE customer_id = ?",
-                            (new_id, guest_id),
-                        )
-                        conn.execute(
-                            "UPDATE recognize_logs SET customer_id = ? WHERE customer_id = ?",
-                            (new_id, guest_id),
-                        )
-                        conn.execute(
-                            "DELETE FROM customers WHERE customer_id = ?", (guest_id,)
-                        )
-                        conn.commit()
-                        if guest_id in self.guest_ids:
-                            idx = self.guest_ids.index(guest_id)
-                            self.guest_embeddings.pop(idx)
-                            self.guest_ids.pop(idx)
-                        return True
-                    except Exception as e:
-                        logger.error("Error promoting guest in pgvector: %s", e, exc_info=True)
-                        return False
-                else:
-                    if guest_id not in self.guest_ids:
-                        return False
+                # 1. Update DB (both pgvector and sqlite)
+                conn = self._get_cached_conn() if self.use_pgvector else get_db_connection()
+                try:
+                    conn.execute(
+                        "UPDATE customer_embeddings SET customer_id = ? WHERE customer_id = ?",
+                        (new_id, guest_id),
+                    )
+                    conn.execute(
+                        "UPDATE recognize_logs SET customer_id = ? WHERE customer_id = ?",
+                        (new_id, guest_id),
+                    )
+                    conn.execute(
+                        "DELETE FROM customers WHERE customer_id = ?", (guest_id,)
+                    )
+                    conn.commit()
+                except Exception as e:
+                    logger.error("Error updating DB in promote_guest: %s", e, exc_info=True)
+                finally:
+                    if not self.use_pgvector and conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+
+                # 2. Update in-memory lists
+                if guest_id in self.guest_ids:
                     idx = self.guest_ids.index(guest_id)
                     emb = self.guest_embeddings.pop(idx)
                     self.guest_ids.pop(idx)
                     self.known_embeddings.append(emb)
                     self.known_ids.append(new_id)
-                    return True
-            except Exception:
+                elif guest_id in self.known_ids:
+                    idx = self.known_ids.index(guest_id)
+                    self.known_ids[idx] = new_id
+
+                # 3. Update any active tracks
+                for track in self.tracks.values():
+                    if track.resolved_customer_id in (guest_id, new_id):
+                        track.cached_profile = None
+                        track.resolved_customer_id = new_id
+
+                # 4. Sync L1 Vector Cache
+                try:
+                    from app.core.vector_cache import vector_cache_manager
+                    vector_cache_manager.sync_from_database(force=True)
+                except Exception:
+                    pass
+
+                return True
+            except Exception as e:
+                logger.error("Error in promote_guest: %s", e, exc_info=True)
                 return False
 
     # ------------------------------------------------------------------
@@ -350,10 +368,13 @@ class GuestTrackManager:
         # Accumulate embedding
         if quality_ok and embedding is not None:
             norm_emb = normalize_embedding(embedding)
-            if not track_state.embeddings or not np.array_equal(track_state.embeddings[-1], norm_emb):
-                track_state.embeddings.append(norm_emb)
-                if guest_quality_ok:
-                    track_state.guest_embeddings.append(norm_emb)
+            track_state.embeddings.append(norm_emb)
+            if len(track_state.embeddings) > 20:
+                track_state.embeddings = track_state.embeddings[-20:]
+            if guest_quality_ok:
+                track_state.guest_embeddings.append(norm_emb)
+                if len(track_state.guest_embeddings) > 20:
+                    track_state.guest_embeddings = track_state.guest_embeddings[-20:]
 
         # Run voting (per-frame)
         if track_state.embeddings:
@@ -489,6 +510,8 @@ class GuestTrackManager:
                 track.state = "tracked"
                 track.last_seen_frame = self.frame_index
                 track.last_seen_at = now
+                if det.get("local_track_id"):
+                    track.local_track_id = det["local_track_id"]
                 self._maybe_queue_embedding(
                     track, det, target_len,
                     batch_landmarks, batch_records, batch_tracks,
@@ -566,9 +589,18 @@ class GuestTrackManager:
         if not tracks_pool or not detections:
             return [], list(tracks_pool), list(detections)
 
+        def _calc_iou(t, d):
+            det_local_id = d.get("local_track_id")
+            if t.local_track_id and det_local_id and t.local_track_id != det_local_id:
+                # If local_track_id differs, allow IoU association if track was lost and IoU >= 0.40
+                # to prevent track fragmentation when client regenerates track UUID
+                iou = bbox_iou(t.predicted_bbox, d["bbox"])
+                return iou if (t.state == "lost" and iou >= 0.40) else 0.0
+            return bbox_iou(t.predicted_bbox, d["bbox"])
+
         cost_matrix = np.array(
             [
-                [1.0 - bbox_iou(t.predicted_bbox, d["bbox"]) for d in detections]
+                [1.0 - _calc_iou(t, d) for d in detections]
                 for t in tracks_pool
             ],
             dtype=np.float32,
@@ -584,6 +616,7 @@ class GuestTrackManager:
             else:
                 unmatched_t.append(tracks_pool[r])
                 unmatched_d.append(detections[c])
+
 
         unmatched_t += [tracks_pool[i] for i in range(len(tracks_pool)) if i not in matched_rows]
         unmatched_d += [detections[j] for j in range(len(detections)) if j not in matched_cols]

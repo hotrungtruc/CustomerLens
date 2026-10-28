@@ -28,7 +28,7 @@ function getWsUrl(cameraId, takeover = false) {
   if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") && !process.env.NEXT_PUBLIC_API_URL && !process.env.NEXT_PUBLIC_API_BASE_URL) {
     host = "localhost:8000";
   }
-  const query = takeover ? "?takeover=1" : "";
+  const query = "?takeover=1";
   return `${protocol}//${host}/ws/${encodeURIComponent(cameraId)}${query}`;
 }
 
@@ -54,7 +54,7 @@ export function useCamera(cameraId) {
   const mountedRef = useRef(true);
   const sendingRef = useRef(false);
   const reconnectRef = useRef(null);
-  const takeoverNextRef = useRef(false);
+  const takeoverNextRef = useRef(true);
   const suppressedCloseRef = useRef(null);
   const serverReadyRef = useRef(false);
   const skipNextDeviceStartRef = useRef(false);
@@ -62,7 +62,7 @@ export function useCamera(cameraId) {
   const faceImagesRef = useRef({});
 
   const [devices, setDevices] = useState([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  const [selectedDeviceId, setSelectedDeviceId] = useState("sample_video");
   const [wsStatus, setWsStatus] = useState("connecting");
   const [customers, setCustomers] = useState([]);
   const [frameSize, setFrameSize] = useState({ width: 640, height: 360 });
@@ -123,7 +123,11 @@ export function useCamera(cameraId) {
                else next.push({ ...c, last_seen: Date.now() });
             });
             const now = Date.now();
-            return next.filter(x => now - (x.last_seen || now) < 10000);
+            return next.filter(x => {
+              const isResolved = Boolean(x.id && x.customer_status !== "extracting" && x.name !== "Đang nhận diện..." && x.name !== "Identifying...");
+              const maxAge = isResolved ? 10000 : 2500;
+              return now - (x.last_seen || now) < maxAge;
+            });
           });
           return;
         }
@@ -187,6 +191,7 @@ export function useCamera(cameraId) {
       setConnectionId(null);
       if (event.code === 4008) {
         setWsStatus("taken_over");
+        clearTimeout(reconnectRef.current);
         return;
       }
       setWsStatus("disconnected");
@@ -209,6 +214,7 @@ export function useCamera(cameraId) {
   const takeOver = useCallback(() => {
     clearTimeout(reconnectRef.current);
     takeoverNextRef.current = true;
+    setWsStatus("connecting");
     const currentWs = wsRef.current;
     if (currentWs && currentWs.readyState < WebSocket.CLOSING) {
       suppressedCloseRef.current = currentWs;
@@ -219,6 +225,12 @@ export function useCamera(cameraId) {
 
   // ── Frame capture ─────────────────────────────────────────────────────────
   const sendCrop = useCallback((face) => {
+    if (!face || !face.pixelBox) return;
+    const { originX, originY, width, height } = face.pixelBox;
+    if (width < 32 || height < 32) return;
+    if (face.isGoodQuality === false) return;
+    if (face.score && face.score < 0.55) return;
+
     if (!serverReadyRef.current) return;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -232,11 +244,11 @@ export function useCamera(cameraId) {
     if (!ctx) return;
 
     try {
-      const { originX, originY, width, height } = face.pixelBox;
       
-      // Use 25% padding to include chin/forehead without overlapping neighbors
-      const padX = width * 0.25;
-      const padY = height * 0.25;
+      // Use 50% padding (+50%) to include chin/forehead/ears and provide ideal context for backend SCRFD & ArcFace
+      const paddingRatio = 0.50;
+      const padX = width * paddingRatio;
+      const padY = height * paddingRatio;
       
       const sx = Math.max(0, originX - padX);
       const sy = Math.max(0, originY - padY);
@@ -252,13 +264,18 @@ export function useCamera(cameraId) {
       canvas.height = h;
       ctx.drawImage(video, sx, sy, sWidth, sHeight, 0, 0, w, h);
 
+      // Save immediate face crop thumbnail for UI overlay & pinned inspector
+      if (!faceImagesRef.current[face.local_track_id]) {
+        faceImagesRef.current[face.local_track_id] = canvas.toDataURL("image/jpeg", 0.85);
+      }
+
       // Blur Detection (Laplacian Variance)
       const imageData = ctx.getImageData(0, 0, w, h);
       const data = imageData.data;
       let sum = 0, sumSq = 0;
       let validPixels = 0;
       // Simple laplacian kernel approximation for speed: [0, 1, 0, 1, -4, 1, 0, 1, 0]
-      // We'll just sample every 4th pixel for speed
+      // We sample every 4th pixel for speed
       for (let y = 1; y < h - 1; y += 2) {
         for (let x = 1; x < w - 1; x += 2) {
           const i = (y * w + x) * 4;
@@ -278,16 +295,15 @@ export function useCamera(cameraId) {
       const mean = sum / validPixels;
       const variance = (sumSq / validPixels) - (mean * mean);
       
-      const minVariance = Math.min(w, h) < 60 ? 6 : 12;
+      const minVariance = 0.5;
       if (variance < minVariance) {
-        // Blur detected, ignore frame
-        console.warn(`[useCamera] Frame too blurry, variance: ${variance.toFixed(1)}`);
+        // Blur detected, ignore frame for embedding
         return;
       }
 
-      // Save crop for UI Avatar (only capture once per track to prevent flickering)
-      if (!faceImagesRef.current[face.local_track_id]) {
-        faceImagesRef.current[face.local_track_id] = canvas.toDataURL("image/jpeg", 0.7);
+      // Update with sharper crop if available
+      if (variance > 10) {
+        faceImagesRef.current[face.local_track_id] = canvas.toDataURL("image/jpeg", 0.85);
       }
 
       canvas.toBlob(
@@ -301,17 +317,10 @@ export function useCamera(cameraId) {
             blob.arrayBuffer().then(blobBuffer => {
                const transformed_landmarks = [];
                if (face.keypoints && face.keypoints.length >= 4) {
-                   // Ensure the eye on the left side of the image is first, to match ArcFace template
-                   let eye1 = face.keypoints[0];
-                   let eye2 = face.keypoints[1];
-                   let leftEyeImg = eye1.x < eye2.x ? eye1 : eye2;
-                   let rightEyeImg = eye1.x < eye2.x ? eye2 : eye1;
-                   
-                   const points = [leftEyeImg, rightEyeImg, face.keypoints[2], face.keypoints[3]];
-                   for (const pt of points) {
+                   for (const pt of face.keypoints) {
                        if (pt) {
-                           const px = pt.x * video.videoWidth;
-                           const py = pt.y * video.videoHeight;
+                           const px = pt.px !== undefined ? pt.px : pt.x * video.videoWidth;
+                           const py = pt.py !== undefined ? pt.py : pt.y * video.videoHeight;
                            const cropX = (px - sx) * scale;
                            const cropY = (py - sy) * scale;
                            transformed_landmarks.push([cropX, cropY]);
@@ -322,7 +331,7 @@ export function useCamera(cameraId) {
                const metaJson = JSON.stringify({
                    local_track_id: face.local_track_id,
                    bbox: [sx, sy, sx + sWidth, sy + sHeight],
-                   landmarks: transformed_landmarks.length === 4 ? transformed_landmarks : null
+                   landmarks: (transformed_landmarks.length === 4 || transformed_landmarks.length === 5) ? transformed_landmarks : null
                });
                const metaBytes = new TextEncoder().encode(metaJson);
                
@@ -356,6 +365,16 @@ export function useCamera(cameraId) {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     
+    if (videoRef.current) {
+      try {
+        videoRef.current.pause();
+        videoRef.current.removeAttribute("src");
+        videoRef.current.src = "";
+        videoRef.current.load();
+      } catch (_) {}
+      videoRef.current.srcObject = null;
+    }
+
     // Close all WebRTC connections
     Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
     peerConnectionsRef.current = {};
@@ -366,19 +385,44 @@ export function useCamera(cameraId) {
       stopStream();
       setCameraError("");
 
+      // Direct video stream simulation (sample video or uploaded blob)
+      if (deviceId === "sample_video" || deviceId.startsWith("blob:") || deviceId.endsWith(".mp4")) {
+        if (videoRef.current) {
+          const videoSrc = deviceId === "sample_video" ? "/test_video.mp4" : deviceId;
+          videoRef.current.srcObject = null;
+          videoRef.current.src = videoSrc;
+          videoRef.current.loop = true;
+          videoRef.current.muted = true;
+          videoRef.current.playsInline = true;
+          try {
+            await videoRef.current.play();
+          } catch (err) {
+            console.warn("Video file play error:", err);
+          }
+        }
+        return;
+      }
+
+      // Live Physical Webcam Stream
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("This browser does not support camera access.");
+          throw new Error("Trình duyệt không hỗ trợ MediaDevices / Webcam API.");
         }
 
-        const constraints = {
-          video: deviceId
-            ? { deviceId: { exact: deviceId }, frameRate: { ideal: 60 } }
-            : { facingMode: "user", frameRate: { ideal: 60 } },
-          audio: false,
-        };
+        let stream = null;
+        try {
+          const constraints = {
+            video: deviceId
+              ? { deviceId: { exact: deviceId } }
+              : { width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false,
+          };
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (firstErr) {
+          console.warn("Camera constraint failed, retrying with default { video: true }", firstErr);
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
 
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (!mountedRef.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -386,12 +430,14 @@ export function useCamera(cameraId) {
 
         streamRef.current = stream;
         if (videoRef.current) {
+          videoRef.current.pause();
+          videoRef.current.removeAttribute("src");
+          videoRef.current.src = "";
+          videoRef.current.loop = false;
           videoRef.current.srcObject = stream;
           try {
             await videoRef.current.play();
           } catch (err) {
-            // Browser may interrupt play() if this tile immediately switches
-            // from the default camera to a concrete deviceId.
             if (err?.name !== "AbortError") {
               throw err;
             }
@@ -399,43 +445,60 @@ export function useCamera(cameraId) {
         }
 
         // Enumerate all camera devices after permission is granted
-        const allDevices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = allDevices.filter((d) => d.kind === "videoinput");
-        if (mountedRef.current) {
-          setDevices(videoDevices);
-          if (!deviceId && videoDevices.length > 0) {
-            skipNextDeviceStartRef.current = true;
-            setSelectedDeviceId(videoDevices[0].deviceId);
+        try {
+          const allDevices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = allDevices.filter((d) => d.kind === "videoinput");
+          if (mountedRef.current) {
+            setDevices(videoDevices);
           }
-        }
+        } catch (_) {}
       } catch (err) {
+        console.error("Camera access error:", err);
         if (mountedRef.current) {
-          setCameraError(
-            err instanceof Error ? err.message : "Unable to access camera",
-          );
+          let errorMsg = err instanceof Error ? err.message : "Unable to access camera";
+          if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+            errorMsg = "Quyền truy cập camera bị từ chối. Vui lòng cho phép quyền Camera trên trình duyệt.";
+          } else if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") {
+            errorMsg = "Không tìm thấy thiết bị camera nào được kết nối với máy tính.";
+          } else if (err?.name === "NotReadableError" || err?.name === "TrackStartError") {
+            errorMsg = "Không thể khởi động camera. Có thể camera đang được ứng dụng khác (Zoom, Teams, v.v.) chiếm giữ.";
+          }
+          setCameraError(errorMsg);
         }
       }
     },
     [stopStream],
   );
 
-  // Initial camera start on mount
+  // Initial enumeration on mount
   useEffect(() => {
-    startCamera();
-    return () => stopStream();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.enumerateDevices) {
+      navigator.mediaDevices.enumerateDevices().then((allDevices) => {
+        const videoDevices = allDevices.filter((d) => d.kind === "videoinput");
+        if (mountedRef.current && videoDevices.length > 0) {
+          setDevices(videoDevices);
+        }
+      }).catch(() => {});
+    }
   }, []);
 
-  // Camera switch when user picks a different device
+  const isFirstMountRef = useRef(true);
+
+  // Camera switch whenever selectedDeviceId changes (including empty string for Integrated Camera)
   useEffect(() => {
-    if (!selectedDeviceId) return;
-    if (skipNextDeviceStartRef.current) {
-      skipNextDeviceStartRef.current = false;
+    if (isFirstMountRef.current) {
+      isFirstMountRef.current = false;
+      startCamera(selectedDeviceId);
       return;
     }
     startCamera(selectedDeviceId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDeviceId]);
+
+  // Stop stream tracks on unmount
+  useEffect(() => {
+    return () => stopStream();
+  }, [stopStream]);
 
   return {
     videoRef,

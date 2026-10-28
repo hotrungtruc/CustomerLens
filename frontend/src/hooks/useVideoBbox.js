@@ -63,13 +63,12 @@ export function useVideoBbox(containerRef, frameWidth, frameHeight) {
     const pctH = h / fh;
 
     if (!cw || !ch || !vw || !vh) {
-      // Fallback: simple percentage if size not available
-      return {
-        left: pctX * 100,
-        top: pctY * 100,
-        width: pctW * 100,
-        height: pctH * 100,
-      };
+      // Fallback: simple percentage clamped to [0, 100]
+      const left = Math.max(0, Math.min(100, pctX * 100));
+      const top = Math.max(0, Math.min(100, pctY * 100));
+      const width = Math.max(0, Math.min(100 - left, pctW * 100));
+      const height = Math.max(0, Math.min(100 - top, pctH * 100));
+      return { left, top, width, height };
     }
 
     // Calculate object-cover math using the ACTUAL video intrinsic dimensions
@@ -79,11 +78,24 @@ export function useVideoBbox(containerRef, frameWidth, frameHeight) {
     const offsetX = (cw - renderedW) / 2;
     const offsetY = (ch - renderedH) / 2;
 
+    const rawLeft = ((offsetX + pctX * renderedW) / cw) * 100;
+    const rawTop = ((offsetY + pctY * renderedH) / ch) * 100;
+    const rawWidth = ((pctW * renderedW) / cw) * 100;
+    const rawHeight = ((pctH * renderedH) / ch) * 100;
+
+    // Clamp strictly within visible container boundaries [0, 100]%
+    const left = Math.max(0, Math.min(100, rawLeft));
+    const top = Math.max(0, Math.min(100, rawTop));
+    const right = Math.max(0, Math.min(100, rawLeft + rawWidth));
+    const bottom = Math.max(0, Math.min(100, rawTop + rawHeight));
+    const width = Math.max(0, right - left);
+    const height = Math.max(0, bottom - top);
+
     return {
-      left: ((offsetX + pctX * renderedW) / cw) * 100,
-      top: ((offsetY + pctY * renderedH) / ch) * 100,
-      width: ((pctW * renderedW) / cw) * 100,
-      height: ((pctH * renderedH) / ch) * 100,
+      left,
+      top,
+      width,
+      height,
     };
   }
 

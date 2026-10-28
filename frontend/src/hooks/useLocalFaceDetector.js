@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
+import { initSCRFD, detectFacesSCRFD } from "../lib/scrfdDetector";
+import { FaceDetector, FilesetResolver } from "@mediapipe/tasks-vision";
+
+const MAX_LOST_FRAMES = 22; // Coast tracks for ~700ms when detector misses a frame (prevents ID fragmentation)
+const EMA_ALPHA = 0.65; // Smoothing factor for bounding box coordinates
+const DET_CONFIDENCE = 0.58; // Confidence threshold for MediaPipe / SCRFD (clean noise rejection)
+const MIN_BBOX_SIZE = 32; // Minimum face pixel dimension (rejects noise < 32px)
 
 function calculateIoU(boxA, boxB) {
   const xA = Math.max(boxA.left, boxB.left);
@@ -26,72 +32,77 @@ function generateUUID() {
 
 export function useLocalFaceDetector(videoRef) {
   const [localFaces, setLocalFaces] = useState([]);
-  const faceDetectorRef = useRef(null);
+  const detectorModeRef = useRef("none"); // "mediapipe" | "scrfd" | "none"
+  const mediapipeDetectorRef = useRef(null);
   const requestRef = useRef(null);
   const lastVideoTimeRef = useRef(-1);
   const trackedFacesRef = useRef([]);
+  const isDetectingRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
 
     async function initDetector() {
+      // 1. Try MediaPipe FaceDetector first (BlazeFace 60 FPS Edge Detector)
       try {
         const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm",
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
         );
 
-        const REMOTE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-        const LOCAL_MODEL_URL = "/models/face_landmarker.task";
-
-        let faceLandmarker = null;
+        let detector = null;
+        // Priority A: BlazeFace Full-Range with GPU delegate
         try {
-          // Priority 1: Load local face_landmarker.task with GPU
-          faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+          detector = await FaceDetector.createFromOptions(vision, {
             baseOptions: {
-              modelAssetPath: LOCAL_MODEL_URL,
+              modelAssetPath: "/models/blaze_face_full_range.tflite",
               delegate: "GPU",
             },
             runningMode: "VIDEO",
-            numFaces: 5,
-            minFaceDetectionConfidence: 0.35,
-            minFacePresenceConfidence: 0.35,
+            minDetectionConfidence: DET_CONFIDENCE,
           });
-        } catch (localGpuErr) {
-          console.warn("Local GPU init failed, trying Remote CDN with GPU:", localGpuErr);
+        } catch (gpuFullErr) {
+          console.warn("MediaPipe Full-Range GPU failed, trying Short-Range GPU:", gpuFullErr);
           try {
-            // Priority 2: Remote Google Cloud CDN with GPU
-            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+            detector = await FaceDetector.createFromOptions(vision, {
               baseOptions: {
-                modelAssetPath: REMOTE_MODEL_URL,
+                modelAssetPath: "/models/blaze_face_short_range.tflite",
                 delegate: "GPU",
               },
               runningMode: "VIDEO",
-              numFaces: 5,
-              minFaceDetectionConfidence: 0.35,
-              minFacePresenceConfidence: 0.35,
+              minDetectionConfidence: DET_CONFIDENCE,
             });
-          } catch (remoteGpuErr) {
-            console.warn("Remote GPU failed, trying CPU fallback:", remoteGpuErr);
-            // Priority 3: CPU fallback
-            faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+          } catch (gpuShortErr) {
+            console.warn("GPU delegate failed, trying CPU delegate:", gpuShortErr);
+            detector = await FaceDetector.createFromOptions(vision, {
               baseOptions: {
-                modelAssetPath: REMOTE_MODEL_URL,
+                modelAssetPath: "/models/blaze_face_full_range.tflite",
                 delegate: "CPU",
               },
               runningMode: "VIDEO",
-              numFaces: 5,
-              minFaceDetectionConfidence: 0.35,
-              minFacePresenceConfidence: 0.35,
+              minDetectionConfidence: DET_CONFIDENCE,
             });
           }
         }
 
-        if (isMounted) {
-          faceDetectorRef.current = faceLandmarker;
-          console.log("✓ MediaPipe FaceLandmarker Tasks API initialized on edge web client");
+        if (detector && isMounted) {
+          mediapipeDetectorRef.current = detector;
+          detectorModeRef.current = "mediapipe";
+          console.log("✓ MediaPipe FaceDetector (BlazeFace) initialized as primary Edge Detector");
+          return;
         }
-      } catch (err) {
-        console.error("Failed to initialize MediaPipe FaceLandmarker:", err);
+      } catch (mpErr) {
+        console.warn("MediaPipe FaceDetector init failed, falling back to SCRFD ONNX:", mpErr);
+      }
+
+      // 2. Fallback to SCRFD ONNX Detector if MediaPipe cannot be initialized
+      try {
+        await initSCRFD("/models/scrfd_500m_bnkps.onnx");
+        if (isMounted) {
+          detectorModeRef.current = "scrfd";
+          console.log("✓ Edge SCRFD (ONNX Runtime Web) face detector ready as fallback");
+        }
+      } catch (scrfdErr) {
+        console.error("Failed to initialize any face detector:", scrfdErr);
       }
     }
 
@@ -99,146 +110,318 @@ export function useLocalFaceDetector(videoRef) {
 
     return () => {
       isMounted = false;
-      if (faceDetectorRef.current) {
+      if (mediapipeDetectorRef.current) {
         try {
-          faceDetectorRef.current.close();
+          mediapipeDetectorRef.current.close();
         } catch (_) {}
       }
     };
   }, []);
 
   useEffect(() => {
-    function detectFaces() {
-      if (faceDetectorRef.current && videoRef.current && videoRef.current.readyState >= 2) {
-        const startTimeMs = performance.now();
-        const video = videoRef.current;
-
-        // Only run detection if the video frame has advanced
+    async function detectFaces() {
+      const video = videoRef.current;
+      if (
+        detectorModeRef.current !== "none" &&
+        video &&
+        video.readyState >= 2 &&
+        !isDetectingRef.current
+      ) {
         if (lastVideoTimeRef.current !== video.currentTime) {
           lastVideoTimeRef.current = video.currentTime;
+          isDetectingRef.current = true;
 
           try {
-            const results = faceDetectorRef.current.detectForVideo(video, startTimeMs);
-            if (results && results.faceLandmarks && results.faceLandmarks.length > 0) {
-              const sw = video.videoWidth;
-              const sh = video.videoHeight;
+            const sw = video.videoWidth;
+            const sh = video.videoHeight;
+            let mappedFaces = [];
 
-              const mappedFaces = results.faceLandmarks.map((landmarks) => {
-                let minX = 1.0, minY = 1.0, maxX = 0.0, maxY = 0.0;
-                for (let i = 0; i < landmarks.length; i++) {
-                  const pt = landmarks[i];
-                  if (pt.x < minX) minX = pt.x;
-                  if (pt.x > maxX) maxX = pt.x;
-                  if (pt.y < minY) minY = pt.y;
-                  if (pt.y > maxY) maxY = pt.y;
-                }
+            if (detectorModeRef.current === "mediapipe" && mediapipeDetectorRef.current) {
+              // --- MediaPipe FaceDetector (BlazeFace) Execution ---
+              const startTimeMs = performance.now();
+              const results = mediapipeDetectorRef.current.detectForVideo(video, startTimeMs);
 
-                const rawW = (maxX - minX) * sw;
-                const rawH = (maxY - minY) * sh;
-                const mx = rawW * 0.06;
-                const my = rawH * 0.06;
+              if (results && results.detections && results.detections.length > 0) {
+                mappedFaces = results.detections
+                  .filter((d) => {
+                    if (!d.boundingBox) return false;
+                    const { originX = 0, originY = 0, width, height } = d.boundingBox;
+                    if (width < MIN_BBOX_SIZE || height < MIN_BBOX_SIZE) return false;
+                    if (width > sw * 0.7 || height > sh * 0.7) return false;
 
-                const originX = Math.max(0, minX * sw - mx);
-                const originY = Math.max(0, minY * sh - my);
-                const width = Math.min(sw - originX, rawW + mx * 2);
-                const height = Math.min(sh - originY, rawH + my * 2);
+                    // 1. Aspect ratio check (human face is vertical/square: 0.72 - 1.65)
+                    const ar = height / Math.max(1, width);
+                    if (ar < 0.72 || ar > 1.65) return false;
 
-                // Margin check (touching borders)
-                const marginX = sw * 0.04;
-                const marginY = sh * 0.04;
-                const isAtEdge =
-                  originX < marginX ||
-                  originY < marginY ||
-                  originX + width > sw - marginX ||
-                  originY + height > sh - marginY;
+                    // 2. Score threshold check
+                    const score = d.categories?.[0]?.score ?? 0.5;
+                    if (score < DET_CONFIDENCE) return false;
 
-                // Extract Key Reference Points
-                // 468/33: Left Eye, 473/263: Right Eye, 1: Nose Tip, 61: Left Mouth, 291: Right Mouth
-                const leftEye = landmarks[468] || landmarks[33] || landmarks[133];
-                const rightEye = landmarks[473] || landmarks[263] || landmarks[362];
-                const nose = landmarks[1];
-                const mouthL = landmarks[61];
-                const mouthR = landmarks[291];
+                    // 3. MediaPipe 6 keypoints geometry verification
+                    // 0: Right Eye, 1: Left Eye, 2: Nose Tip, 3: Mouth Center, 4: Right Ear, 5: Left Ear
+                    const kps = d.keypoints;
+                    if (!kps || kps.length < 4) return false;
 
-                const mouthCenter = (mouthL && mouthR)
-                  ? { x: (mouthL.x + mouthR.x) / 2.0, y: (mouthL.y + mouthR.y) / 2.0 }
-                  : (mouthL || nose);
+                    const rEye = kps[0];
+                    const lEye = kps[1];
+                    const nose = kps[2];
+                    const mouth = kps[3];
+                    if (!rEye || !lEye || !nose || !mouth) return false;
 
-                const keypoints = [leftEye, rightEye, nose, mouthCenter];
+                    // Ensure keypoints fall strictly inside the normalized bounding box
+                    const boxLeftNorm = originX / sw;
+                    const boxRightNorm = (originX + width) / sw;
+                    const boxTopNorm = originY / sh;
+                    const boxBottomNorm = (originY + height) / sh;
 
-                // Pose Gate: Yaw and Eye Distance Symmetry
-                let isExtremeProfile = false;
-                let isEyesWideEnough = true;
+                    for (let i = 0; i < 4; i++) {
+                      const pt = kps[i];
+                      if (
+                        pt.x < boxLeftNorm - 0.03 ||
+                        pt.x > boxRightNorm + 0.03 ||
+                        pt.y < boxTopNorm - 0.03 ||
+                        pt.y > boxBottomNorm + 0.03
+                      ) {
+                        return false;
+                      }
+                    }
 
-                if (leftEye && rightEye && nose) {
-                  const distRight = Math.sqrt(Math.pow((rightEye.x - nose.x) * sw, 2) + Math.pow((rightEye.y - nose.y) * sh, 2));
-                  const distLeft = Math.sqrt(Math.pow((leftEye.x - nose.x) * sw, 2) + Math.pow((leftEye.y - nose.y) * sh, 2));
-                  const eyeDist = Math.sqrt(Math.pow((rightEye.x - leftEye.x) * sw, 2) + Math.pow((rightEye.y - leftEye.y) * sh, 2));
-                  const ratio = distRight > 0 ? distLeft / distRight : 999;
+                    // Both eyes must be higher than the mouth
+                    if (rEye.y >= mouth.y || lEye.y >= mouth.y) return false;
 
-                  if (ratio > 1.85 || ratio < 0.54) {
-                    isExtremeProfile = true;
+                    // Minimum eye distance relative to face size (rejects ears, profile, noise)
+                    const eyeDistNorm = Math.hypot(lEye.x - rEye.x, lEye.y - rEye.y);
+                    const faceWidthNorm = width / sw;
+                    if (eyeDistNorm / Math.max(0.01, faceWidthNorm) < 0.18) return false;
+
+                    // Nose tip must be vertically between eyes and mouth
+                    const eyeYMin = Math.min(rEye.y, lEye.y) - 0.03;
+                    const mouthYMax = mouth.y + 0.03;
+                    if (nose.y < eyeYMin || nose.y > mouthYMax) return false;
+
+                    return true;
+                  })
+                  .map((d) => {
+                    const bbox = d.boundingBox;
+                    const originX = Math.max(0, bbox.originX);
+                    const originY = Math.max(0, bbox.originY);
+                    const width = Math.min(sw - originX, bbox.width);
+                    const height = Math.min(sh - originY, bbox.height);
+                    const score = d.categories?.[0]?.score || 0.5;
+
+                    return {
+                      left: (originX / sw) * 100,
+                      top: (originY / sh) * 100,
+                      width: (width / sw) * 100,
+                      height: (height / sh) * 100,
+                      pixelBox: { originX, originY, width, height },
+                      keypoints: d.keypoints || [],
+                      score,
+                      isGoodQuality: width >= 32 && height >= 32 && score >= 0.55,
+                    };
+                  });
+              }
+            } else if (detectorModeRef.current === "scrfd") {
+              // --- SCRFD ONNX Fallback Detection ---
+              const scrfdResults = await detectFacesSCRFD(video, DET_CONFIDENCE);
+              mappedFaces = scrfdResults
+                .filter((f) => {
+                  if (f.width < MIN_BBOX_SIZE || f.height < MIN_BBOX_SIZE) return false;
+                  const ar = f.height / Math.max(1, f.width);
+                  if (ar < 0.72 || ar > 1.65) return false;
+                  if (f.score < DET_CONFIDENCE) return false;
+                  // Geometric verification on 5 facial keypoints: eyes above mouth
+                  if (f.keypoints && f.keypoints.length >= 4) {
+                    const avgEyeY = (f.keypoints[0].py + f.keypoints[1].py) / 2;
+                    const avgMouthY = (f.keypoints[3].py + (f.keypoints[4]?.py ?? f.keypoints[3].py)) / 2;
+                    if (avgMouthY <= avgEyeY) return false;
                   }
+                  return true;
+                })
+                .map((f) => {
+                  const originX = f.x1;
+                  const originY = f.y1;
+                  const width = f.width;
+                  const height = f.height;
+                  const isGoodQuality = width >= 32 && height >= 32 && f.score >= 0.55;
 
-                  const minEyeRatio = width < 60 ? 0.16 : 0.20;
-                  if (eyeDist < width * minEyeRatio) {
-                    isEyesWideEnough = false;
-                  }
-                }
+                  return {
+                    left: (originX / sw) * 100,
+                    top: (originY / sh) * 100,
+                    width: (width / sw) * 100,
+                    height: (height / sh) * 100,
+                    pixelBox: { originX, originY, width, height },
+                    keypoints: f.keypoints,
+                    score: f.score,
+                    isGoodQuality,
+                  };
+                });
+            }
 
-                const isGoodQuality = !isAtEdge && !isExtremeProfile && isEyesWideEnough && width >= 28 && height >= 28;
+            // --- Robust Multi-Object Tracking & Motion Smoothing ---
+            const existingTracks = trackedFacesRef.current;
+            const updatedTracks = [];
+            const matchedTrackIndices = new Set();
+            const matchedDetectionIndices = new Set();
 
-                return {
-                  left: (originX / sw) * 100,
-                  top: (originY / sh) * 100,
-                  width: (width / sw) * 100,
-                  height: (height / sh) * 100,
-                  pixelBox: { originX, originY, width, height },
-                  keypoints,
-                  isGoodQuality,
+            // 1. Predict track position forward using linear velocity
+            const predictedTracks = existingTracks.map((track) => ({
+              ...track,
+              predLeft: track.left + (track.vx || 0),
+              predTop: track.top + (track.vy || 0),
+            }));
+
+            // 2. Greedy association using IoU + Centroid distance fallback
+            mappedFaces.forEach((face, detIdx) => {
+              let bestScore = -1;
+              let bestTrackIdx = -1;
+
+              predictedTracks.forEach((track, trkIdx) => {
+                if (matchedTrackIndices.has(trkIdx)) return;
+
+                const predBox = {
+                  left: track.predLeft,
+                  top: track.predTop,
+                  width: track.width,
+                  height: track.height,
                 };
+
+                const iouPred = calculateIoU(face, predBox);
+                const iouDirect = calculateIoU(face, track);
+                const iou = Math.max(iouPred, iouDirect);
+
+                // Normalized centroid distance
+                const fcx = face.left + face.width / 2;
+                const fcy = face.top + face.height / 2;
+                const tcx = predBox.left + predBox.width / 2;
+                const tcy = predBox.top + predBox.height / 2;
+                const dist = Math.hypot(fcx - tcx, fcy - tcy);
+                const diag = Math.hypot(face.width, face.height);
+                const normDist = dist / (diag || 1);
+
+                // Valid match criteria: IoU >= 0.18 OR close centroid distance
+                const isMatch = iou >= 0.18 || (iou >= 0.06 && normDist < 0.5) || normDist < 0.3;
+
+                if (isMatch) {
+                  const matchScore = iou * 2.0 - normDist;
+                  if (matchScore > bestScore) {
+                    bestScore = matchScore;
+                    bestTrackIdx = trkIdx;
+                  }
+                }
               });
 
-              // Tracking Association (IoU matching)
-              const currentTracks = trackedFacesRef.current;
-              const newTracks = [];
+              if (bestTrackIdx >= 0) {
+                matchedTrackIndices.add(bestTrackIdx);
+                matchedDetectionIndices.add(detIdx);
 
-              mappedFaces.forEach((face) => {
-                let bestMatch = null;
-                let bestIoU = 0;
-                currentTracks.forEach((track) => {
-                  if (track.matched) return;
-                  const iou = calculateIoU(face, track);
-                  if (iou > 0.3 && iou > bestIoU) {
-                    bestIoU = iou;
-                    bestMatch = track;
-                  }
+                const prevTrack = existingTracks[bestTrackIdx];
+
+                // Calculate instantaneous velocity & smooth it
+                const rawVx = face.left - prevTrack.left;
+                const rawVy = face.top - prevTrack.top;
+                const smoothVx = (prevTrack.vx || 0) * 0.35 + rawVx * 0.65;
+                const smoothVy = (prevTrack.vy || 0) * 0.35 + rawVy * 0.65;
+
+                // EMA coordinate smoothing to eliminate jitter while following fast motion
+                const smoothLeft = prevTrack.left * (1 - EMA_ALPHA) + face.left * EMA_ALPHA;
+                const smoothTop = prevTrack.top * (1 - EMA_ALPHA) + face.top * EMA_ALPHA;
+                const smoothWidth = prevTrack.width * (1 - EMA_ALPHA) + face.width * EMA_ALPHA;
+                const smoothHeight = prevTrack.height * (1 - EMA_ALPHA) + face.height * EMA_ALPHA;
+
+                updatedTracks.push({
+                  ...face,
+                  left: smoothLeft,
+                  top: smoothTop,
+                  width: smoothWidth,
+                  height: smoothHeight,
+                  vx: smoothVx,
+                  vy: smoothVy,
+                  local_track_id: prevTrack.local_track_id,
+                  first_seen: prevTrack.first_seen,
+                  lost_frames: 0,
+                  hit_streak: (prevTrack.hit_streak || 0) + 1,
+                  isCoasting: false,
                 });
+              }
+            });
 
-                if (bestMatch) {
-                  bestMatch.matched = true;
-                  newTracks.push({
+            // 3. Register brand new tracks for unmatched detections (only if not overlapping an existing track)
+            mappedFaces.forEach((face, detIdx) => {
+              if (!matchedDetectionIndices.has(detIdx)) {
+                // Ensure this unmatched detection does not heavily overlap an already updated track
+                const overlapsExisting = updatedTracks.some(
+                  (t) => calculateIoU(face, t) > 0.25
+                );
+                if (!overlapsExisting) {
+                  updatedTracks.push({
                     ...face,
-                    local_track_id: bestMatch.local_track_id,
-                    first_seen: bestMatch.first_seen,
-                  });
-                } else {
-                  newTracks.push({
-                    ...face,
+                    vx: 0,
+                    vy: 0,
                     local_track_id: "local_" + generateUUID(),
                     first_seen: Date.now(),
+                    lost_frames: 0,
+                    hit_streak: 1,
+                    isCoasting: false,
                   });
                 }
-              });
+              }
+            });
 
-              trackedFacesRef.current = newTracks;
-              setLocalFaces(newTracks);
-            } else {
-              trackedFacesRef.current = [];
-              setLocalFaces([]);
+            // 4. Coasting Buffer: preserve existing tracks missed in this frame for up to MAX_LOST_FRAMES
+            existingTracks.forEach((track, trkIdx) => {
+              if (!matchedTrackIndices.has(trkIdx)) {
+                const lostFrames = (track.lost_frames || 0) + 1;
+                if (lostFrames <= MAX_LOST_FRAMES) {
+                  // Coast position using decaying velocity
+                  const coastingLeft = track.left + (track.vx || 0) * 0.6;
+                  const coastingTop = track.top + (track.vy || 0) * 0.6;
+
+                  updatedTracks.push({
+                    ...track,
+                    left: coastingLeft,
+                    top: coastingTop,
+                    vx: (track.vx || 0) * 0.8,
+                    vy: (track.vy || 0) * 0.8,
+                    lost_frames: lostFrames,
+                    isCoasting: true,
+                  });
+                }
+              }
+            });
+
+            // 5. Track-to-Track De-duplication (Suppression)
+            // Sort by hit_streak descending so stronger, older tracks suppress weaker ghosts
+            const deduplicatedTracks = [];
+            updatedTracks.sort((a, b) => (b.hit_streak || 0) - (a.hit_streak || 0));
+
+            for (let i = 0; i < updatedTracks.length; i++) {
+              const a = updatedTracks[i];
+              let isDuplicate = false;
+              for (let j = 0; j < deduplicatedTracks.length; j++) {
+                const b = deduplicatedTracks[j];
+                const iou = calculateIoU(a, b);
+                if (iou > 0.3) {
+                  isDuplicate = true;
+                  break;
+                }
+              }
+              if (!isDuplicate) {
+                deduplicatedTracks.push(a);
+              }
             }
+
+            trackedFacesRef.current = deduplicatedTracks;
+
+            // Render visible tracks: only display active tracks with at least 2 consistent detection hits
+            const renderableFaces = deduplicatedTracks.filter(
+              (t) => (t.hit_streak >= 2) && (!t.isCoasting || t.lost_frames <= 2)
+            );
+            setLocalFaces(renderableFaces);
           } catch (err) {
-            console.error("FaceLandmarker detection error:", err);
+            console.error("Face detection loop error:", err);
+          } finally {
+            isDetectingRef.current = false;
           }
         }
       }

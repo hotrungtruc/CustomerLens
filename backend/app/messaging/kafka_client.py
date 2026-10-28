@@ -39,11 +39,36 @@ async def get_redis() -> aioredis.Redis:
 # Topic Initialization (Admin)
 # ---------------------------------------------------------------------------
 
+import socket
+
+def is_kafka_reachable(bootstrap_servers: str, timeout: float = 0.2) -> bool:
+    """Quick socket check before attempting expensive Kafka bootstrap."""
+    for server in bootstrap_servers.split(","):
+        server = server.strip()
+        if not server:
+            continue
+        try:
+            if ":" in server:
+                host, port_str = server.split(":")
+                port = int(port_str)
+            else:
+                host, port = server, 9092
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def init_topics():
     """
     Initializes required topics (e.g. camera_frames) in Redpanda / Kafka.
     Can be invoked synchronously or via asyncio.to_thread.
     """
+    if not is_kafka_reachable(KAFKA_BOOTSTRAP_SERVERS):
+        logger.info(f"Kafka/Redpanda broker not reachable at {KAFKA_BOOTSTRAP_SERVERS}; skipping admin topic init.")
+        return
+
     try:
         from kafka.admin import KafkaAdminClient, NewTopic
         from kafka.errors import TopicAlreadyExistsError
@@ -56,6 +81,7 @@ def init_topics():
         admin_client = KafkaAdminClient(
             bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
             client_id="init_script",
+            request_timeout_ms=1000,
         )
         topic_list = [
             NewTopic(
@@ -83,9 +109,11 @@ def init_topics():
 async def _kafka_reconnect_loop():
     global kafka_producer
     while True:
-        await asyncio.sleep(5)
+        await asyncio.sleep(15)
         if kafka_producer is not None:
             break
+        if not is_kafka_reachable(KAFKA_BOOTSTRAP_SERVERS):
+            continue
         try:
             print(
                 f"[RETRY] Attempting to reconnect to Redpanda at {KAFKA_BOOTSTRAP_SERVERS}...",
@@ -116,6 +144,11 @@ def _trigger_kafka_reconnect():
 
 async def init_kafka_producer():
     global kafka_producer
+    if not is_kafka_reachable(KAFKA_BOOTSTRAP_SERVERS):
+        print(f"Redpanda is offline at {KAFKA_BOOTSTRAP_SERVERS}. Messaging will operate in high-speed Redis fallback mode.", flush=True)
+        _trigger_kafka_reconnect()
+        return
+
     try:
         await asyncio.to_thread(init_topics)
     except Exception as e:

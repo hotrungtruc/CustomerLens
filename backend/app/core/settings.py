@@ -31,7 +31,7 @@ DEFAULT_SETTINGS = {
     "checkin_cooldown_seconds": CHECKIN_COOLDOWN_SECONDS,
     "customer_profile_hold_seconds": CUSTOMER_PROFILE_HOLD_SECONDS,
     
-    "edge_crop_padding": 0.25,
+    "edge_crop_padding": 0.50,
     "edge_send_interval_ms": 1000,
 }
 

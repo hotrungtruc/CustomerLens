@@ -102,8 +102,8 @@ def format_display_customer_id(customer: dict | None) -> str | None:
     return c_id
 
 
-# Thread-safe guest ID generator counter
-_guest_seq_lock = threading.Lock()
+# Thread-safe guest ID generator counter (re-entrant lock)
+_guest_seq_lock = threading.RLock()
 _next_guest_seq = None
 
 
@@ -116,12 +116,17 @@ def _get_redis_sync():
         try:
             import redis
             from config import REDIS_URL
-            _redis_sync_client = redis.from_url(REDIS_URL, decode_responses=True)
-            # Ping to verify connection
-            _redis_sync_client.ping()
+            client = redis.from_url(
+                REDIS_URL,
+                decode_responses=True,
+                socket_connect_timeout=0.3,
+                socket_timeout=0.3,
+            )
+            client.ping()
+            _redis_sync_client = client
         except Exception:
-            _redis_sync_client = None
-    return _redis_sync_client
+            _redis_sync_client = False
+    return _redis_sync_client if _redis_sync_client is not False else None
 
 
 def init_guest_sequence_from_db(conn):

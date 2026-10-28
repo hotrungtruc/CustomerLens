@@ -51,7 +51,7 @@ export default function SettingsPage() {
     new_guest_debounce_similarity: 0.38,
     checkin_cooldown_seconds: 30,
     customer_profile_hold_seconds: 2.5,
-    edge_crop_padding: 0.25,
+    edge_crop_padding: 0.50,
     edge_send_interval_ms: 250,
   });
   

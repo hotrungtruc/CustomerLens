@@ -43,6 +43,15 @@ Patrons are not required to enroll, download an application, scan a barcode, or 
 3. Automatically categorizes patrons into a dynamic lifecycle tier (from first-time visitors to VIP regulars).
 4. Streams contextual Heads-Up Display (HUD) notifications to floor staff tablets and POS screens before the customer reaches the counter, displaying visit count, lifetime spend, dietary notes, and tailored menu recommendations.
 
+### 1.3 Live Production Showcase & Real-Time Recognition UI
+
+| 🚶 **Pedestrian CCTV Stream (Auto Guest ID)** | 👤 **VIP Recognition & Real-Time HUD** | 🔄 **Cross-Clip Re-Identification (Re-ID)** |
+|:---:|:---:|:---:|
+| <img src="assets/demo/Screenshot%202026-10-28%20212337.png" width="280" alt="Pedestrian CCTV Stream"/> | <img src="assets/demo/Screenshot%202026-10-28%20212602.png" width="280" alt="VIP Recognition HUD"/> | <img src="assets/demo/Screenshot%202026-10-28%20212618.png" width="280" alt="Cross-Clip Re-ID"/> |
+| **Multi-Face Detection & Automatic Guest Onboarding**: Simultaneously tracks multiple pedestrians in crowded CCTV footage, filters background noise, and registers new guest IDs (`LN2`, `LN3`) into the Sidebar. | **Instant VIP Recognition & Contextual HUD**: Immediately matches registered VIP `CLIENT_013` (Bill Clinton), displaying the real-time HUD with customer segment `HC13 (VIP • Casual Visitor)`, visit history, and notes. | **Accurate Cross-Session Re-Identification**: Seamlessly re-identifies the target across an independent video clip (different camera angle, lighting, and expressions) without re-enrollment. |
+
+---
+
 ## 2. Customer Lifecycle Intelligence & Personalization Matrix
 
 ### 2.1 Dynamic 2-Letter Customer Matrix
@@ -284,9 +293,26 @@ cd frontend
 npm install
 npm run dev
 ```
-Access the management console at `http://localhost:3000` (Default credentials: `admin` / `change_me_immediately`).
 
-### 8.5 Full Containerized Deployment
+Access the web management console at `http://localhost:3000`.
+
+> [!TIP]
+> **Demo & Evaluation Login Credentials:**
+> - **Username / Account:** `admin`
+> - **Password:** `admin 123` (or `admin123`)
+> - **Role:** Administrator (Full access to Live HUD stream, CRM Customer Profiles, Camera Node Management, and Analytics).
+
+### 8.5 End-to-End System Testing & Live Evaluation
+
+To quickly test and verify the live face recognition and customer lifecycle intelligence pipeline:
+1. **Sign In**: Log into `http://localhost:3000` using the test credentials (`admin` / `admin 123`).
+2. **Access Live HUD**: Navigate to **Live Camera Stream** (or click the camera icon on the sidebar).
+3. **Select Test Streams**:
+   - **Scenario 1 (Pedestrian CCTV & Guest Onboarding):** Choose `Pedestrian CCTV (assets/test_video.mp4)` from the video dropdown to test multi-person tracking and autonomous guest ID assignment (`LN...`).
+   - **Scenario 2 (VIP Recognition):** Choose `Bill Clinton #0 (Enrollment / Đăng ký mới)` to observe real-time detection, HUD popup, and instant lookup of profile notes and VIP status (`CLIENT_013`).
+   - **Scenario 3 (Cross-Clip Re-Identification):** Choose `Bill Clinton #1 (Cross-session Re-ID / Kiểm tra nhận diện lại)` to verify persistent identity matching across independent video sessions under different lighting and angles.
+
+### 8.6 Full Containerized Deployment
 To orchestrate the complete cluster via Docker Compose:
 ```bash
 docker compose build

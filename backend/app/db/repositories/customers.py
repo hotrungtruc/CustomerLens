@@ -16,13 +16,35 @@ DEFAULT_MODEL = "edgeface_s_gamma_05"
 # ---------------------------------------------------------------------------
 
 def _generate_next_customer_id(conn) -> str:
-    rows = conn.execute("SELECT customer_id FROM customers").fetchall()
-    max_numeric = -1
-    for row in rows:
-        value = str(row["customer_id"] or "")
-        if re.fullmatch(r"\d+", value):
-            max_numeric = max(max_numeric, int(value))
-    return f"{max_numeric + 1:03d}"
+    """O(1) generation of next numerical customer_id using SQL MAX aggregation."""
+    try:
+        if DB_TYPE == "postgresql":
+            row = conn.execute(
+                "SELECT COALESCE(MAX(CAST(NULLIF(customer_id, '') AS INTEGER)), -1) AS max_id "
+                "FROM customers WHERE customer_id ~ '^[0-9]+$'"
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(CAST(customer_id AS INTEGER)), -1) AS max_id "
+                "FROM customers WHERE customer_id GLOB '[0-9]*' AND customer_id != ''"
+            ).fetchone()
+        max_numeric = (
+            row["max_id"]
+            if (row and "max_id" in row and row["max_id"] is not None)
+            else (list(row.values())[0] if (row and hasattr(row, "values")) else (row[0] if row else -1))
+        )
+        if max_numeric is None:
+            max_numeric = -1
+    except Exception:
+        # Fallback in case regex/cast fails on custom engine
+        rows = conn.execute("SELECT customer_id FROM customers").fetchall()
+        max_numeric = -1
+        for r in rows:
+            val = str(r["customer_id"] or "")
+            if re.fullmatch(r"\d+", val):
+                max_numeric = max(max_numeric, int(val))
+
+    return f"{int(max_numeric) + 1:03d}"
 
 
 def _row_to_customer(row):
@@ -128,9 +150,47 @@ def create_or_update_customer_profile(
         )
     else:
         conn.execute(
-            "UPDATE customers SET name = ?, phone = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE customer_id = ?",
-            (clean_name, phone, note, final_id),
+            """
+            UPDATE customers
+            SET name = ?,
+                phone = ?,
+                email = COALESCE(?, email),
+                registered_at = COALESCE(?, registered_at),
+                tenure = COALESCE(?, tenure),
+                loyalty_tier = COALESCE(?, loyalty_tier),
+                note = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE customer_id = ?
+            """,
+            (
+                clean_name,
+                phone,
+                email,
+                registered_at,
+                int(tenure) if tenure is not None else None,
+                loyalty_tier,
+                note,
+                final_id,
+            ),
         )
+
+    if source_id and source_id != final_id:
+        try:
+            conn.execute(
+                "UPDATE customer_embeddings SET customer_id = ? WHERE customer_id = ?",
+                (final_id, source_id),
+            )
+            conn.execute(
+                "UPDATE recognize_logs SET customer_id = ? WHERE customer_id = ?",
+                (final_id, source_id),
+            )
+            conn.execute(
+                "DELETE FROM customers WHERE customer_id = ?",
+                (source_id,),
+            )
+        except Exception:
+            pass
+
     conn.commit()
     return final_id, created
 

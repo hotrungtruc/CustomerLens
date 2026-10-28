@@ -76,29 +76,30 @@ else:
 FACE_LANDMARKER_TASK = MODELS_DIR / "face_landmarker.task"
 MEDIAPIPE_FACE_MESH_MODEL_SELECTION = 0 # "0" for detection less than 2 meter; "1" for detection less than 5 meter
 
-SIMILARITY_THRESHOLD = 0.322
-MIN_FACE_BBOX_SIZE = 28             # Cho phép nhận diện mặt nhỏ từ xa (2m - 4m)
-MIN_DETECTION_SCORE = 0.55          # Ngưỡng phát hiện SCRFD chuẩn xác
-MIN_BLUR_SCORE = 60.0               # Ngưỡng chống mờ thích ứng cho webcam
+SIMILARITY_THRESHOLD = 0.52
+MIN_FACE_BBOX_SIZE = 32             # Face dimension threshold (32px minimum)
+MIN_DETECTION_SCORE = 0.60          # SCRFD detection confidence threshold
+MIN_BLUR_SCORE = 60.0               # Webcam blur rejection threshold
 MAX_POSE_YAW_ANGLE = 20.0
-TRACK_BUFFER_SIZE = 3               # Voting nhanh sau 3 frames
-GUEST_CREATION_BUFFER_SIZE = 4      # Giảm xuống 4 frames để chốt khách mới chỉ trong ~1s
+TRACK_BUFFER_SIZE = 2               # Fast voting across 2 frames
+GUEST_CREATION_BUFFER_SIZE = 3      # Require 3 consistent frames to register a new guest
 TRACK_IOU_THRESHOLD = 0.3
 PROCESS_EVERY_N_FRAMES = 1
 
-# Early Decision Thresholds — Cơ chế voting nhanh, tuyệt đối không hạ threshold
-# Nếu 1 frame có similarity >= HIGH_CONF: resolve ngay (không cần voting)
-RECOGNITION_HIGH_CONF_THRESHOLD = 0.72
-# Nếu 2/3 votes đồng thuận tại >= MED_CONF: resolve sớm
-RECOGNITION_MED_CONF_THRESHOLD = 0.60
+# Early Decision Thresholds — Co che voting nhanh, tuyet doi khong ha threshold
+# Neu 1 frame co similarity >= HIGH_CONF: resolve ngay (khong can voting)
+RECOGNITION_HIGH_CONF_THRESHOLD = 0.65
+# Neu 2/3 votes dong thuan tai >= MED_CONF: resolve som
+RECOGNITION_MED_CONF_THRESHOLD = 0.54
+
 CHECKIN_COOLDOWN_SECONDS = 30
 CUSTOMER_PROFILE_HOLD_SECONDS = 2.5
 
 # GUEST CREATION STRICT MODE SETTINGS
-GUEST_MIN_DETECTION_SCORE = 0.60
-GUEST_MIN_FACE_BBOX_SIZE = 28       # Cho phép tạo guest từ mặt xa
+GUEST_MIN_DETECTION_SCORE = 0.65
+GUEST_MIN_FACE_BBOX_SIZE = 36       # Minimum size for new guest registration
 NEW_GUEST_DEBOUNCE_SECONDS = 4
-NEW_GUEST_DEBOUNCE_SIMILARITY = 0.40
+NEW_GUEST_DEBOUNCE_SIMILARITY = 0.55
 DEBUG_SHOW_SIMILARITY = False
 
 # Camera Configuration
@@ -164,11 +165,31 @@ PUBLIC_KEY_PATH = KEYS_DIR / "jwt_public_key.pem"
 
 def get_jwt_keys():
     """Load or generate RSA keypair for JWT RS256 signing and verification."""
-    env_private = os.getenv("JWT_PRIVATE_KEY_PEM")
-    env_public = os.getenv("JWT_PUBLIC_KEY_PEM")
+    import base64
+    import logging
+
+    cfg_logger = logging.getLogger("Config")
+
+    # 1. Try reading PEM string or Base64 encoded keys from environment
+    env_private = os.getenv("JWT_PRIVATE_KEY_PEM") or os.getenv("JWT_PRIVATE_KEY")
+    env_public = os.getenv("JWT_PUBLIC_KEY_PEM") or os.getenv("JWT_PUBLIC_KEY")
+
+    if not env_private and os.getenv("JWT_PRIVATE_KEY_BASE64"):
+        try:
+            env_private = base64.b64decode(os.getenv("JWT_PRIVATE_KEY_BASE64")).decode("utf-8")
+        except Exception:
+            pass
+    if not env_public and os.getenv("JWT_PUBLIC_KEY_BASE64"):
+        try:
+            env_public = base64.b64decode(os.getenv("JWT_PUBLIC_KEY_BASE64")).decode("utf-8")
+        except Exception:
+            pass
 
     if env_private and env_public:
-        return env_private.encode("utf-8"), env_public.encode("utf-8")
+        # Handle literal escaped newlines from environment strings
+        priv_str = env_private.replace("\\n", "\n").strip()
+        pub_str = env_public.replace("\\n", "\n").strip()
+        return priv_str.encode("utf-8"), pub_str.encode("utf-8")
 
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -176,6 +197,13 @@ def get_jwt_keys():
         private_bytes = PRIVATE_KEY_PATH.read_bytes()
         public_bytes = PUBLIC_KEY_PATH.read_bytes()
         return private_bytes, public_bytes
+
+    cfg_logger.warning(
+        "No JWT RSA keypair found in environment variables or key files. "
+        "Generating new RSA keypair at %s. In multi-instance or production environments, "
+        "set JWT_PRIVATE_KEY_PEM and JWT_PUBLIC_KEY_PEM to avoid session invalidation across instances/restarts.",
+        PRIVATE_KEY_PATH,
+    )
 
     # Auto-generate RSA 2048-bit keypair
     private_key = rsa.generate_private_key(
@@ -195,8 +223,13 @@ def get_jwt_keys():
     try:
         PRIVATE_KEY_PATH.write_bytes(private_bytes)
         PUBLIC_KEY_PATH.write_bytes(public_bytes)
-    except Exception:
-        pass
+        try:
+            os.chmod(PRIVATE_KEY_PATH, 0o600)
+            os.chmod(PUBLIC_KEY_PATH, 0o644)
+        except Exception:
+            pass
+    except Exception as e:
+        cfg_logger.error("Failed to persist generated RSA keys to disk: %s", e)
 
     return private_bytes, public_bytes
 

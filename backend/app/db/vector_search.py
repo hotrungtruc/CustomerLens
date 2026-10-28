@@ -42,16 +42,22 @@ def search_similar_faces(
             rows = cursor.fetchall()
             results = []
             q_norm = protected_embedding / (np.linalg.norm(protected_embedding) or 1.0)
-            import pickle
             for row in rows:
                 cid = row["customer_id"]
                 blob = row["face_embedding"]
                 emb = None
-                if isinstance(blob, bytes):
+                if isinstance(blob, (bytes, memoryview)):
                     try:
-                        emb = pickle.loads(blob)
-                    except Exception:
                         emb = np.frombuffer(blob, dtype=np.float32)
+                    except Exception:
+                        emb = None
+                elif isinstance(blob, (list, tuple)):
+                    emb = np.asarray(blob, dtype=np.float32)
+                elif isinstance(blob, str) and blob.startswith("[") and blob.endswith("]"):
+                    try:
+                        emb = np.fromstring(blob[1:-1], dtype=np.float32, sep=",")
+                    except Exception:
+                        emb = None
                 if emb is not None and len(emb) == 512:
                     emb = np.asarray(emb, dtype=np.float32)
                     emb_norm = emb / (np.linalg.norm(emb) or 1.0)
@@ -249,19 +255,26 @@ def fetch_all_embeddings_from_db(conn):
     for row in rows:
         try:
             c_id = row["customer_id"]
-            emb_text = row["emb_text"]
+            emb_data = row["emb_text"]
         except TypeError:
             # Fallback if row is a tuple
             c_id = row[0]
-            emb_text = row[1]
+            emb_data = row[1]
 
-        if not emb_text or not isinstance(emb_text, str) or not emb_text.startswith("[") or not emb_text.endswith("]"):
+        if not emb_data or not c_id:
             continue
 
         try:
-            # Parse the text string back to a list of floats
-            emb_list = [float(x) for x in emb_text[1:-1].split(",")]
-            emb_np = np.array(emb_list, dtype=np.float32)
+            emb_np = None
+            if isinstance(emb_data, (bytes, memoryview)):
+                emb_np = np.frombuffer(emb_data, dtype=np.float32)
+            elif isinstance(emb_data, (list, tuple)):
+                emb_np = np.asarray(emb_data, dtype=np.float32)
+            elif isinstance(emb_data, str) and emb_data.startswith("[") and emb_data.endswith("]"):
+                emb_np = np.fromstring(emb_data[1:-1], dtype=np.float32, sep=",")
+
+            if emb_np is None or len(emb_np) == 0:
+                continue
 
             if str(c_id).startswith("GUEST_") or str(c_id).startswith("LN"):
                 guest_embeddings.append(emb_np)

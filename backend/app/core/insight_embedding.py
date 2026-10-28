@@ -193,8 +193,8 @@ class InsightEmbedder:
             if crop.size > 0:
                 gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
                 blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
-                # Adaptive blur threshold: small faces naturally have lower high-frequency variance
-                min_blur = 40.0 if width < 60 else 80.0
+                # Adaptive blur threshold: relaxed for webcams and compressed streams
+                min_blur = 1.0 if width < 60 else 2.0
                 if blur_score < min_blur:
                     return False
 
@@ -203,7 +203,7 @@ class InsightEmbedder:
             left_eye = landmarks[0]
             right_eye = landmarks[1]
             eye_dist = np.linalg.norm(left_eye - right_eye)
-            min_eye_ratio = 0.18 if width < 60 else 0.22
+            min_eye_ratio = 0.12 if width < 60 else 0.14
             if eye_dist / width < min_eye_ratio:
                 return False
 
@@ -229,7 +229,7 @@ class InsightEmbedder:
             left_eye = landmarks[0]
             right_eye = landmarks[1]
             eye_dist = np.linalg.norm(left_eye - right_eye)
-            min_eye_ratio = 0.18 if width < 60 else 0.22
+            min_eye_ratio = 0.12 if width < 60 else 0.14
             if eye_dist / width < min_eye_ratio:
                 return False
 
@@ -443,16 +443,20 @@ class InsightEmbedder:
 
         return emb1
 
-    def get_batch_embeddings(self, image_bgr, list_of_landmarks):
+    def get_batch_embeddings(self, image_bgr, list_of_landmarks, use_tta=None):
         """Batch extraction of face embeddings.
         Fallback to sequential extraction since the ONNX model may have a static batch size of 1.
+        Disables TTA when processing multiple faces to prevent 2x latency overhead per face.
         """
         if list_of_landmarks is None or len(list_of_landmarks) == 0:
             return []
 
+        # TTA is only enabled for single-face frames unless explicitly forced
+        _tta = use_tta if use_tta is not None else (len(list_of_landmarks) == 1)
+
         results = []
         for landmarks in list_of_landmarks:
-            results.append(self.get_embedding(image_bgr, landmarks))
+            results.append(self.get_embedding(image_bgr, landmarks, use_tta=_tta))
             
         return results
 

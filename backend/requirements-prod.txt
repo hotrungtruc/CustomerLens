@@ -15,3 +15,5 @@ kafka-python
 PyJWT
 cryptography
 pgvector>=0.2.5
+bcrypt>=4.0.0
+slowapi>=0.1.9

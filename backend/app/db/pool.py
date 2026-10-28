@@ -113,7 +113,12 @@ class PostgresConnectionWrapper:
 
 def get_db_connection():
     """Return a database connection (PostgreSQL wrapper or raw SQLite connection)."""
-    if USE_SUPABASE:
+    import sys
+    db_conn = sys.modules.get("app.db.connection")
+    use_sb = getattr(db_conn, "USE_SUPABASE", USE_SUPABASE)
+    prod_path = getattr(db_conn, "PRODUCTION_DB_PATH", PRODUCTION_DB_PATH)
+
+    if use_sb:
         pool = _get_pg_pool()
         pg_conn = pool.getconn()
         if HAS_PGVECTOR:
@@ -123,6 +128,12 @@ def get_db_connection():
                 pass
         return PostgresConnectionWrapper(pg_conn, pool=pool)
     else:
-        conn = sqlite3.connect(str(PRODUCTION_DB_PATH))
+        conn = sqlite3.connect(str(prod_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA synchronous=NORMAL")
+        except Exception:
+            pass
         return conn

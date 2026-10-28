@@ -1,5 +1,6 @@
 import hashlib
 
+from app.api.auth import hash_password
 from app.db.connection import ensure_schema, get_db_connection, upsert_customer
 
 # Demo customer data for the school project.
@@ -120,7 +121,7 @@ def main():
         ("moderator", mod_password, "moderator", "DSLR-002,DSLR-003"),
     ]
     for username, password, role, cameras in default_users:
-        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        pwd_hash = hash_password(password)
         # Clean existing user if conflict
         conn.execute("DELETE FROM users WHERE username = ?", (username,))
         conn.execute(

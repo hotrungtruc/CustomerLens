@@ -1,8 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Edit3, Search } from "lucide-react";
+import React from "react";
 import {
   formatCustomerDisplayId,
   getCustomerDisplayName,
@@ -14,21 +12,17 @@ import { useApp } from "../context/AppContext";
 
 /**
  * HudCard — Real-time Biometric Customer Intelligence Display.
- * High-tech HUD card displaying live recognized customer information on hover.
+ * Shows live customer info on hover. Click the bbox to edit/add profile.
  */
 export default function HudCard({
   customer,
   face,
   direction = "right",
   verticalAlign = "top",
-  onEditProfile,
-  onSearchIntel,
   onMouseEnter,
   onMouseLeave,
 }) {
-  const router = useRouter();
   const { t, lang } = useApp();
-  const [intelNotice, setIntelNotice] = useState(false);
 
   const isIdentified = Boolean(
     customer &&
@@ -68,31 +62,6 @@ export default function HudCard({
       ? t("verified_profile_note")
       : t("identified_guest_note").replace("%s", displayId));
 
-  const handleEditClick = (e) => {
-    e.stopPropagation();
-    if (onEditProfile) {
-      onEditProfile(customer, face);
-      return;
-    }
-    const customerId = customer?.customer_id || customer?.id;
-    if (customerId && isIdentified) {
-      router.push(`/customers/${customerId}`);
-    } else {
-      router.push("/customers");
-    }
-  };
-
-  const handleSearchClick = (e) => {
-    e.stopPropagation();
-    if (onSearchIntel) {
-      onSearchIntel(customer, face);
-      return;
-    }
-    setIntelNotice(true);
-    setTimeout(() => {
-      setIntelNotice(false);
-    }, 3000);
-  };
 
   return (
     <div
@@ -138,9 +107,9 @@ export default function HudCard({
           }}
         />
 
-        {/* 1. SCAN RESULTS (Name in Neon Amber + Clean Short ID) */}
+        {/* 1. SCAN RESULTS (Name in Neon Amber + Clean Short ID + MediaPipe Face Thumbnail) */}
         <div className="mb-3">
-          <div className="text-[10px] text-cyan-400/70 font-semibold tracking-wider uppercase mb-0.5 flex items-center justify-between">
+          <div className="text-[10px] text-cyan-400/70 font-semibold tracking-wider uppercase mb-1.5 flex items-center justify-between">
             <span>{t("scan_results")}</span>
             {isResolved ? (
               <span className="text-[11px] font-bold px-1.5 py-0.5 rounded border border-cyan-400/60 bg-cyan-950/80 text-cyan-300 tracking-wider">
@@ -152,8 +121,27 @@ export default function HudCard({
               </span>
             )}
           </div>
-          <div className="text-amber-400 font-black text-[15px] tracking-wide leading-tight drop-shadow-[0_0_6px_rgba(245,158,11,0.5)]">
-            {displayName}
+          <div className="flex items-center gap-2.5">
+            {(face?.faceImage || customer?.faceImage) && (
+              <div className="relative w-11 h-11 rounded-lg border border-cyan-400/80 bg-slate-950 overflow-hidden shrink-0 shadow-[0_0_12px_rgba(34,211,238,0.35)]">
+                <img
+                  src={face?.faceImage || customer?.faceImage}
+                  alt="MediaPipe Face"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 border border-cyan-400/30 pointer-events-none" />
+                <div className="absolute bottom-0 right-0 w-2 h-2 bg-cyan-400" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <div className="text-amber-400 font-black text-[15px] tracking-wide leading-tight drop-shadow-[0_0_6px_rgba(245,158,11,0.5)] truncate">
+                {displayName}
+              </div>
+              <div className="text-[9px] text-cyan-400/80 mt-0.5 flex items-center gap-1 font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>MediaPipe Face</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -227,37 +215,9 @@ export default function HudCard({
           </div>
         </div>
 
-        {/* ── AI Search Notification Banner ── */}
-        {intelNotice && (
-          <div className="mt-2.5 px-2.5 py-1.5 rounded bg-amber-500/20 border border-amber-400/60 text-[10px] font-mono text-amber-300 flex items-center gap-1.5 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse">
-            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-            <span>{t("ai_search_dev")}</span>
-          </div>
-        )}
-
-        {/* ── Footer Actions: 2 Buttons (Edit & AI Search) ── */}
-        <div className="mt-3.5 pt-2.5 border-t border-cyan-500/30 flex items-center gap-2">
-          {/* Button 1: Edit */}
-          <button
-            type="button"
-            onClick={handleEditClick}
-            className="flex-1 group relative flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-cyan-950/70 border border-cyan-400/60 text-cyan-200 hover:text-white hover:bg-cyan-500/25 hover:border-cyan-300 hover:shadow-[0_0_12px_rgba(34,211,238,0.4)] transition-all duration-150 text-[10px] font-bold tracking-wider uppercase active:scale-95 cursor-pointer"
-            title={t("edit_profile")}
-          >
-            <Edit3 className="w-3 h-3 text-cyan-400 group-hover:text-cyan-200 transition-colors" />
-            <span>{t("edit_profile")}</span>
-          </button>
-
-          {/* Button 2: AI Search */}
-          <button
-            type="button"
-            onClick={handleSearchClick}
-            className="flex-1 group relative flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-sm bg-slate-900/80 border border-sky-600/50 hover:border-amber-400/70 text-sky-200 hover:text-amber-300 hover:bg-amber-500/20 hover:shadow-[0_0_12px_rgba(245,158,11,0.35)] transition-all duration-150 text-[10px] font-bold tracking-wider uppercase active:scale-95 cursor-pointer"
-            title={t("ai_search")}
-          >
-            <Search className="w-3 h-3 text-sky-400 group-hover:text-amber-400 transition-colors" />
-            <span>{t("ai_search")}</span>
-          </button>
+        {/* Click hint */}
+        <div className="mt-3 pt-2 border-t border-cyan-500/20 text-[9px] text-cyan-400/50 text-center tracking-wider uppercase">
+          ✓ Nhấn vào để chỉnh sửa thông tin
         </div>
       </div>
     </div>

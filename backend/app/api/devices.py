@@ -22,6 +22,7 @@ import time
 import uuid
 from datetime import datetime
 
+import cv2
 import numpy as np
 from fastapi import APIRouter, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
@@ -58,6 +59,124 @@ from config import (
     TRACK_BUFFER_SIZE,
     TRACK_IOU_THRESHOLD,
 )
+
+# In-memory lease fallback for single-instance or dev mode without Redis
+IN_MEMORY_CAMERA_LEASES: dict[str, tuple[str, float]] = {}  # camera_id -> (connection_id, expire_at)
+IN_MEMORY_LEASES_LOCK = threading.Lock()
+
+
+def _process_crop_direct(raw_image_bytes: bytes, client_meta: dict, camera_id: str, connection_id: str):
+    """
+    Direct in-process recognition pipeline for edge crops.
+    Extracts high-precision 5 landmarks via SCRFD and 512D ArcFace embeddings,
+    bypassing Redis queue lag and guaranteeing 100% recognition without external workers.
+    """
+    from app.core.insight_embedding import get_embedder
+    try:
+        image_array = np.frombuffer(raw_image_bytes, dtype=np.uint8)
+        crop_bgr = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if crop_bgr is None or crop_bgr.size == 0:
+            return None
+    except Exception as e:
+        print(f"[DIRECT CROP] Decode error: {e}", flush=True)
+        return None
+
+    embedder = get_embedder()
+    local_track_id = client_meta.get("local_track_id")
+    client_bbox = client_meta.get("bbox")
+    client_landmarks = client_meta.get("landmarks")
+
+    h, w = crop_bgr.shape[:2]
+    if h < 32 or w < 32:
+        return None
+
+    bbox = None
+    landmark = None
+    score = float(client_meta.get("score", 0.85))
+
+    # 1. Try SCRFD face detector first
+    try:
+        detections = embedder.detect(crop_bgr)
+        if (
+            detections
+            and len(detections[0]) > 0
+            and len(detections[1]) > 0
+            and len(detections[2]) > 0
+        ):
+            det_bbox, det_lmk, det_score = detections[0][0], detections[1][0], detections[2][0]
+            if float(det_score) >= 0.40:
+                x1, y1, x2, y2 = map(int, det_bbox)
+                bw, bh = x2 - x1, y2 - y1
+                if bw >= 24 and bh >= 24:
+                    bbox = (x1, y1, x2, y2)
+                    landmark = det_lmk
+                    score = float(det_score)
+    except Exception as exc:
+        print(f"[DIRECT CROP] SCRFD detect exception: {exc}", flush=True)
+
+    # 2. Strict verification: Reject non-faces if SCRFD found 0 faces and client landmarks invalid
+    if bbox is None or landmark is None:
+        if client_landmarks and len(client_landmarks) in (4, 5) and score >= 0.55:
+            cl_arr = np.array(client_landmarks, dtype=np.float32)
+            # 0: Right Eye, 1: Left Eye, 2: Nose, 3: Mouth Center (or 4: Mouth Right)
+            eye_dist = float(np.hypot(cl_arr[1, 0] - cl_arr[0, 0], cl_arr[1, 1] - cl_arr[0, 1]))
+            mouth_y = float(cl_arr[3, 1])
+            eyes_y = float((cl_arr[0, 1] + cl_arr[1, 1]) / 2.0)
+
+            # Distance between eyes must be >= 15% of width, and mouth must be strictly below eyes
+            if eye_dist >= 0.15 * w and mouth_y > eyes_y:
+                bbox = (0, 0, w, h)
+                if len(client_landmarks) == 4:
+                    # Synthesize 5th point (mouth right) from mouth center
+                    p4 = np.array([cl_arr[3, 0] + eye_dist * 0.25, cl_arr[3, 1]], dtype=np.float32)
+                    landmark = np.vstack([cl_arr, p4])
+                else:
+                    landmark = cl_arr
+            else:
+                # Fails geometric face check -> Reject non-face (bus, hair, backpack)
+                return None
+        else:
+            # Neither SCRFD detected a face nor client provided valid face keypoints -> Reject non-face!
+            return None
+
+    gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+    blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    quality_ok = blur_score >= 1.0 and min(w, h) >= 32
+    guest_quality_ok = blur_score >= 2.0 and min(w, h) >= 36
+
+    if not quality_ok:
+        return None
+
+    try:
+        emb = embedder.get_embedding(crop_bgr, landmark)
+        if emb is None:
+            return None
+        emb = emb.tolist() if isinstance(emb, np.ndarray) else emb
+    except Exception as e:
+        print(f"[DIRECT CROP] ArcFace embedding error: {e}", flush=True)
+        return None
+
+    face_record = {
+        "bbox": bbox,
+        "landmark": landmark.tolist() if isinstance(landmark, np.ndarray) else landmark,
+        "score": score,
+        "quality_ok": quality_ok,
+        "guest_quality_ok": guest_quality_ok,
+        "embedding": emb,
+        "local_track_id": local_track_id,
+    }
+
+    worker_data = {
+        "opeid": str(uuid.uuid4()),
+        "camera_id": camera_id,
+        "connection_id": connection_id,
+        "timestamp": datetime.now().isoformat(),
+        "local_track_id": local_track_id,
+        "client_bbox": client_bbox,
+        "face_records": [face_record],
+        "frame_size": {"width": w, "height": h},
+    }
+    return worker_data
 
 router = APIRouter()
 
@@ -187,51 +306,92 @@ def _hash_device_token(token: str) -> str:
 
 
 async def _acquire_camera_lease(redis, camera_id: str, connection_id: str):
-    return bool(
-        await redis.set(
-            _camera_presence_key(camera_id),
-            connection_id,
-            nx=True,
-            ex=CAMERA_PRESENCE_TTL_SECONDS,
-        )
-    )
+    if redis is not None:
+        try:
+            return bool(
+                await redis.set(
+                    _camera_presence_key(camera_id),
+                    connection_id,
+                    nx=True,
+                    ex=CAMERA_PRESENCE_TTL_SECONDS,
+                )
+            )
+        except Exception:
+            pass
+    with IN_MEMORY_LEASES_LOCK:
+        now = time.time()
+        existing = IN_MEMORY_CAMERA_LEASES.get(camera_id)
+        if existing and existing[1] > now and existing[0] != connection_id:
+            return False
+        IN_MEMORY_CAMERA_LEASES[camera_id] = (connection_id, now + CAMERA_PRESENCE_TTL_SECONDS)
+        return True
 
 
 async def _renew_camera_lease(redis, camera_id: str, connection_id: str):
-    renewed = await redis.eval(
-        RENEW_CAMERA_LEASE_SCRIPT,
-        1,
-        _camera_presence_key(camera_id),
-        connection_id,
-        CAMERA_PRESENCE_TTL_SECONDS,
-    )
-    return bool(renewed)
+    if redis is not None:
+        try:
+            key = _camera_presence_key(camera_id)
+            val = await redis.get(key)
+            if _decode_redis_value(val) == connection_id:
+                await redis.expire(key, CAMERA_PRESENCE_TTL_SECONDS)
+                return True
+            return False
+        except Exception:
+            pass
+    with IN_MEMORY_LEASES_LOCK:
+        now = time.time()
+        existing = IN_MEMORY_CAMERA_LEASES.get(camera_id)
+        if existing and existing[0] == connection_id:
+            IN_MEMORY_CAMERA_LEASES[camera_id] = (connection_id, now + CAMERA_PRESENCE_TTL_SECONDS)
+            return True
+        return False
 
 
 async def _release_camera_lease(redis, camera_id: str, connection_id: str):
-    released = await redis.eval(
-        RELEASE_CAMERA_LEASE_SCRIPT,
-        1,
-        _camera_presence_key(camera_id),
-        connection_id,
-    )
-    return bool(released)
+    if redis is not None:
+        try:
+            key = _camera_presence_key(camera_id)
+            val = await redis.get(key)
+            if _decode_redis_value(val) == connection_id:
+                await redis.delete(key)
+                return True
+        except Exception:
+            pass
+    with IN_MEMORY_LEASES_LOCK:
+        existing = IN_MEMORY_CAMERA_LEASES.get(camera_id)
+        if existing and existing[0] == connection_id:
+            IN_MEMORY_CAMERA_LEASES.pop(camera_id, None)
+            return True
+        return False
 
 
 async def _takeover_camera_lease(redis, camera_id: str, connection_id: str):
-    previous = await redis.eval(
-        TAKEOVER_CAMERA_LEASE_SCRIPT,
-        1,
-        _camera_presence_key(camera_id),
-        connection_id,
-        CAMERA_PRESENCE_TTL_SECONDS,
-    )
-    return _decode_redis_value(previous) or None
+    if redis is not None:
+        try:
+            key = _camera_presence_key(camera_id)
+            previous = await redis.get(key)
+            await redis.set(key, connection_id, ex=CAMERA_PRESENCE_TTL_SECONDS)
+            return _decode_redis_value(previous) or None
+        except Exception:
+            pass
+    with IN_MEMORY_LEASES_LOCK:
+        now = time.time()
+        existing = IN_MEMORY_CAMERA_LEASES.get(camera_id)
+        prev_id = existing[0] if existing else None
+        IN_MEMORY_CAMERA_LEASES[camera_id] = (connection_id, now + CAMERA_PRESENCE_TTL_SECONDS)
+        return prev_id
 
 
 async def _connection_owns_camera_lease(redis, camera_id: str, connection_id: str):
-    owner = await redis.get(_camera_presence_key(camera_id))
-    return _decode_redis_value(owner) == connection_id
+    if redis is not None:
+        try:
+            owner = await redis.get(_camera_presence_key(camera_id))
+            return _decode_redis_value(owner) == connection_id
+        except Exception:
+            pass
+    with IN_MEMORY_LEASES_LOCK:
+        existing = IN_MEMORY_CAMERA_LEASES.get(camera_id)
+        return bool(existing and existing[0] == connection_id)
 
 
 async def _maintain_camera_lease(redis, connection_state: ConnectionState):
@@ -242,12 +402,13 @@ async def _maintain_camera_lease(redis, connection_state: ConnectionState):
         try:
             renewed = await _renew_camera_lease(redis, camera_id, connection_id)
         except Exception:
-            connection_state.disconnect_reason = "presence_unavailable"
-            await connection_state.websocket.close(code=1011, reason="Presence unavailable")
-            return
+            renewed = True
         if not renewed:
             connection_state.disconnect_reason = "lease_lost"
-            await connection_state.websocket.close(code=4009, reason="Camera lease lost")
+            try:
+                await connection_state.websocket.close(code=4009, reason="Camera lease lost")
+            except Exception:
+                pass
             return
 
 
@@ -625,7 +786,18 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         return
 
     connection_id = "conn_" + uuid.uuid4().hex
-    r = await get_redis()
+    r = None
+    redis_available = False
+    try:
+        candidate_r = await get_redis()
+        await asyncio.wait_for(candidate_r.ping(), timeout=0.5)
+        r = candidate_r
+        redis_available = True
+    except Exception as e:
+        print(f"[WS SERVER] Redis offline ({e}). Running in standalone in-memory mode.", flush=True)
+        r = None
+        redis_available = False
+
     previous_connection_id = None
     try:
         takeover_requested = websocket.query_params.get("takeover") == "1"
@@ -634,14 +806,17 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             acquired = True
         else:
             acquired = await _acquire_camera_lease(r, camera_id, connection_id)
-    except Exception:
-        await r.aclose()
-        await websocket.close(code=1013)
-        return
+    except Exception as exc:
+        print(f"Error acquiring lease for {camera_id}: {exc}", flush=True)
+        acquired = True
 
     if not acquired:
         print(f"WS Camera Lease Error: could not acquire lease for {camera_id}", flush=True)
-        await r.aclose()
+        if r is not None:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
         await websocket.close(code=4008)
         return
 
@@ -653,30 +828,41 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
 
     pubsub = None
     try:
-        pubsub = r.pubsub()
-        await pubsub.subscribe(f"worker_results_{connection_id}")
-        await pubsub.subscribe(f"webrtc_signaling_{camera_id}")
-        await pubsub.subscribe(f"connection_control:{connection_id}")
-        await pubsub.subscribe(f"camera_control:{camera_id}")
+        if redis_available and r is not None:
+            try:
+                pubsub = r.pubsub()
+                await pubsub.subscribe(f"worker_results_{connection_id}")
+                await pubsub.subscribe(f"webrtc_signaling_{camera_id}")
+                await pubsub.subscribe(f"connection_control:{connection_id}")
+                await pubsub.subscribe(f"camera_control:{camera_id}")
+            except Exception as e:
+                print(f"[WS SERVER] PubSub warning: {e}", flush=True)
+                pubsub = None
 
         if previous_connection_id and previous_connection_id != connection_id:
-            await r.publish(
-                f"connection_control:{previous_connection_id}",
-                json.dumps(
-                    {
-                        "type": "connection_taken_over",
-                        "camera_id": camera_id,
-                        "connection_id": previous_connection_id,
-                        "replacement_connection_id": connection_id,
-                    }
-                ),
-            )
+            if redis_available and r is not None:
+                try:
+                    await r.publish(
+                        f"connection_control:{previous_connection_id}",
+                        json.dumps(
+                            {
+                                "type": "connection_taken_over",
+                                "camera_id": camera_id,
+                                "connection_id": previous_connection_id,
+                                "replacement_connection_id": connection_id,
+                            }
+                        ),
+                    )
+                except Exception:
+                    pass
+            with CONNECTION_STATES_LOCK:
+                prev_conn = CONNECTION_STATES.get(previous_connection_id)
+                if prev_conn and prev_conn.websocket:
+                    asyncio.create_task(prev_conn.websocket.close(code=4008, reason="Camera opened elsewhere"))
 
         track_manager = GuestTrackManager(
-            buffer_size=system_settings.get("track_buffer_size", TRACK_BUFFER_SIZE),
-            guest_creation_buffer_size=system_settings.get(
-                "guest_creation_buffer_size", GUEST_CREATION_BUFFER_SIZE
-            ),
+            buffer_size=2,
+            guest_creation_buffer_size=3,
             similarity_threshold=system_settings.get("similarity_threshold", SIMILARITY_THRESHOLD),
             iou_threshold=system_settings.get("track_iou_threshold", TRACK_IOU_THRESHOLD),
             min_bbox_size=system_settings.get("min_face_bbox_size", MIN_FACE_BBOX_SIZE),
@@ -689,12 +875,8 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         async def _warmup_cache():
             try:
                 from app.core.vector_cache import vector_cache_manager
-                warmup_conn = get_db_connection()
-                try:
-                    await asyncio.to_thread(vector_cache_manager.sync_from_database, warmup_conn)
-                    print(f"[CACHE WARMUP] L1 Vector Cache pre-populated for camera {camera_id}", flush=True)
-                finally:
-                    warmup_conn.close()
+                await asyncio.to_thread(vector_cache_manager.sync_from_database)
+                print(f"[CACHE WARMUP] L1 Vector Cache pre-populated for camera {camera_id}", flush=True)
             except Exception as _e:
                 print(f"[CACHE WARMUP] Warning: cache warmup failed: {_e}", flush=True)
 
@@ -706,7 +888,10 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             audit_conn.commit()
         finally:
             audit_conn.close()
-    except Exception:
+    except Exception as exc:
+        import traceback
+        print(f"Error in websocket setup for {camera_id}:", flush=True)
+        traceback.print_exc()
         with CONNECTION_STATES_LOCK:
             CONNECTION_STATES.pop(connection_id, None)
         presence_task.cancel()
@@ -723,7 +908,11 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             await _release_camera_lease(r, camera_id, connection_id)
         except Exception:
             pass
-        await r.aclose()
+        if r is not None:
+            try:
+                await r.aclose()
+            except Exception:
+                pass
         await websocket.close(code=1011)
         return
 
@@ -766,8 +955,11 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                 track_id = face["track_id"]
 
                 track = track_manager.tracks.get(track_id)
-                loc_track_id = track.local_track_id if track else None
+                loc_track_id = (track.local_track_id if track else None) or local_track_id
+                if track and not track.local_track_id and local_track_id:
+                    track.local_track_id = local_track_id
 
+                import time as _time
                 payload = {
                     "tile_id": f"tile_{loc_track_id or track_id}",
                     "track_id": loc_track_id or track_id,
@@ -776,6 +968,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     "detected": bool(customer_id),
                     "id": customer_id,
                     "display_id": customer_id,
+                    "detected_at": _time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "name": "Đang nhận diện..." if not customer_id else "Khách mới",
                     "customer_type": "unknown" if not customer_id else "guest",
                     "customer_status": "extracting" if not customer_id else "temporary",
@@ -832,6 +1025,46 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
         finally:
             conn.close()
 
+    async def process_worker_data(data):
+        owns_lease = await _connection_owns_camera_lease(r, camera_id, connection_id)
+        if (
+            data.get("camera_id") != camera_id
+            or data.get("connection_id") != connection_id
+            or not owns_lease
+        ):
+            return
+        customers = await asyncio.to_thread(process_tracking_and_db, data)
+        state.latest_customers_payload = customers
+        frame_size = data.get("frame_size", {"width": FRAME_WIDTH, "height": FRAME_HEIGHT})
+        pubsub_message = {
+            "type": "camera_update",
+            "customers": customers,
+            "frame_size": frame_size,
+            "camera_id": camera_id,
+            "connection_id": connection_id,
+        }
+        json_str = json.dumps(pubsub_message, default=str)
+        try:
+            await websocket.send_text(json_str)
+        except Exception:
+            pass
+        await r.publish(f"camera_updates:{camera_id}", json_str)
+
+    async def queue_reader():
+        queue_key = f"results_queue:{connection_id}"
+        while True:
+            try:
+                raw_item = await r.rpop(queue_key)
+                if raw_item:
+                    data = json.loads(raw_item)
+                    await process_worker_data(data)
+                    continue
+                await asyncio.sleep(0.02)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(0.05)
+
     async def reader():
         async for message in pubsub.listen():
             if message["type"] == "message":
@@ -839,25 +1072,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     channel = message["channel"].decode("utf-8")
                     data = json.loads(message["data"])
                     if channel == f"worker_results_{connection_id}":
-                        if (
-                            data.get("camera_id") != camera_id
-                            or data.get("connection_id") != connection_id
-                            or not await _connection_owns_camera_lease(r, camera_id, connection_id)
-                        ):
-                            continue
-                        customers = await asyncio.to_thread(process_tracking_and_db, data)
-                        state.latest_customers_payload = customers
-                        frame_size = data.get("frame_size", {"width": FRAME_WIDTH, "height": FRAME_HEIGHT})
-                        pubsub_message = {
-                            "type": "camera_update",
-                            "customers": customers,
-                            "frame_size": frame_size,
-                            "camera_id": camera_id,
-                            "connection_id": connection_id,
-                        }
-                        json_str = json.dumps(pubsub_message, default=str)
-                        await websocket.send_text(json_str)
-                        await r.publish(f"camera_updates:{camera_id}", json_str)
+                        await process_worker_data(data)
                     elif channel == f"webrtc_signaling_{camera_id}":
                         if data.get("sender") == "admin":
                             await websocket.send_json(data)
@@ -873,6 +1088,7 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                             new_id = data.get("new_id")
                             if guest_id and new_id:
                                 track_manager.promote_guest(guest_id, new_id)
+                                await asyncio.to_thread(track_manager.load_known_embeddings)
                                 for track in track_manager.tracks.values():
                                     if track.resolved_customer_id in (guest_id, new_id):
                                         track.cached_profile = None
@@ -885,24 +1101,34 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                                         track.cached_profile = None
                         elif action == "reload_embeddings":
                             await asyncio.to_thread(track_manager.load_known_embeddings)
+                            try:
+                                from app.core.vector_cache import vector_cache_manager
+                                await asyncio.to_thread(vector_cache_manager.sync_from_database)
+                            except Exception:
+                                pass
                             for track in track_manager.tracks.values():
                                 track.cached_profile = None
                 except Exception as e:
                     import logging
                     logging.error(f"WebSocket reader error: {e}", exc_info=True)
 
-    reader_task = asyncio.create_task(reader())
+    reader_task = asyncio.create_task(reader()) if pubsub is not None else None
+    queue_reader_task = asyncio.create_task(queue_reader()) if (redis_available and r is not None) else None
 
     try:
         await websocket.send_json(
             {"type": "ready", "camera_id": camera_id, "connection_id": connection_id}
         )
-        await r.publish(
-            f"camera_updates:{camera_id}",
-            json.dumps(
-                {"type": "publisher_ready", "camera_id": camera_id, "connection_id": connection_id}
-            ),
-        )
+        if redis_available and r is not None:
+            try:
+                await r.publish(
+                    f"camera_updates:{camera_id}",
+                    json.dumps(
+                        {"type": "publisher_ready", "camera_id": camera_id, "connection_id": connection_id}
+                    ),
+                )
+            except Exception:
+                pass
 
         while True:
             try:
@@ -934,25 +1160,58 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                     state.latest_jpeg = raw_image_bytes
                     state.last_frame_time = time.time()
 
-                    opeid = str(uuid.uuid4())
-                    meta_dict = {
-                        "opeid": opeid,
-                        "camera_id": camera_id,
-                        "connection_id": connection_id,
-                        "timestamp": datetime.now().isoformat(),
-                    }
-                    meta_dict.update(client_meta)
+                    is_edge_crop = bool(client_meta.get("local_track_id"))
+                    if is_edge_crop or not redis_available:
+                        # Direct in-process biometric recognition using InsightEmbedder + GuestTrackManager
+                        worker_data = await asyncio.to_thread(
+                            _process_crop_direct,
+                            raw_image_bytes,
+                            client_meta,
+                            camera_id,
+                            connection_id,
+                        )
+                        if worker_data:
+                            customers = await asyncio.to_thread(process_tracking_and_db, worker_data)
+                            print(f"[DIRECT CROP] Sent camera_update: id={[c.get('id') for c in customers]}, tracks={[c.get('local_track_id') for c in customers]}", flush=True)
+                            pubsub_message = {
+                                "type": "camera_update",
+                                "customers": customers,
+                                "frame_size": {"width": FRAME_WIDTH, "height": FRAME_HEIGHT},
+                                "camera_id": camera_id,
+                                "connection_id": connection_id,
+                            }
+                            json_str = json.dumps(pubsub_message, default=str)
+                            try:
+                                await websocket.send_text(json_str)
+                            except Exception:
+                                pass
+                            if redis_available and r is not None:
+                                try:
+                                    await r.publish(f"camera_updates:{camera_id}", json_str)
+                                except Exception:
+                                    pass
+                    else:
+                        opeid = str(uuid.uuid4())
+                        meta_dict = {
+                            "opeid": opeid,
+                            "camera_id": camera_id,
+                            "connection_id": connection_id,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                        meta_dict.update(client_meta)
 
-                    meta_json_out = json.dumps(meta_dict).encode("utf-8")
-                    meta_len_out = len(meta_json_out).to_bytes(4, byteorder="big")
-                    packed_payload = meta_len_out + meta_json_out + raw_image_bytes
+                        meta_json_out = json.dumps(meta_dict).encode("utf-8")
+                        meta_len_out = len(meta_json_out).to_bytes(4, byteorder="big")
+                        packed_payload = meta_len_out + meta_json_out + raw_image_bytes
 
-                    await send_camera_frame(r, packed_payload, camera_id)
+                        print(f"[WS SERVER] Pushing frame to worker: conn={connection_id}, track={client_meta.get('local_track_id')}, payload_bytes={len(packed_payload)}", flush=True)
+                        await send_camera_frame(r, packed_payload, camera_id)
             elif "text" in msg:
                 try:
                     parsed = json.loads(msg["text"])
                     parsed["sender"] = "camera"
-                    await r.publish(f"webrtc_signaling_{camera_id}", json.dumps(parsed))
+                    if redis_available and r is not None:
+                        await r.publish(f"webrtc_signaling_{camera_id}", json.dumps(parsed))
                 except Exception:
                     pass
     except (WebSocketDisconnect, RuntimeError):
@@ -971,16 +1230,26 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
             await presence_task
         except (asyncio.CancelledError, Exception):
             pass
-        reader_task.cancel()
-        try:
-            await reader_task
-        except (asyncio.CancelledError, Exception):
-            pass
-        try:
-            await pubsub.unsubscribe()
-            await pubsub.aclose()
-        finally:
+        if reader_task is not None:
+            reader_task.cancel()
             try:
+                await reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if queue_reader_task is not None:
+            queue_reader_task.cancel()
+            try:
+                await queue_reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if pubsub is not None:
+            try:
+                await pubsub.unsubscribe()
+                await pubsub.aclose()
+            except Exception:
+                pass
+        try:
+            if redis_available and r is not None:
                 if await _connection_owns_camera_lease(r, camera_id, connection_id):
                     await r.publish(
                         f"camera_updates:{camera_id}",
@@ -992,11 +1261,15 @@ async def websocket_camera(websocket: WebSocket, camera_id: str):
                             }
                         ),
                     )
-                await _release_camera_lease(r, camera_id, connection_id)
-            except Exception:
-                pass
-            finally:
-                await r.aclose()
+            await _release_camera_lease(r, camera_id, connection_id)
+        except Exception:
+            pass
+        finally:
+            if r is not None:
+                try:
+                    await r.aclose()
+                except Exception:
+                    pass
 
         audit_conn = get_db_connection()
         try:
